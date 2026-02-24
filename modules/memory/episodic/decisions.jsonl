@@ -1,0 +1,2 @@
+{"schema":"openclaw.decision.v1","fields":["ts","decision","rationale","alternatives","outcome","weight"]}
+{"id": "a500def5-5672-463d-8156-724e570d4271", "ts": "2026-02-24T04:51:30.247159+00:00", "decision": "Use JSONL for AOMS storage", "rationale": "Append-only, human-readable, git-friendly", "alternatives": ["SQLite", "PostgreSQL", "JSON files"], "outcome": "Working well", "tags": ["architecture"], "weight": 1.188, "_tier": "episodic", "_type": "decision", "_written_at": "2026-02-24T04:51:30.247159+00:00", "_weight_updated_at": "2026-02-24T04:51:30.256389+00:00"}

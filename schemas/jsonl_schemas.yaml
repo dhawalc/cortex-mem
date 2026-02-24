@@ -1,0 +1,81 @@
+schemas:
+  openclaw.experience.v1:
+    description: "Episodic experience log entries"
+    file: "modules/memory/episodic/experiences.jsonl"
+    fields:
+      ts: { type: "string", format: "iso8601", required: true }
+      type: { type: "string", enum: ["decision", "achievement", "error", "observation", "interaction"], required: true }
+      title: { type: "string", required: true }
+      outcome: { type: "string", required: true }
+      tags: { type: "array", items: "string", required: false }
+      weight: { type: "float", default: 1.0, min: 0.1, max: 5.0 }
+
+  openclaw.decision.v1:
+    description: "Major decision records with rationale"
+    file: "modules/memory/episodic/decisions.jsonl"
+    fields:
+      ts: { type: "string", format: "iso8601", required: true }
+      decision: { type: "string", required: true }
+      rationale: { type: "string", required: true }
+      alternatives: { type: "array", items: "string", required: false }
+      outcome: { type: "string", required: false }
+      weight: { type: "float", default: 1.0, min: 0.1, max: 5.0 }
+
+  openclaw.failure.v1:
+    description: "Failure records with learnings"
+    file: "modules/memory/episodic/failures.jsonl"
+    fields:
+      ts: { type: "string", format: "iso8601", required: true }
+      title: { type: "string", required: true }
+      error: { type: "string", required: true }
+      root_cause: { type: "string", required: false }
+      learning: { type: "string", required: true }
+      tags: { type: "array", items: "string", required: false }
+      weight: { type: "float", default: 1.0, min: 0.1, max: 5.0 }
+
+  openclaw.fact.v1:
+    description: "Semantic knowledge facts (subject-predicate-object triples)"
+    file: "modules/memory/semantic/facts.jsonl"
+    fields:
+      ts: { type: "string", format: "iso8601", required: true }
+      subject: { type: "string", required: true }
+      predicate: { type: "string", required: true }
+      object: { type: "string", required: true }
+      confidence: { type: "float", default: 1.0, min: 0.0, max: 1.0 }
+      source: { type: "string", required: false }
+      weight: { type: "float", default: 1.0, min: 0.1, max: 5.0 }
+
+  openclaw.relation.v1:
+    description: "Entity relationships"
+    file: "modules/memory/semantic/relations.jsonl"
+    fields:
+      ts: { type: "string", format: "iso8601", required: true }
+      entity_a: { type: "string", required: true }
+      relation: { type: "string", required: true }
+      entity_b: { type: "string", required: true }
+      confidence: { type: "float", default: 1.0 }
+      weight: { type: "float", default: 1.0, min: 0.1, max: 5.0 }
+
+  openclaw.skill.v1:
+    description: "Procedural skills and learned procedures"
+    file: "modules/memory/procedural/skills.jsonl"
+    fields:
+      ts: { type: "string", format: "iso8601", required: true }
+      skill_name: { type: "string", required: true }
+      category: { type: "string", required: true }
+      success_rate: { type: "float", default: 1.0 }
+      avg_duration: { type: "string", required: false }
+      when_to_use: { type: "string", required: true }
+      steps: { type: "array", items: "string", required: false }
+      weight: { type: "float", default: 1.0, min: 0.1, max: 5.0 }
+
+  openclaw.pattern.v1:
+    description: "Recurring patterns observed"
+    file: "modules/memory/procedural/patterns.jsonl"
+    fields:
+      ts: { type: "string", format: "iso8601", required: true }
+      pattern_name: { type: "string", required: true }
+      trigger: { type: "string", required: true }
+      response: { type: "string", required: true }
+      frequency: { type: "integer", default: 1 }
+      weight: { type: "float", default: 1.0, min: 0.1, max: 5.0 }

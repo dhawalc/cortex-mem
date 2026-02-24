@@ -1,0 +1,1 @@
+{"schema":"openclaw.failure.v1","fields":["ts","title","error","root_cause","learning","tags","weight"]}

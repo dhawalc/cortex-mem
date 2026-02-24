@@ -1,0 +1,2 @@
+{"schema":"openclaw.pattern.v1","fields":["ts","pattern_name","trigger","response","frequency","weight"]}
+{"id": "0baa5f0b-8674-4b08-b913-bedbb9d2ca5c", "ts": "2026-02-24T04:51:30.249399+00:00", "pattern_name": "weighted retrieval", "trigger": "memory search request", "response": "score = keyword_hits * weight * recency", "tags": [], "weight": 1.0, "_tier": "procedural", "_type": "pattern", "_written_at": "2026-02-24T04:51:30.249399+00:00"}
