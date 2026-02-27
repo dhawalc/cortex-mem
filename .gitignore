@@ -44,3 +44,6 @@ Thumbs.db
 *.whl
 *.tar.gz
 MANIFEST
+
+# Ignore memory data
+/modules/memory/**.jsonl
