@@ -1,68 +1,169 @@
-# cortex-mem
+<p align="center">
+  <img src="docs/social-preview.png" alt="AOMS — Always-On Memory Service" width="720">
+</p>
 
-Always-On Memory Service with Progressive Disclosure (L0/L1/L2) and Weighted Retrieval.
+<h1 align="center">AOMS — Always-On Memory Service</h1>
 
-## Installation
+<p align="center">
+  Persistent 4-tier memory for AI agents. Weighted retrieval. Vector search. Progressive disclosure.
+  <br/>
+  <strong>Your agent remembers what it learned. Across sessions. Forever.</strong>
+</p>
+
+<p align="center">
+  <a href="https://clawhub.ai/DhawalA4/aoms"><img src="https://img.shields.io/badge/ClawHub-aoms-blue" alt="ClawHub"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
+  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python 3.10+"></a>
+</p>
+
+---
+
+## Why AOMS?
+
+Most AI agents forget everything between sessions. The few that don't use flat files that grow forever with no ranking, no decay, no structure.
+
+AOMS models how memory actually works:
+
+- **Important things surface first** — weighted retrieval with reinforcement learning
+- **Old things naturally fade** — time-based weight decay
+- **Similar things consolidate** — automatic clustering and summarization
+- **Context stays efficient** — progressive disclosure (L0/L1/L2) gives 98% token reduction
+
+Running on a live autonomous agent stack with **63,000+ memories** and counting.
+
+## Quick Start
 
 ```bash
-pip install cortex-mem
-```
-
-Or from source:
-
-```bash
+# Install
 git clone https://github.com/dhawalc/cortex-mem.git
 cd cortex-mem
 pip install -e .
-```
 
-## Quick Start (30 seconds)
-
-```bash
-# Start service
+# Start
 cortex-mem start --daemon
 
-# Check status
+# Check health
 cortex-mem status
 
 # Search memory
 cortex-mem search "deployment"
-
-# Stop service
-cortex-mem stop
 ```
 
-## OpenClaw Integration
+Or via Docker:
 
-cortex-mem auto-configures OpenClaw on install. No manual setup needed.
-
-```python
-from cortex_mem.openclaw_provider import CortexMemProvider
-
-async with CortexMemProvider() as mem:
-    await mem.log("achievement", "Task completed", "Successfully shipped v1")
-    results = await mem.search("deployment strategies")
+```bash
+docker build -t aoms .
+docker run -p 9100:9100 -v aoms-data:/app/modules aoms
 ```
 
-## Features
+API docs at `http://localhost:9100/docs`.
 
-- **Weighted Memory** — Important memories surface automatically via reinforcement learning
-- **Progressive Disclosure** — 98% token reduction with L0/L1/L2 tiered retrieval
-- **4-Tier Architecture** — Episodic, Semantic, Procedural, and Working memory
-- **Cortex Engine** — Smart query with auto-escalation across disclosure levels
-- **HTTP API** — Simple REST endpoints for any language / agent framework
+## Memory Tiers
 
-## API
+| Tier | Stores | Example |
+|------|--------|---------|
+| **Episodic** | Experiences, decisions, failures | "Deployed v2 — rollback needed due to missing migration" |
+| **Semantic** | Facts, relations, knowledge graphs | "Project uses pnpm, not npm" |
+| **Procedural** | Skills, patterns, workflows | "To deploy: run migrations first, then build, then push" |
+| **Working** | Active tasks, current context | "Currently debugging auth token refresh" |
+
+## Core API
+
+```bash
+# Write a memory
+curl -X POST http://localhost:9100/memory/episodic \
+  -H "Content-Type: application/json" \
+  -d '{"type": "experience", "payload": {"title": "Fixed auth bug", "outcome": "Token refresh was missing retry logic"}, "weight": 1.3}'
+
+# Search
+curl -X POST http://localhost:9100/memory/search \
+  -d '{"query": "auth", "limit": 5}'
+
+# Agent recall (formatted context for prompt injection)
+curl -X POST http://localhost:9100/recall \
+  -d '{"task": "deploy the API", "token_budget": 500, "format": "markdown"}'
+
+# Reinforce useful memory
+curl -X POST http://localhost:9100/memory/weight \
+  -d '{"entry_id": "abc123", "tier": "episodic", "task_score": 0.9}'
+
+# Progressive disclosure query
+curl -X POST http://localhost:9100/cortex/query \
+  -d '{"query": "deployment process", "token_budget": 1000}'
+```
+
+## Full API
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/memory/{tier}` | POST | Write a memory entry |
 | `/memory/search` | POST | Keyword search with weighted scoring |
-| `/memory/browse/{path}` | GET | Browse module tree |
-| `/memory/weight` | POST | Adjust entry weight (reinforcement) |
-| `/cortex/query` | POST | Smart query with L0/L1/L2 escalation |
-| `/cortex/documents` | GET | List indexed documents |
-| `/health` | GET | Service health check |
+| `/memory/semantic-search` | POST | Vector search (requires Ollama) |
+| `/memory/weight` | POST | Reinforce/decay entry weight |
+| `/memory/decay` | POST | Time-based weight decay |
+| `/memory/consolidate` | POST | Merge similar old memories |
+| `/memory/deduplicate` | POST | Find and merge duplicates |
+| `/recall` | POST | Agent context recall (formatted) |
+| `/cortex/query` | POST | Smart L0/L1/L2 query |
+| `/cortex/ingest` | POST | Ingest document with tier generation |
+| `/entities/extract` | POST | Extract entities from text |
+| `/stats` | GET | Memory analytics |
+| `/health` | GET | Service health |
+
+## Agent Integration
+
+### OpenClaw
+
+```bash
+clawhub install aoms
+```
+
+AOMS auto-configures when installed alongside [OpenClaw](https://openclaw.ai). The pip package includes an OpenClaw plugin that starts the service, configures the memory backend, and migrates existing workspace memory.
+
+### Any Agent (HTTP)
+
+```python
+import httpx
+
+# Recall relevant context at session start
+resp = httpx.post("http://localhost:9100/recall", json={
+    "task": "working on auth module",
+    "token_budget": 500,
+    "format": "markdown"
+})
+context = resp.json()["context"]
+
+# Log what you learned
+httpx.post("http://localhost:9100/memory/episodic", json={
+    "type": "experience",
+    "payload": {"title": "pnpm not npm", "outcome": "Project uses pnpm workspaces"},
+    "weight": 1.5
+})
+```
+
+## Architecture
+
+```
+cortex-mem/
+├── service/             # FastAPI application
+│   ├── api.py           # All endpoints
+│   ├── storage.py       # JSONL engine + weighted scoring
+│   └── models.py        # Pydantic schemas
+├── cortex/              # Progressive disclosure engine
+│   ├── tiered_retrieval.py  # L0/L1/L2 query with auto-escalation
+│   └── tier_generator.py    # Document ingestion + summary generation
+├── cortex_mem/          # Python package + CLI
+│   ├── cli.py           # Click CLI
+│   └── openclaw_plugin.py   # Auto-integration
+├── modules/             # JSONL memory data
+│   └── memory/
+│       ├── episodic/
+│       ├── semantic/
+│       └── procedural/
+├── Dockerfile
+├── pyproject.toml
+└── run.py
+```
 
 ## CLI
 
@@ -74,44 +175,25 @@ cortex-mem search QUERY [--limit 5]          Search memory
 cortex-mem migrate SOURCE                    Import workspace data
 ```
 
-## Architecture
+## Configuration
 
-```
-cortex-mem/
-├── cortex_mem/          # Python package + CLI
-│   ├── cli.py           # Click CLI entry point
-│   ├── openclaw_plugin.py
-│   └── openclaw_provider.py
-├── service/             # FastAPI application
-│   ├── api.py           # Endpoints
-│   ├── storage.py       # JSONL engine + weighted scoring
-│   ├── models.py        # Pydantic schemas
-│   └── client.py        # Async HTTP client
-├── cortex/              # Progressive disclosure engine
-│   ├── tiered_retrieval.py  # L0/L1/L2 query
-│   ├── tier_generator.py    # Document ingestion
-│   └── db.py            # SQLite metadata
-├── modules/             # Module tree (JSONL data)
-│   ├── memory/
-│   │   ├── episodic/    # experiences, decisions, failures
-│   │   ├── semantic/    # facts, relations
-│   │   └── procedural/  # skills, patterns
-│   ├── identity/        # Persona, values
-│   ├── operations/      # Workflows
-│   └── research/        # Papers, notes
-├── schemas/             # JSONL schema definitions
-├── setup.py
-├── pyproject.toml
-├── Dockerfile
-└── run.py               # Direct entry point
+```yaml
+# service/config.yaml
+service:
+  port: 9100
+  host: localhost      # 0.0.0.0 for Docker
+
+weights:
+  decay_rate: 0.995    # Daily decay multiplier
+  min_weight: 0.1
+  max_weight: 5.0
 ```
 
-## Docker
+## Requirements
 
-```bash
-docker build -t cortex-mem .
-docker run -p 9100:9100 cortex-mem
-```
+- Python 3.10+
+- Optional: [Ollama](https://ollama.ai) with `nomic-embed-text` for vector search
+- Optional: [Ollama](https://ollama.ai) with any chat model for consolidation/entity extraction
 
 ## License
 
