@@ -4,13 +4,13 @@ service:
   host: localhost
 
 storage:
-  root: /home/dhawal/cortex-mem/cortex-mem
-  backup_dir: /home/dhawal/cortex-mem/cortex-mem/snapshots
+  root: .
+  backup_dir: ./snapshots
 
 retrieval:
   embeddings: false
   default_limit: 10
-  index_path: /home/dhawal/cortex-mem/cortex-mem/index/embeddings.db
+  index_path: ./index/embeddings.db
 
 weights:
   decay_rate: 0.995
