@@ -1087,8 +1087,11 @@ async def write_memory(tier: str, entry: MemoryWrite):
 
 @app.get("/health")
 async def health_check():
-    """Service health check with tier entry counts."""
-    counts = await storage.count_entries()
+    """Lightweight service health check.
+
+    Do not scan multi-GB memory stores here. Full counting belongs in `/stats`
+    or offline maintenance, not the liveness probe.
+    """
     uptime = time.monotonic() - _start_time
 
     return HealthResponse(
@@ -1097,7 +1100,7 @@ async def health_check():
         version=VERSION,
         uptime_seconds=round(uptime, 1),
         memory_root=str(MEMORY_ROOT),
-        tiers=counts,
+        tiers={},
     )
 
 

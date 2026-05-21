@@ -81,6 +81,10 @@ class MemoryStorage:
 
     def __init__(self, root: Path):
         self.root = root
+    
+    def _all_files_for_tier(self, tier: str) -> List[Path]:
+        """Return all JSONL files belonging to a tier."""
+        return _all_files_for_tier(self.root, tier)
 
     async def append(
         self,
@@ -258,33 +262,38 @@ def _search_file(
     return results
 
 
-def _recency_score(ts: Optional[str]) -> float:
+def _recency_score(ts) -> float:
     """Calculate time-decay recency score. DECAY_RATE^days_old."""
     if not ts:
         return 1.0
     try:
-        created = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        # Handle both float (unix timestamp) and string (ISO) formats
+        if isinstance(ts, (int, float)):
+            created = datetime.fromtimestamp(ts, tz=timezone.utc)
+        else:
+            created = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
         now = datetime.now(timezone.utc)
         days_old = max(0, (now - created).days)
         return DECAY_RATE ** days_old
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OSError):
         return 1.0
 
 
 def _count_data_lines(filepath: Path) -> int:
-    """Count non-schema, non-empty lines in a JSONL file."""
+    """Count non-empty data lines fast without full JSON parsing.
+
+    Health checks only need approximate per-tier entry counts. Parsing every
+    multi-KB/MB JSON line in multi-GB logs makes `/health` stall. We treat any
+    non-empty line that does not obviously look like a schema header as data.
+    """
     count = 0
     with open(filepath, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
+        for raw_line in f:
+            if not raw_line.strip():
                 continue
-            try:
-                obj = json.loads(line)
-                if "schema" not in obj:
-                    count += 1
-            except json.JSONDecodeError:
+            if '"schema"' in raw_line:
                 continue
+            count += 1
     return count
 
 
