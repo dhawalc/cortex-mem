@@ -198,18 +198,22 @@ class AOMemoryClient:
         self,
         entry_id: str,
         task_score: float,
+        tier: str = "episodic",
     ) -> bool:
         """
         Adjust memory weight based on task outcome (reinforcement learning).
-        
+
         Args:
             entry_id: Memory entry ID
             task_score: 0.0-1.0 (>0.7 = boost, <0.3 = decay)
+            tier: tier the entry lives in. REQUIRED by AOMS /memory/weight —
+                  omitting it caused a silent HTTP 422, so reinforcement never
+                  applied and every weight decayed to the 0.1 floor (high=0).
         """
         try:
             response = await self.client.post(
                 f"{self.base_url}/memory/weight",
-                json={"entry_id": entry_id, "task_score": task_score}
+                json={"entry_id": entry_id, "task_score": task_score, "tier": tier}
             )
             response.raise_for_status()
             return True

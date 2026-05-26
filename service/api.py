@@ -339,17 +339,19 @@ async def agent_recall(req: RecallRequest):
     tiers = req.tiers or ["episodic", "semantic", "procedural"]
     sources = []
     
-        # Try semantic search with timeout (Ollama may need to swap models)
-    # DISABLED: Ollama embeddings stuck, skip entirely to avoid 30s timeout
+    # Semantic (vector) search with a SHORT timeout + graceful keyword fallback.
+    # Re-enabled 2026-05-26: nomic-embed-text is now pulled. The 8s cap means a
+    # slow/absent embedding model degrades to keyword search instead of hanging
+    # the endpoint (the reason this was originally disabled).
     query_embedding = None
-    # try:
-    #     query_embedding = await asyncio.wait_for(
-    #         embeddings.get_embedding(req.task), timeout=30.0
-    #     )
-    # except asyncio.TimeoutError:
-    #     logger.warning("Embedding timed out (30s), falling back to keyword search")
-    # except Exception as e:
-    #     logger.warning(f"Embedding failed: {e}, falling back to keyword search")
+    try:
+        query_embedding = await asyncio.wait_for(
+            embeddings.get_embedding(req.task), timeout=8.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Embedding timed out (8s), falling back to keyword search")
+    except Exception as e:
+        logger.warning(f"Embedding failed: {e}, falling back to keyword search")
     
     if query_embedding:
         vector_results = await vector_store.semantic_search(
@@ -367,24 +369,31 @@ async def agent_recall(req: RecallRequest):
                 "type": metadata.get("_type", "unknown"),
             })
     
-    # Supplement with keyword search
-    keyword_results = await storage.search(
-        query=req.task,
-        tiers=tiers,
-        limit=10,
-    )
-    
-    seen_ids = {s["id"] for s in sources}
-    for kr in keyword_results:
-        entry_id = kr["entry"].get("id")
-        if entry_id and entry_id not in seen_ids:
-            sources.append({
-                "tier": kr["tier"],
-                "id": entry_id,
-                "score": kr["score"],
-                "content": kr["entry"].get("content", ""),
-                "type": kr["type"],
-            })
+    # Supplement with keyword search ONLY when vector search was unavailable or
+    # returned few hits. The keyword path scans the multi-GB JSONL files (and
+    # chokes on the legacy blob lines), so we keep it off the hot path once
+    # embeddings are working.
+    if len(sources) < 8:
+        keyword_results = await storage.search(
+            query=req.task,
+            tiers=tiers,
+            limit=20,
+        )
+
+        seen_ids = {s["id"] for s in sources}
+        for kr in keyword_results:
+            entry_id = kr["entry"].get("id")
+            if entry_id and entry_id not in seen_ids:
+                entry = kr["entry"]
+                sources.append({
+                    "tier": kr["tier"],
+                    "id": entry_id,
+                    "score": kr["score"],
+                    # facts/skills have no "content" field; render from their
+                    # structured fields so they contribute real text, not "".
+                    "content": entry.get("content") or embeddings.text_for_embedding(entry),
+                    "type": kr["type"],
+                })
     
     # Sort by score and build context
     sources.sort(key=lambda x: x["score"], reverse=True)
@@ -521,7 +530,11 @@ async def decay_weights(req: DecayRequest):
                 old_weight = entry.get("weight", 1.0)
                 days_old = (datetime.now(timezone.utc) - entry_time).days
                 new_weight = old_weight * (req.decay_rate ** days_old)
-                new_weight = max(0.1, min(5.0, new_weight))
+                # Floor raised 0.1 -> 0.3 (2026-05-26): with no working reinforcement
+                # caller, months of nightly decay had flattened every weight to the
+                # 0.1 floor (weight_distribution.high == 0). 0.3 keeps decayed memories
+                # rankable in keyword fallback. (Vector recall is weight-independent.)
+                new_weight = max(0.3, min(5.0, new_weight))
                 
                 if abs(old_weight - new_weight) > 0.001:
                     if req.dry_run and len(preview) < 10:

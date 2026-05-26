@@ -191,7 +191,7 @@ def test_health_and_documents_endpoints(client):
     docs = test_client.get("/cortex/documents")
 
     assert health.status_code == 200
-    assert health.json()["tiers"] == {"episodic": 5, "semantic": 3, "procedural": 2}
+    assert health.json()["tiers"] == {}  # /health is intentionally lightweight (e0bb673); counts come from /stats
     assert docs.status_code == 200
     assert docs.json()["total"] == 1
 

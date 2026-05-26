@@ -163,14 +163,19 @@ async def test_daemon_client_smart_query_and_close(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_daemon_client_adjust_weight_returns_false_when_api_rejects(monkeypatch):
+async def test_daemon_client_adjust_weight_sends_tier_and_succeeds(monkeypatch):
+    # Regression guard for the reinforcement fix: adjust_weight MUST send the
+    # required `tier`. DaemonFakeClient returns HTTP 422 for a /memory/weight POST
+    # that omits `tier`, so if `tier` were ever dropped again this flips to False.
     fake_http = DaemonFakeClient()
     monkeypatch.setattr(daemon.httpx, "AsyncClient", lambda timeout=30.0: fake_http)
 
     client = daemon.AOMemoryClient(base_url="http://example")
-    ok = await client.adjust_weight(entry_id="x", task_score=0.8)
+    ok = await client.adjust_weight(entry_id="x", task_score=0.8, tier="episodic")
 
-    assert ok is False
+    assert ok is True
+    weight_post = next(p for p in fake_http.posts if p[0].endswith("/memory/weight"))
+    assert weight_post[1]["tier"] == "episodic"
 
 
 @pytest.mark.asyncio
