@@ -34,7 +34,12 @@ from demo.relay.artifacts import (
     validate_bundle,
     write_manifest,
 )
-from demo.relay_fixture.seed import RELAY_WORKSPACE, SCENARIO_PATH, load_scenario, seed_store
+from demo.relay_fixture.seed import (
+    RELAY_WORKSPACE,
+    SCENARIO_PATH,
+    load_scenario,
+    seed_store,
+)
 from demo.relay_fixture.verify import VerificationReport, verify_run
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -150,6 +155,7 @@ def _mcp_config(
     traffic_path: Path,
     data_dir: Path,
     agent_id: str,
+    recall_token_budget: int | None,
 ) -> None:
     server_command = [
         sys.executable,
@@ -167,20 +173,23 @@ def _mcp_config(
         "AOMS_WORKSPACE": RELAY_WORKSPACE,
         "PATH": os.environ.get("PATH", ""),
     }
+    proxy_arguments = [
+        str(PROJECT_ROOT / "demo" / "relay" / "mcp_proxy.py"),
+        "--traffic",
+        str(traffic_path),
+        "--server-command-json",
+        json.dumps(server_command),
+        "--server-cwd",
+        str(PROJECT_ROOT),
+    ]
+    if recall_token_budget is not None:
+        proxy_arguments.extend(["--recall-token-budget", str(recall_token_budget)])
     payload = {
         "mcpServers": {
             "aoms": {
                 "type": "stdio",
                 "command": sys.executable,
-                "args": [
-                    str(PROJECT_ROOT / "demo" / "relay" / "mcp_proxy.py"),
-                    "--traffic",
-                    str(traffic_path),
-                    "--server-command-json",
-                    json.dumps(server_command),
-                    "--server-cwd",
-                    str(PROJECT_ROOT),
-                ],
+                "args": proxy_arguments,
                 "env": environment,
             }
         }
@@ -224,12 +233,12 @@ async def _write_recall_artifact(
     stage: str,
     traffic_path: Path,
     repository: SQLiteMemoryRepository,
-) -> None:
+) -> bool:
     if stage not in {"implementer", "reviewer"}:
-        return
+        return False
     recalled = _traffic_recall(traffic_path)
     if recalled is None:
-        return
+        return False
     receipt_id = recalled.get("diagnostics", {}).get("receipt_id")
     receipts = await repository.recent_recall_receipts(
         limit=100,
@@ -246,6 +255,7 @@ async def _write_recall_artifact(
         run_root / scenario["artifacts"][artifact_key],
         {"receipt": receipt.model_dump(mode="json"), "context": recalled["context"]},
     )
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +357,7 @@ async def _run_variant(
                 traffic_path=traffic_path,
                 data_dir=memory_data_dir,
                 agent_id=scenario["stages"][stage]["agent_id"],
+                recall_token_budget=scenario["stages"][stage].get("token_ceiling"),
             )
         result_path = stage_root / "adapter-result.json"
         request = AdapterRequest(
@@ -387,7 +398,11 @@ async def _run_variant(
             f"{before_commit}..{after_commit}",
         )
         commits = [
-            {"commit": line.split("\t", 2)[0], "authored_at": line.split("\t", 2)[1], "subject": line.split("\t", 2)[2]}
+            {
+                "commit": line.split("\t", 2)[0],
+                "authored_at": line.split("\t", 2)[1],
+                "subject": line.split("\t", 2)[2],
+            }
             for line in commits_text.splitlines()
             if line
         ]
@@ -402,10 +417,14 @@ async def _run_variant(
                 "before_commit": before_commit,
                 "after_commit": after_commit,
                 "commits": commits,
-                "status_porcelain": _run_git(workdir, "status", "--porcelain").splitlines(),
+                "status_porcelain": _run_git(
+                    workdir, "status", "--porcelain"
+                ).splitlines(),
             },
             "mcp_traffic": {
-                "capture": "transparent stdio JSON-RPC proxy",
+                "capture": (
+                    "stdio JSON-RPC proxy with configured recall-budget enforcement"
+                ),
                 "path": traffic_path.relative_to(run_root).as_posix(),
                 "sha256": sha256_file(traffic_path),
             },
@@ -423,16 +442,29 @@ async def _run_variant(
                 stderr_path=request.stderr_path,
             )
         if repository is not None:
-            await _write_recall_artifact(
+            recall_captured = await _write_recall_artifact(
                 run_root=run_root,
                 scenario=scenario,
                 stage=stage,
                 traffic_path=traffic_path,
                 repository=repository,
             )
+            if stage in {"implementer", "reviewer"} and not recall_captured:
+                raise RelayStageFailure(
+                    f"{name} {stage} {adapter.name} completed without the required "
+                    "AOMS recall; no canonical recall artifact can be produced",
+                    variant=name,
+                    stage=stage,
+                    adapter=adapter.name,
+                    returncode=process.returncode,
+                    stdout_path=request.stdout_path,
+                    stderr_path=request.stderr_path,
+                )
         previous = workdir
 
-    _copy_completed_workspace(previous, run_root / scenario["artifacts"]["completed_repository"])
+    _copy_completed_workspace(
+        previous, run_root / scenario["artifacts"]["completed_repository"]
+    )
     verifier_started = perf_counter()
     verifier = verify_run(run_root, scenario_path=run_root / "scenario.yaml")
     verifier_wall_time = perf_counter() - verifier_started
@@ -539,9 +571,7 @@ def _raise_published_failure(
         seed=seed,
         with_baseline=with_baseline,
     )
-    raise RuntimeError(
-        f"{failure}; failure bundle: {destination}"
-    ) from failure
+    raise RuntimeError(f"{failure}; failure bundle: {destination}") from failure
 
 
 async def run_relay(
@@ -558,14 +588,17 @@ async def run_relay(
     destination = Path(output).expanduser().resolve()
     failure_destination = Path(f"{destination}-FAILED")
     if destination.exists():
-        raise FileExistsError(f"relay output already exists (write-once): {destination}")
+        raise FileExistsError(
+            f"relay output already exists (write-once): {destination}"
+        )
     if failure_destination.exists():
         raise FileExistsError(
-            "relay failure output already exists (write-once): "
-            f"{failure_destination}"
+            f"relay failure output already exists (write-once): {failure_destination}"
         )
     if len(agent_names) != len(STAGE_ORDER):
-        raise ValueError("exactly three adapters are required: planner, implementer, reviewer")
+        raise ValueError(
+            "exactly three adapters are required: planner, implementer, reviewer"
+        )
     unknown = [name for name in agent_names if name not in ADAPTERS]
     if unknown:
         raise ValueError(f"unknown relay adapter(s): {', '.join(unknown)}")
@@ -651,11 +684,14 @@ async def run_relay(
                 {
                     "schema_version": 1,
                     "only_variable": "MCP memory availability",
-                    "prompts_identical": primary.prompt_hashes == baseline.prompt_hashes,
+                    "prompts_identical": primary.prompt_hashes
+                    == baseline.prompt_hashes,
                     "memory_enabled": primary.model_dump(),
                     "memory_disabled": baseline.model_dump(),
-                    "passed_delta": int(primary.verifier.passed) - int(baseline.verifier.passed),
-                    "check_count_delta": len(primary.verifier.checks) - len(baseline.verifier.checks),
+                    "passed_delta": int(primary.verifier.passed)
+                    - int(baseline.verifier.passed),
+                    "check_count_delta": len(primary.verifier.checks)
+                    - len(baseline.verifier.checks),
                 },
             )
 
@@ -698,7 +734,9 @@ async def run_relay(
         )
         validation = validate_bundle(bundle)
         if not validation.valid:
-            raise RuntimeError(f"new relay bundle failed validation: {validation.failures}")
+            raise RuntimeError(
+                f"new relay bundle failed validation: {validation.failures}"
+            )
         os.replace(bundle, destination)
 
     return RelayResult(

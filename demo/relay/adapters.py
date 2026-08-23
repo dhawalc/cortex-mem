@@ -85,14 +85,14 @@ class ClaudeAdapter:
 
     name = "claude"
     _auth_environment_key = "AOMS_RELAY_CLAUDE_AUTH"
+    _allowed_aoms_tools = "mcp__aoms__recall,mcp__aoms__search,mcp__aoms__remember"
 
     def auth_mode(self) -> str:
         mode = os.environ.get(self._auth_environment_key, "bare").strip().lower()
         mode = mode or "bare"
         if mode not in {"bare", "oauth"}:
             raise ValueError(
-                f"{self._auth_environment_key} must be 'bare' or 'oauth', got "
-                f"{mode!r}"
+                f"{self._auth_environment_key} must be 'bare' or 'oauth', got {mode!r}"
             )
         return mode
 
@@ -121,12 +121,12 @@ class ClaudeAdapter:
             session_id,
             "--permission-mode",
             "acceptEdits",
+            "--allowedTools",
+            self._allowed_aoms_tools,
             *mcp_arguments,
         ]
 
-    def evidence(
-        self, request: AdapterRequest, session_id: str
-    ) -> dict[str, object]:
+    def evidence(self, request: AdapterRequest, session_id: str) -> dict[str, object]:
         del request, session_id
         mode = self.auth_mode()
         auth: dict[str, object] = {
@@ -157,9 +157,7 @@ def _toml_array(values: list[str]) -> str:
 
 
 def _toml_inline_table(values: dict[str, str]) -> str:
-    pairs = (
-        f"{key}={_toml_string(value)}" for key, value in sorted(values.items())
-    )
+    pairs = (f"{key}={_toml_string(value)}" for key, value in sorted(values.items()))
     return "{" + ",".join(pairs) + "}"
 
 
@@ -263,9 +261,7 @@ class OpenClawAdapter:
             "tools": {"profile": "coding"},
         }
         if request.mcp_config_path is not None:
-            payload = json.loads(
-                request.mcp_config_path.read_text(encoding="utf-8")
-            )
+            payload = json.loads(request.mcp_config_path.read_text(encoding="utf-8"))
             source_server = payload["mcpServers"]["aoms"]
             server = dict(source_server)
             transport = server.pop("type", "stdio")
@@ -316,9 +312,7 @@ class OpenClawAdapter:
 
         shutil.copyfile(request.stdout_path, request.result_path)
 
-    def evidence(
-        self, request: AdapterRequest, session_id: str
-    ) -> dict[str, object]:
+    def evidence(self, request: AdapterRequest, session_id: str) -> dict[str, object]:
         return {
             "contract": {
                 "entrypoint": "openclaw agent --local",
@@ -401,7 +395,10 @@ async def launch_fresh_process(
     started_at = _utc_now()
     loop = asyncio.get_running_loop()
     started = loop.time()
-    with request.stdout_path.open("wb") as stdout, request.stderr_path.open("wb") as stderr:
+    with (
+        request.stdout_path.open("wb") as stdout,
+        request.stderr_path.open("wb") as stderr,
+    ):
         process = await asyncio.create_subprocess_exec(
             *argv,
             cwd=request.workdir,
@@ -416,9 +413,7 @@ async def launch_fresh_process(
         output_capture(request)
     evidence_builder = getattr(adapter, "evidence", None)
     adapter_evidence = (
-        evidence_builder(request, session_id)
-        if callable(evidence_builder)
-        else {}
+        evidence_builder(request, session_id) if callable(evidence_builder) else {}
     )
     return ProcessResult(
         adapter=adapter.name,

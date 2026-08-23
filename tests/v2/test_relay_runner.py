@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from demo.relay.adapters import (
     AdapterRequest,
@@ -80,14 +81,81 @@ def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     assert len(set(process_ids)) == 3
     assert len(set(prompt_hashes)) == 3
     receipt_lines = (
-        bundle / "receipts-export" / "receipts.jsonl"
-    ).read_text().splitlines()
+        (bundle / "receipts-export" / "receipts.jsonl").read_text().splitlines()
+    )
     assert len(receipt_lines) >= 3
     assert (bundle / "stage-2" / "recall.json").is_file()
     assert (bundle / "stage-3" / "recall.json").is_file()
     assert (bundle / "verifier" / "report.json").is_file()
     verifier_record = json.loads((bundle / "verifier" / "report.json").read_text())
     assert verifier_record["grade"] == "PROOF"
+
+
+def test_scripted_relay_pins_model_requested_recall_budget(tmp_path: Path) -> None:
+    script = yaml.safe_load(relay_runner.DEFAULT_SCRIPT.read_text(encoding="utf-8"))
+    implementer_calls = script["stages"]["implementer"]["calls"]
+    recall = next(call for call in implementer_calls if call.get("name") == "recall")
+    recall["arguments"]["token_budget"] = 5000
+    script_path = tmp_path / "over-budget-scripted.yaml"
+    script_path.write_text(yaml.safe_dump(script, sort_keys=False), encoding="utf-8")
+
+    result = asyncio.run(
+        run_relay(
+            tmp_path / "pinned-budget-bundle",
+            agent_names=("scripted", "scripted", "scripted"),
+            seed=7319,
+            script_path=script_path,
+        )
+    )
+
+    assert result.verification.passed, result.verification.failures
+    artifact = json.loads((result.bundle / "stage-2" / "recall.json").read_text())
+    assert artifact["receipt"]["token_budget"] == 1000
+    assert artifact["receipt"]["total_tokens"] <= 1000
+    traffic = [
+        json.loads(line)
+        for line in (
+            result.bundle / "stages" / "stage-2-implementer" / "mcp-traffic.jsonl"
+        )
+        .read_text()
+        .splitlines()
+    ]
+    pinned_call = next(item for item in traffic if "enforcement" in item)
+    assert pinned_call["message"]["params"]["arguments"]["token_budget"] == 1000
+    assert pinned_call["enforcement"]["recall_token_budget"] == {
+        "requested": 5000,
+        "pinned": 1000,
+    }
+
+
+def test_scripted_relay_fails_stage_without_required_recall(tmp_path: Path) -> None:
+    script = yaml.safe_load(relay_runner.DEFAULT_SCRIPT.read_text(encoding="utf-8"))
+    reviewer_calls = script["stages"]["reviewer"]["calls"]
+    script["stages"]["reviewer"]["calls"] = [
+        call for call in reviewer_calls if call.get("name") != "recall"
+    ]
+    script_path = tmp_path / "missing-recall-scripted.yaml"
+    script_path.write_text(yaml.safe_dump(script, sort_keys=False), encoding="utf-8")
+    output = tmp_path / "missing-recall-bundle"
+    failed_output = Path(f"{output.resolve()}-FAILED")
+
+    with pytest.raises(
+        RuntimeError, match="completed without the required AOMS recall"
+    ):
+        asyncio.run(
+            run_relay(
+                output,
+                agent_names=("scripted", "scripted", "scripted"),
+                seed=7319,
+                script_path=script_path,
+            )
+        )
+
+    validation = validate_bundle(failed_output)
+    assert validation.valid, validation.failures
+    failure = json.loads((failed_output / "failure.json").read_text())
+    assert failure["stage"] == "reviewer"
+    assert not (failed_output / "stage-3" / "recall.json").exists()
 
 
 def test_memory_disabled_baseline_is_comparable(scripted_bundle) -> None:
@@ -111,9 +179,7 @@ def test_memory_disabled_baseline_is_comparable(scripted_bundle) -> None:
         ).read_bytes()
 
 
-def test_bundle_manifest_detects_tampering(
-    scripted_bundle, tmp_path: Path
-) -> None:
+def test_bundle_manifest_detects_tampering(scripted_bundle, tmp_path: Path) -> None:
     tampered = tmp_path / "tampered"
     shutil.copytree(scripted_bundle.bundle, tampered)
     service = tampered / "workspace" / "relay_service" / "service.py"
@@ -122,7 +188,10 @@ def test_bundle_manifest_detects_tampering(
     validation = validate_bundle(tampered)
 
     assert not validation.valid
-    assert any("hash mismatch for workspace/relay_service/service.py" in failure for failure in validation.failures)
+    assert any(
+        "hash mismatch for workspace/relay_service/service.py" in failure
+        for failure in validation.failures
+    )
 
 
 def _real_adapter_request(tmp_path: Path) -> AdapterRequest:
@@ -159,6 +228,9 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
     assert "--bare" in claude
     assert "--strict-mcp-config" in claude
     assert "--no-session-persistence" in claude
+    assert claude[claude.index("--allowedTools") + 1] == (
+        "mcp__aoms__recall,mcp__aoms__search,mcp__aoms__remember"
+    )
     assert claude[claude.index("--session-id") + 1] == "fresh-id"
 
     codex = CodexAdapter().build_command(request, "unused")
@@ -199,9 +271,7 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
     assert openclaw[-3:] == ["--message", "minimal prompt\n", "--json"]
     assert "--deliver" not in openclaw
 
-    openclaw_config = json.loads(
-        (tmp_path / "openclaw-config.json").read_text()
-    )
+    openclaw_config = json.loads((tmp_path / "openclaw-config.json").read_text())
     assert openclaw_config["agents"]["defaults"]["workspace"] == str(tmp_path)
     assert openclaw_config["agents"]["defaults"]["skipBootstrap"] is True
     assert openclaw_config["mcp"]["servers"]["aoms"] == {
@@ -219,9 +289,7 @@ def test_codex_adapter_argv_parses_with_installed_cli(tmp_path: Path) -> None:
     executable = shutil.which("codex")
     if executable is None:
         pytest.skip("codex CLI is not installed")
-    command = CodexAdapter().build_command(
-        _real_adapter_request(tmp_path), "unused"
-    )
+    command = CodexAdapter().build_command(_real_adapter_request(tmp_path), "unused")
     command[0] = executable
     # Codex has no validate-only command; help parses every option without a run.
     command[-1] = "--help"
@@ -304,9 +372,7 @@ def test_failed_stage_publishes_sealed_bundle_and_surfaces_stdout_json(
     class StubFailingAdapter:
         name = "stub-failure"
 
-        def build_command(
-            self, request: AdapterRequest, session_id: str
-        ) -> list[str]:
+        def build_command(self, request: AdapterRequest, session_id: str) -> list[str]:
             del request, session_id
             return [
                 sys.executable,
@@ -354,9 +420,10 @@ def test_failed_stage_publishes_sealed_bundle_and_surfaces_stdout_json(
     assert failure["adapter"] == "stub-failure"
     assert failure["returncode"] == 1
     stage_root = failed_output / "stages" / "stage-2-implementer"
-    assert json.loads((stage_root / "record.json").read_text())["process"][
-        "returncode"
-    ] == 1
+    assert (
+        json.loads((stage_root / "record.json").read_text())["process"]["returncode"]
+        == 1
+    )
     assert "Credit balance is too low" in (stage_root / "stdout.log").read_text()
     assert (stage_root / "stderr.log").read_text() == "stub stderr\n"
     assert (failed_output / "stages" / "stage-1-planner" / "record.json").is_file()
@@ -452,9 +519,7 @@ print("stub diagnostic", file=sys.stderr)
     assert output["config"]["mcp"]["servers"]["aoms"]["command"] == "/python"
     assert output["state_path"] == str(tmp_path / "openclaw-state")
     assert request.stderr_path.read_text() == "stub diagnostic\n"
-    assert process.adapter_evidence["fresh_context"][
-        "guaranteed_by_adapter"
-    ] is True
+    assert process.adapter_evidence["fresh_context"]["guaranteed_by_adapter"] is True
     assert process.adapter_evidence["mcp"]["per_run_injected"] is True
 
     with pytest.raises(AdapterUnavailable, match="private state path already exists"):

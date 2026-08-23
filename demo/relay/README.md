@@ -14,7 +14,9 @@ python -m demo.relay.runner validate /tmp/aoms-relay-7319
 Real adapters are available for orchestrator-supervised runs only. Claude uses
 `claude -p`, disabled slash commands/browser integration,
 `--mcp-config`, `--strict-mcp-config`, verbose stream JSON output, an explicit
-fresh session ID, and `--no-session-persistence`. Codex uses `codex -a never
+fresh session ID, `--no-session-persistence`, and an explicit allow-list for
+the three injected AOMS tools so headless recall is not left waiting for an
+impossible approval. Codex uses `codex -a never
 exec --json`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `-C`,
 workspace-write sandboxing, and `-c mcp_servers.aoms.*` values
 derived from the same stdio server config.
@@ -65,9 +67,13 @@ that limitation because `OPENCLAW_CONFIG_PATH` supplies both per run.
 
 The injected client config points at `demo.relay.mcp_proxy`, not directly at
 the server. The proxy launches the equivalent of `cortex-mem mcp` through the
-selected Python interpreter (`python -m aoms.cli mcp`), forwards stdio without
-changing it, and records every JSON-RPC frame in `mcp-traffic.jsonl`. Each line
-contains a monotonic sequence, UTC capture time, direction, and parsed message.
+selected Python interpreter (`python -m aoms.cli mcp`) and records every
+JSON-RPC frame in `mcp-traffic.jsonl`. For implementer and reviewer stages it
+pins every recall call to that stage's scenario `token_ceiling`, regardless of
+the model-requested value; the recorded message is the value actually
+forwarded and an `enforcement` field preserves the originally requested value.
+Each line contains a monotonic sequence, UTC capture time, direction, and
+parsed message.
 Server stderr stays off protocol stdout and is retained in the stage stderr log.
 For OpenClaw, the adapter translates `mcpServers.aoms` to
 `mcp.servers.aoms` in the private config. The proxy and server use absolute
@@ -91,3 +97,6 @@ The failure bundle includes `failure.json`, all completed-stage evidence, and
 the failing stage's complete stdout/stderr and process record. Claude
 stream-JSON `api_error_status` and `result` fields are also included in the
 raised error so an operator can diagnose API failures without replaying them.
+Memory-enabled implementer and reviewer stages also fail immediately when no
+recall reaches the proxy, instead of continuing to a predictably unverifiable
+final bundle.
