@@ -1,0 +1,39 @@
+name: Relay fixture
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-fixture-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture-harness:
+    name: Internal fixture harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: demo/relay_fixture/repository
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: demo/relay_fixture/repository/pyproject.toml
+
+      - name: Install fixture test dependency
+        run: python -m pip install --upgrade pip "pytest>=8"
+
+      - name: Run the fixture's internal tests
+        run: python -m pytest

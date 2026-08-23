@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package and test dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[dev]"
+
+      - name: Run canonical test suite
+        run: python -m pytest
+
+  wheel:
+    name: Wheel and fresh-install acceptance
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install build frontend
+        run: python -m pip install --upgrade pip build
+
+      - name: Build wheel
+        run: python -m build --wheel
+
+      - name: Install wheel in a clean virtual environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheel_path="$(find dist -maxdepth 1 -type f -name '*.whl' -print -quit)"
+          test -n "$wheel_path"
+          python -m venv "$RUNNER_TEMP/aoms-wheel-venv"
+          "$RUNNER_TEMP/aoms-wheel-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/aoms-wheel-venv/bin/python" -m pip install "$wheel_path"
+
+      - name: Run fresh-wheel acceptance round-trip
+        shell: bash
+        env:
+          AOMS_EMBEDDING_PROVIDER: none
+          AOMS_AGENT_ID: ci-wheel-agent
+          AOMS_WORKSPACE: ci-wheel-workspace
+        run: |
+          set -euo pipefail
+          cli="$RUNNER_TEMP/aoms-wheel-venv/bin/cortex-mem"
+          source_dir="$RUNNER_TEMP/aoms-source"
+          export_dir="$RUNNER_TEMP/aoms-export"
+          restored_dir="$RUNNER_TEMP/aoms-restored"
+
+          "$cli" init --data-dir "$source_dir"
+          "$cli" doctor --data-dir "$source_dir"
+          "$cli" import tests/v2/fixtures/corpus --data-dir "$source_dir"
+          "$cli" export "$export_dir" --data-dir "$source_dir"
+          "$cli" restore "$export_dir" --data-dir "$restored_dir"
+          "$cli" doctor --data-dir "$restored_dir" | tee "$RUNNER_TEMP/restored-doctor.txt"
+          grep -F "5 canonical records" "$RUNNER_TEMP/restored-doctor.txt"
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: cortex-mem-wheel
+          path: dist/*.whl
+          if-no-files-found: error
+          retention-days: 14
