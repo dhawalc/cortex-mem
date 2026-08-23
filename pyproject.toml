@@ -57,5 +57,15 @@ Issues = "https://github.com/dhawalc/cortex-mem/issues"
 version = {attr = "cortex_mem.__version__.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["aoms*", "cortex_mem*", "service*", "cortex*"]
+include = ["aoms*", "cortex_mem*", "demo*", "service*", "cortex*"]
 exclude = ["tests*", "scripts*", "snapshots*", "index*"]
+
+[tool.setuptools.package-data]
+"demo.relay_fixture" = [
+    "scenario.yaml",
+    "README.md",
+    "repository/README.md",
+    "repository/pyproject.toml",
+    "repository/relay_service/*.py",
+    "repository/tests/*.py",
+]
