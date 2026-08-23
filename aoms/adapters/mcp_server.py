@@ -28,14 +28,19 @@ from aoms.contracts import (
     RecallResult,
     RememberRequest,
     RememberResult,
+    ScopeContext,
     SearchRequest,
     SearchResult,
 )
 from aoms.embeddings import provider_from_config
 from aoms.repositories import SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
+from cortex_mem.__version__ import __version__ as AOMS_VERSION
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_AGENT_ID = "default"
+DEFAULT_WORKSPACE_ID = "default"
 
 RECALL_DESCRIPTION = (
     "Call recall before starting or resuming substantive work when prior decisions, "
@@ -84,29 +89,22 @@ TextRenderer = Callable[[RequestT, ResultT], str]
 
 
 @dataclass(frozen=True, slots=True)
-class ProcessScopeBinding:
-    """Identity captured once at process startup for the future scope boundary."""
-
-    agent_id: str | None
-    workspace: str | None
-
-    @classmethod
-    def from_environ(cls, environ: Mapping[str, str]) -> ProcessScopeBinding:
-        def configured(name: str) -> str | None:
-            value = environ.get(name, "").strip()
-            return value or None
-
-        return cls(
-            agent_id=configured("AOMS_AGENT_ID"),
-            workspace=configured("AOMS_WORKSPACE"),
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class MCPRuntime:
     application: AOMSApplication
     settings: AOMSSettings | None
-    scope_binding: ProcessScopeBinding
+    scope_context: ScopeContext
+
+
+def _scope_context_from_environ(environ: Mapping[str, str]) -> ScopeContext:
+    """Bind identity once, with single-user defaults for unset values."""
+
+    def configured(name: str, default: str) -> str:
+        return environ.get(name, "").strip() or default
+
+    return ScopeContext(
+        agent_id=configured("AOMS_AGENT_ID", DEFAULT_AGENT_ID),
+        workspace_id=configured("AOMS_WORKSPACE", DEFAULT_WORKSPACE_ID),
+    )
 
 
 def _parameter_signature(
@@ -208,7 +206,9 @@ def _search_text(request: SearchRequest, result: SearchResult) -> str:
 
 
 def _application_from_settings(
-    settings: AOMSSettings, environ: Mapping[str, str]
+    settings: AOMSSettings,
+    environ: Mapping[str, str],
+    scope_context: ScopeContext,
 ) -> AOMSApplication:
     repository = SQLiteMemoryRepository(
         settings.db_path,
@@ -216,6 +216,7 @@ def _application_from_settings(
     )
     return AOMSApplication(
         repository,
+        scope_context=scope_context,
         embedding_provider=provider_from_config(environ),
     )
 
@@ -232,16 +233,20 @@ def create_server(
     """Create one process-bound FastMCP server, optionally with an injected app."""
 
     process_environ = dict(os.environ if environ is None else environ)
+    scope_context = _scope_context_from_environ(process_environ)
     resolved_settings = settings
     if application is None:
         resolved_settings = resolved_settings or AOMSSettings.load(process_environ)
-        application = _application_from_settings(resolved_settings, process_environ)
-    scope_binding = ProcessScopeBinding.from_environ(process_environ)
-    runtime = MCPRuntime(application, resolved_settings, scope_binding)
-
-    # TODO(scope-context): Pass Workstream A's ScopeContext, built solely from
-    # runtime.scope_binding, into AOMSApplication calls once that API lands.
-    # Never add agent_id or workspace parameters to the MCP tool contracts.
+        application = _application_from_settings(
+            resolved_settings,
+            process_environ,
+            scope_context,
+        )
+    elif application.scope_context != scope_context:
+        raise ValueError(
+            "injected application scope context must match the MCP process binding"
+        )
+    runtime = MCPRuntime(application, resolved_settings, scope_context)
 
     @asynccontextmanager
     async def lifespan(_: FastMCP):
@@ -249,8 +254,8 @@ def create_server(
         logger.info(
             "AOMS MCP ready (data_dir=%s, agent_id=%s, workspace=%s)",
             runtime.settings.data_dir if runtime.settings else "injected",
-            runtime.scope_binding.agent_id or "unbound",
-            runtime.scope_binding.workspace or "unbound",
+            runtime.scope_context.agent_id,
+            runtime.scope_context.workspace_id,
         )
         try:
             yield runtime
@@ -266,6 +271,8 @@ def create_server(
         log_level=log_level.upper(),  # type: ignore[arg-type]
         lifespan=lifespan,
     )
+    # FastMCP 1.29 does not expose its low-level Server's version parameter.
+    server._mcp_server.version = AOMS_VERSION
     server.add_tool(
         _contract_handler(
             name="recall",

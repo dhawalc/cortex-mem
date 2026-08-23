@@ -27,17 +27,23 @@ from aoms.contracts import (
     RememberRequest,
     RememberResult,
     Scope,
+    ScopeContext,
     SearchRequest,
     SearchResult,
 )
 from aoms.embeddings import NullProvider
 from aoms.recall import RecallEngine
 from aoms.repositories import SQLiteMemoryRepository
+from cortex_mem.__version__ import __version__
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT_PATH = Path(__file__).with_name("fixtures") / "mcp_tool_schemas.snapshot.json"
 FIXED_TIME = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 FIXED_RECEIPT_ID = UUID("11111111-2222-4333-8444-555555555555")
+PARITY_CONTEXT = ScopeContext(
+    agent_id="parity-agent",
+    workspace_id="parity-workspace",
+)
 
 CONTRACTS = {
     "recall": (RecallRequest, RecallResult),
@@ -81,6 +87,20 @@ async def test_stdio_handshake_contract_snapshot_and_tools_end_to_end(
             ),
         }
     )
+    repository = SQLiteMemoryRepository(data_dir / "aoms.sqlite3")
+    await repository.store(
+        MemoryRecord(
+            id="foreign-mcp-canary",
+            kind=MemoryKind.FACT,
+            content="FOREIGN_MCP_CANARY omega-zanzibar",
+            scope=Scope.AGENT_PRIVATE,
+            scope_agent_id="foreign-agent",
+            created_by_agent_id="foreign-agent",
+            provenance=Provenance(source="mcp-scope-fixture"),
+            created_at=FIXED_TIME,
+            updated_at=FIXED_TIME,
+        )
+    )
     parameters = StdioServerParameters(
         command=sys.executable,
         args=["-m", "aoms.adapters.mcp_server"],
@@ -96,6 +116,7 @@ async def test_stdio_handshake_contract_snapshot_and_tools_end_to_end(
                 listed = await session.list_tools()
 
                 assert initialized.serverInfo.name == "AOMS"
+                assert initialized.serverInfo.version == __version__
                 assert initialized.instructions == mcp_adapter.SERVER_INSTRUCTIONS
                 assert [tool.name for tool in listed.tools] == [
                     "recall",
@@ -145,6 +166,10 @@ async def test_stdio_handshake_contract_snapshot_and_tools_end_to_end(
                     remembered.structuredContent
                 )
                 assert remembered_model.created is True
+                assert remembered_model.record.scope_workspace_id == (
+                    "fixture-workspace"
+                )
+                assert remembered_model.record.created_by_agent_id == "fixture-agent"
                 assert "Created memory mcp-fixture-fact" in _tool_text(remembered)
 
                 searched = await session.call_tool(
@@ -170,6 +195,39 @@ async def test_stdio_handshake_contract_snapshot_and_tools_end_to_end(
                 ]
                 assert recalled_model.context in _tool_text(recalled)
 
+                canary_search = await session.call_tool(
+                    "search",
+                    {
+                        "query": "omega zanzibar",
+                        "scopes": ["agent-private"],
+                    },
+                )
+                canary_search_model = SearchResult.model_validate(
+                    canary_search.structuredContent
+                )
+                assert canary_search_model.items == []
+                assert canary_search_model.diagnostics["scope_filtered_count"] == 1
+                assert "FOREIGN_MCP_CANARY" not in json.dumps(
+                    canary_search.structuredContent
+                )
+
+                canary_recall = await session.call_tool(
+                    "recall",
+                    {
+                        "task": "omega zanzibar",
+                        "token_budget": 400,
+                        "scopes": ["agent-private"],
+                    },
+                )
+                canary_recall_model = RecallResult.model_validate(
+                    canary_recall.structuredContent
+                )
+                assert canary_recall_model.sources == []
+                assert canary_recall_model.diagnostics["scope_filtered_count"] == 1
+                assert "FOREIGN_MCP_CANARY" not in json.dumps(
+                    canary_recall.structuredContent
+                )
+
     assert (data_dir / "aoms.sqlite3").is_file()
     stderr_output = stderr_path.read_text()
     assert "AOMS MCP ready" in stderr_output
@@ -182,11 +240,13 @@ async def _fixture_application(db_path: Path) -> AOMSApplication:
     engine = RecallEngine(
         repository,
         embedding_provider=NullProvider(),
+        scope_context=PARITY_CONTEXT,
         clock=lambda: FIXED_TIME,
         timer=lambda: 10.0,
     )
     application = AOMSApplication(
         repository,
+        scope_context=PARITY_CONTEXT,
         recall_engine=engine,
         embedding_provider=NullProvider(),
         background_embeddings=False,
@@ -199,6 +259,8 @@ async def _fixture_application(db_path: Path) -> AOMSApplication:
                 content="Zephyr releases require an amber canary before rollout.",
                 tags=["zephyr", "release"],
                 scope=Scope.WORKSPACE,
+                scope_workspace_id=PARITY_CONTEXT.workspace_id,
+                created_by_agent_id=PARITY_CONTEXT.agent_id,
                 provenance=Provenance(source="parity-fixture"),
                 created_at=FIXED_TIME,
                 updated_at=FIXED_TIME,
@@ -209,6 +271,8 @@ async def _fixture_application(db_path: Path) -> AOMSApplication:
                 content="Skipping the amber canary caused a Zephyr rollback.",
                 tags=["zephyr", "failure"],
                 scope=Scope.WORKSPACE,
+                scope_workspace_id=PARITY_CONTEXT.workspace_id,
+                created_by_agent_id=PARITY_CONTEXT.agent_id,
                 provenance=Provenance(source="parity-fixture"),
                 created_at=FIXED_TIME,
                 updated_at=FIXED_TIME,
@@ -294,3 +358,10 @@ def test_transport_flag_selects_streamable_http(monkeypatch) -> None:
         == 0
     )
     assert transports == ["stdio", "streamable-http"]
+
+
+def test_process_scope_defaults_are_single_user_and_non_null() -> None:
+    assert mcp_adapter._scope_context_from_environ({}) == ScopeContext(
+        agent_id="default",
+        workspace_id="default",
+    )

@@ -112,6 +112,20 @@ curl -X POST http://localhost:9100/cortex/query \
 
 ## Agent Integration
 
+### MCP (AOMS v2)
+
+Run the FastMCP adapter over stdio with:
+
+```bash
+python -m aoms.adapters.mcp_server
+```
+
+The server binds identity once at process startup from `AOMS_AGENT_ID` and
+`AOMS_WORKSPACE`; identity is never accepted as a tool parameter. For a local
+single-user setup, either variable may be omitted and defaults to `default`.
+Set `AOMS_DATA_DIR` to choose the v2 SQLite fixture/data directory and
+`AOMS_EMBEDDING_PROVIDER=none` to disable embeddings.
+
 ### OpenClaw
 
 ```bash
