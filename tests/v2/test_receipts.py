@@ -7,15 +7,14 @@ import pytest
 
 from aoms.application import AOMSApplication
 from aoms.contracts import MemoryKind, MemoryRecord, Provenance, RecallRequest, Scope
+from aoms.embeddings import NullProvider
 from aoms.receipts import ENGINE_VERSION, RecallReceipt
 from aoms.repositories import SQLiteMemoryRepository
 
 
 @pytest.mark.asyncio
 async def test_receipt_emission_retrieval_and_retention_cap(tmp_path: Path) -> None:
-    repository = SQLiteMemoryRepository(
-        tmp_path / "aoms.sqlite3", receipt_retention=2
-    )
+    repository = SQLiteMemoryRepository(tmp_path / "aoms.sqlite3", receipt_retention=2)
     now = datetime.now(timezone.utc)
     await repository.store(
         MemoryRecord(
@@ -28,7 +27,7 @@ async def test_receipt_emission_retrieval_and_retention_cap(tmp_path: Path) -> N
             updated_at=now,
         )
     )
-    app = AOMSApplication(repository)
+    app = AOMSApplication(repository, embedding_provider=NullProvider())
 
     for query in ("orchid first", "orchid second", "orchid third"):
         result = await app.recall(RecallRequest(task=query, token_budget=300))
@@ -45,9 +44,11 @@ async def test_receipt_emission_retrieval_and_retention_cap(tmp_path: Path) -> N
     assert newest.selected[0].token_cost == newest.total_tokens
     assert newest.top_candidates[0].breakdown.keys() == {
         "fts",
+        "vector",
         "recency",
         "scope_specificity",
     }
+    assert newest.vector_coverage == 0.0
     assert RecallReceipt.model_validate_json(newest.model_dump_json()) == newest
 
 
@@ -62,7 +63,9 @@ async def test_read_only_real_import_recall_uses_separate_receipt_store(
     before = (real_db.stat().st_size, real_db.stat().st_mtime_ns)
     source = SQLiteMemoryRepository(real_db, read_only=True)
     receipts = SQLiteMemoryRepository(tmp_path / "receipts.sqlite3")
-    app = AOMSApplication(source, receipt_repository=receipts)
+    app = AOMSApplication(
+        source, receipt_repository=receipts, embedding_provider=NullProvider()
+    )
 
     result = await app.recall(
         RecallRequest(

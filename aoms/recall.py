@@ -1,16 +1,19 @@
 """Deterministic ranking and exact-token context packing for AOMS recall.
 
-Default ranking formula::
+Default ranking formula when a candidate has a current vector::
 
-    score = 0.65 * normalized_fts
-          + 0.25 * 2 ** (-age_days / 30)
+    score = 0.40 * normalized_fts
+          + 0.35 * cosine_similarity
+          + 0.15 * 2 ** (-age_days / 30)
           + 0.10 * scope_specificity
 
 ``normalized_fts`` is relative to the strongest FTS5 candidate in the pool.
 Scope specificity is 1.0 for agent-private, 0.7 for workspace, and 0.4 for
-user-global memory. Scorers are independent protocol implementations; the
-slice-3 embedding scorer can be added to the scorer list without changing any
-public contract or receipt shape.
+user-global memory. The 40/35 lexical/semantic split keeps exact task terms a
+slight plurality while letting paraphrases materially affect order. When a
+vector is unavailable, its weight is redistributed proportionally across the
+available scorers, preventing partial backfills from imposing a missing-vector
+penalty. Receipts store the effective weights and vector coverage.
 
 Packing uses tiktoken's ``cl100k_base`` BPE rather than a word/character
 approximation. It is a real, deterministic tokenizer available without a model
@@ -31,7 +34,14 @@ from uuid import uuid4
 
 import tiktoken
 
-from aoms.contracts import MemoryRecord, RecallRequest, RecallResult, RecallSource, Scope
+from aoms.contracts import (
+    MemoryRecord,
+    RecallRequest,
+    RecallResult,
+    RecallSource,
+    Scope,
+)
+from aoms.embeddings import EmbeddingProvider, NullProvider
 from aoms.receipts import (
     ENGINE_VERSION,
     CandidateScore,
@@ -85,13 +95,13 @@ class CandidateScorer(Protocol):
         candidate: RecallCandidate,
         request: RecallRequest,
         now: datetime,
-    ) -> float: ...
+    ) -> float | None: ...
 
 
 @dataclass(frozen=True, slots=True)
 class FTSScorer:
     name: str = "fts"
-    weight: float = 0.65
+    weight: float = 0.40
 
     def score(
         self,
@@ -105,7 +115,7 @@ class FTSScorer:
 @dataclass(frozen=True, slots=True)
 class RecencyScorer:
     name: str = "recency"
-    weight: float = 0.25
+    weight: float = 0.15
     half_life_days: float = 30.0
 
     def score(
@@ -138,6 +148,22 @@ class ScopeSpecificityScorer:
 
 
 @dataclass(frozen=True, slots=True)
+class EmbeddingScorer:
+    """Consume cosine evidence attached by the vector-capable repository."""
+
+    name: str = "vector"
+    weight: float = 0.35
+
+    def score(
+        self,
+        candidate: RecallCandidate,
+        request: RecallRequest,
+        now: datetime,
+    ) -> float | None:
+        return candidate.vector_score
+
+
+@dataclass(frozen=True, slots=True)
 class RankedCandidate:
     candidate: RecallCandidate
     total_score: float
@@ -156,7 +182,13 @@ class PackedMemory:
 class RecallRanker:
     def __init__(self, scorers: Sequence[CandidateScorer] | None = None):
         self.scorers = tuple(
-            scorers or (FTSScorer(), RecencyScorer(), ScopeSpecificityScorer())
+            scorers
+            or (
+                FTSScorer(),
+                EmbeddingScorer(),
+                RecencyScorer(),
+                ScopeSpecificityScorer(),
+            )
         )
         if not self.scorers:
             raise ValueError("at least one recall scorer is required")
@@ -173,12 +205,25 @@ class RecallRanker:
         ranked: list[RankedCandidate] = []
         for candidate in candidates:
             breakdown: dict[str, ScoreComponent] = {}
-            for scorer in self.scorers:
-                raw = min(1.0, max(0.0, float(scorer.score(candidate, request, now))))
-                contribution = raw * scorer.weight
+            scored = [
+                (scorer, scorer.score(candidate, request, now))
+                for scorer in self.scorers
+            ]
+            total_weight = sum(scorer.weight for scorer in self.scorers)
+            available_weight = sum(
+                scorer.weight for scorer, raw in scored if raw is not None
+            )
+            if available_weight <= 0:
+                raise ValueError("at least one scorer must be available per candidate")
+            scale = total_weight / available_weight
+            for scorer, raw_value in scored:
+                available = raw_value is not None
+                raw = min(1.0, max(0.0, float(raw_value))) if available else 0.0
+                effective_weight = scorer.weight * scale if available else 0.0
+                contribution = raw * effective_weight
                 breakdown[scorer.name] = ScoreComponent(
                     raw=raw,
-                    weight=scorer.weight,
+                    weight=effective_weight,
                     contribution=contribution,
                 )
             ranked.append(
@@ -359,6 +404,7 @@ class RecallEngine:
         candidate_limit: int = DEFAULT_CANDIDATE_LIMIT,
         receipt_top_n: int = DEFAULT_RECEIPT_TOP_N,
         rejected_sample_size: int = DEFAULT_REJECTED_SAMPLE_SIZE,
+        embedding_provider: EmbeddingProvider | None = None,
         clock: Callable[[], datetime] | None = None,
         timer: Callable[[], float] | None = None,
     ):
@@ -376,6 +422,7 @@ class RecallEngine:
         self.candidate_limit = candidate_limit
         self.receipt_top_n = receipt_top_n
         self.rejected_sample_size = rejected_sample_size
+        self.embedding_provider = embedding_provider or NullProvider()
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.timer = timer or time.perf_counter
 
@@ -387,8 +434,25 @@ class RecallEngine:
             if now.tzinfo is None
             else now.astimezone(timezone.utc)
         )
+        query_vector = None
+        vector_error = None
+        if self.embedding_provider.profile is not None:
+            try:
+                query_vector = await self.embedding_provider.embed_query(request.task)
+            except Exception as exc:  # noqa: BLE001 - semantic search is best-effort
+                vector_error = type(exc).__name__
         candidates = await self.repository.retrieve_recall_candidates(
-            request, limit=self.candidate_limit
+            request,
+            limit=self.candidate_limit,
+            query_vector=query_vector,
+            vector_profile=(
+                self.embedding_provider.profile if query_vector is not None else None
+            ),
+        )
+        vector_coverage = (
+            sum(item.vector_score is not None for item in candidates) / len(candidates)
+            if candidates
+            else 0.0
         )
         ranked = self.ranker.rank(candidates, request, now=now)
         context, packed, budget_rejections = self.packer.pack(
@@ -415,9 +479,9 @@ class RecallEngine:
             token_budget=request.token_budget,
             candidate_count=len(ranked),
             top_candidates=candidate_scores[: self.receipt_top_n],
-            rejected_sample=[
-                item for item in candidate_scores if not item.selected
-            ][: self.rejected_sample_size],
+            rejected_sample=[item for item in candidate_scores if not item.selected][
+                : self.rejected_sample_size
+            ],
             selected=[
                 SelectedMemory(
                     memory_id=item.ranked.candidate.record.id,
@@ -429,6 +493,7 @@ class RecallEngine:
             total_tokens=token_count,
             latency_ms=latency_ms,
             engine_version=ENGINE_VERSION,
+            vector_coverage=vector_coverage,
         )
         await self.receipt_repository.save_recall_receipt(receipt)
 
@@ -456,8 +521,16 @@ class RecallEngine:
                 "candidate_count": len(ranked),
                 "selected_count": len(packed),
                 "tokenizer": self.tokenizer.name,
+                "vector_coverage": vector_coverage,
+                "vector_profile": (
+                    self.embedding_provider.profile.key
+                    if self.embedding_provider.profile is not None
+                    else None
+                ),
+                "vector_error": vector_error,
                 "scoring_formula": (
-                    "0.65*fts + 0.25*2^(-age_days/30) + 0.10*scope_specificity"
+                    "0.40*fts + 0.35*vector + 0.15*2^(-age_days/30) "
+                    "+ 0.10*scope_specificity; unavailable weights renormalized"
                 ),
             },
         )
@@ -473,7 +546,9 @@ class RecallEngine:
         selected = record.id in selected_by_id
         reason = None
         if not selected:
-            reason = "token_budget" if record.id in budget_rejections else "not_selected"
+            reason = (
+                "token_budget" if record.id in budget_rejections else "not_selected"
+            )
         return CandidateScore(
             memory_id=record.id,
             kind=record.kind,
@@ -490,6 +565,7 @@ class RecallEngine:
 __all__ = [
     "BudgetPacker",
     "CandidateScorer",
+    "EmbeddingScorer",
     "RecallEngine",
     "RecallRanker",
     "TiktokenTokenizer",

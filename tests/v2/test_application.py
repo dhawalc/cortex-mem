@@ -10,12 +10,16 @@ from aoms.contracts import (
     Scope,
     SearchRequest,
 )
+from aoms.embeddings import NullProvider
 from aoms.repositories import SQLiteMemoryRepository
 
 
 @pytest.mark.asyncio
 async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
-    app = AOMSApplication(SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"))
+    app = AOMSApplication(
+        SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"),
+        embedding_provider=NullProvider(),
+    )
     request = RememberRequest(
         id="stable-id",
         kind=MemoryKind.FACT,
@@ -25,7 +29,9 @@ async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
     )
 
     created = await app.remember(request)
-    updated = await app.remember(request.model_copy(update={"content": "Marmalade was updated"}))
+    updated = await app.remember(
+        request.model_copy(update={"content": "Marmalade was updated"})
+    )
     results = await app.search(SearchRequest(query="marmalade"))
 
     assert created.created is True
@@ -37,7 +43,10 @@ async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_recall_emits_an_empty_receipt_for_an_empty_store(tmp_path: Path) -> None:
-    app = AOMSApplication(SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"))
+    app = AOMSApplication(
+        SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"),
+        embedding_provider=NullProvider(),
+    )
 
     result = await app.recall(RecallRequest(task="Pack context", token_budget=100))
     receipts = await app.recent_recall_receipts()

@@ -1,4 +1,4 @@
-"""SQLite/WAL repository for canonical AOMS records.
+"""SQLite/WAL repository for canonical AOMS records and semantic vectors.
 
 The implementation uses the standard-library ``sqlite3`` driver and runs each
 short database operation with ``asyncio.to_thread``. This keeps the public API
@@ -6,18 +6,29 @@ async-friendly without introducing an additional runtime dependency, while a
 fresh connection per operation avoids sharing SQLite connections across worker
 threads. WAL mode and a busy timeout allow concurrent readers and serialized
 writes.
+
+Vectors use ``sqlite-vec`` rather than a separate Chroma directory. sqlite-vec
+is pre-1.0 but has a small, dependency-free native extension, exact cosine KNN,
+and keeps records, the durable embedding queue, and vectors in one WAL-backed
+database. This is operationally safer for the local-first product than two
+stores with independent backup and consistency boundaries. Tables are created
+per dimension because vec0 dimensions are fixed; provider/model partition keys
+prevent accidentally comparing mathematically incompatible embeddings.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import math
 import re
 import sqlite3
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from aoms.contracts import (
     MemoryKind,
@@ -28,10 +39,16 @@ from aoms.contracts import (
     SearchRequest,
     SearchResult,
 )
+from aoms.embeddings import EmbeddingProfile, EmbeddingVector
 from aoms.receipts import RecallReceipt
-from aoms.repositories.base import RecallCandidate
+from aoms.repositories.base import (
+    CompletedEmbedding,
+    PendingEmbedding,
+    RecallCandidate,
+    VectorHit,
+)
 
-LATEST_SCHEMA_VERSION = 2
+LATEST_SCHEMA_VERSION = 3
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -63,6 +80,30 @@ MIGRATIONS: dict[int, str] = {
         CREATE INDEX IF NOT EXISTS idx_recall_receipts_created_at
             ON recall_receipts(created_at DESC, receipt_id DESC);
     """,
+    3: """
+        CREATE TABLE IF NOT EXISTS vector_profiles (
+            profile_key TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            dimensions INTEGER NOT NULL CHECK(dimensions > 0),
+            created_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS embedding_pending (
+            profile_key TEXT NOT NULL,
+            record_id TEXT NOT NULL,
+            record_updated_at TEXT NOT NULL,
+            enqueued_at TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            claim_token TEXT,
+            claimed_at TEXT,
+            PRIMARY KEY(profile_key, record_id),
+            FOREIGN KEY(profile_key) REFERENCES vector_profiles(profile_key),
+            FOREIGN KEY(record_id) REFERENCES memories(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_embedding_pending_claim
+            ON embedding_pending(profile_key, claimed_at, enqueued_at, record_id);
+    """,
 }
 
 
@@ -83,6 +124,7 @@ class SQLiteMemoryRepository:
         self.receipt_retention = receipt_retention
         self._initialized = False
         self._initialize_lock = asyncio.Lock()
+        self._sqlite_vec_available: bool | None = None
 
     async def initialize(self) -> None:
         if self._initialized:
@@ -104,6 +146,7 @@ class SQLiteMemoryRepository:
             uri=self.read_only,
         )
         connection.row_factory = sqlite3.Row
+        self._load_sqlite_vec(connection)
         if self.read_only:
             connection.execute("PRAGMA query_only = ON")
         else:
@@ -111,6 +154,23 @@ class SQLiteMemoryRepository:
         connection.execute("PRAGMA busy_timeout = 30000")
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
+
+    def _load_sqlite_vec(self, connection: sqlite3.Connection) -> None:
+        """Load the packaged extension without making core SQLite unavailable."""
+
+        try:
+            import sqlite_vec
+
+            connection.enable_load_extension(True)
+            sqlite_vec.load(connection)
+            connection.enable_load_extension(False)
+            self._sqlite_vec_available = True
+        except (ImportError, sqlite3.Error):
+            try:
+                connection.enable_load_extension(False)
+            except (AttributeError, sqlite3.Error):
+                pass
+            self._sqlite_vec_available = False
 
     def _initialize_sync(self) -> None:
         if self.read_only:
@@ -138,7 +198,9 @@ class SQLiteMemoryRepository:
             )
             applied = {
                 row["version"]
-                for row in connection.execute("SELECT version FROM schema_version").fetchall()
+                for row in connection.execute(
+                    "SELECT version FROM schema_version"
+                ).fetchall()
             }
             for version in sorted(MIGRATIONS):
                 if version in applied:
@@ -167,6 +229,16 @@ class SQLiteMemoryRepository:
         await asyncio.to_thread(self._store_many_sync, [record])
         return record
 
+    async def store_with_embedding_pending(
+        self, record: MemoryRecord, profile: EmbeddingProfile
+    ) -> MemoryRecord:
+        """Commit the canonical write and its durable embedding work atomically."""
+
+        self._require_writable()
+        await self.initialize()
+        await asyncio.to_thread(self._store_many_sync, [record], profile)
+        return record
+
     async def store_many(self, records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
         self._require_writable()
         materialized = list(records)
@@ -176,8 +248,14 @@ class SQLiteMemoryRepository:
         await asyncio.to_thread(self._store_many_sync, materialized)
         return materialized
 
-    def _store_many_sync(self, records: Sequence[MemoryRecord]) -> None:
+    def _store_many_sync(
+        self,
+        records: Sequence[MemoryRecord],
+        embedding_profile: EmbeddingProfile | None = None,
+    ) -> None:
         with self._connect() as connection:
+            if embedding_profile is not None:
+                self._register_profile(connection, embedding_profile)
             for record in records:
                 serialized = record.model_dump_json()
                 content_text = (
@@ -205,11 +283,15 @@ class SQLiteMemoryRepository:
                         serialized,
                     ),
                 )
-                connection.execute("DELETE FROM memories_fts WHERE id = ?", (record.id,))
+                connection.execute(
+                    "DELETE FROM memories_fts WHERE id = ?", (record.id,)
+                )
                 connection.execute(
                     "INSERT INTO memories_fts(id, content, tags, kind) VALUES (?, ?, ?, ?)",
                     (record.id, content_text, " ".join(record.tags), record.kind.value),
                 )
+                if embedding_profile is not None:
+                    self._enqueue_record(connection, record, embedding_profile)
             connection.commit()
 
     async def get(self, record_id: str) -> MemoryRecord | None:
@@ -302,11 +384,19 @@ class SQLiteMemoryRepository:
         return SearchResult(
             items=items,
             total=total,
-            diagnostics={"strategy": "fts5", "query_tokens": len(expression.split(" AND "))},
+            diagnostics={
+                "strategy": "fts5",
+                "query_tokens": len(expression.split(" AND ")),
+            },
         )
 
     async def retrieve_recall_candidates(
-        self, request: RecallRequest, *, limit: int = 100
+        self,
+        request: RecallRequest,
+        *,
+        limit: int = 100,
+        query_vector: EmbeddingVector | None = None,
+        vector_profile: EmbeddingProfile | None = None,
     ) -> list[RecallCandidate]:
         """Return the union of OR-FTS hits and newest records from each kind.
 
@@ -318,10 +408,20 @@ class SQLiteMemoryRepository:
         if limit < 1:
             raise ValueError("limit must be at least 1")
         await self.initialize()
-        return await asyncio.to_thread(self._retrieve_recall_candidates_sync, request, limit)
+        return await asyncio.to_thread(
+            self._retrieve_recall_candidates_sync,
+            request,
+            limit,
+            query_vector,
+            vector_profile,
+        )
 
     def _retrieve_recall_candidates_sync(
-        self, request: RecallRequest, limit: int
+        self,
+        request: RecallRequest,
+        limit: int,
+        query_vector: EmbeddingVector | None,
+        vector_profile: EmbeddingProfile | None,
     ) -> list[RecallCandidate]:
         expression = self._recall_fts_expression(request.task)
         fts_rows: list[sqlite3.Row] = []
@@ -344,7 +444,9 @@ class SQLiteMemoryRepository:
             candidates: dict[str, dict[str, Any]] = {}
             strengths = [max(0.0, -float(row["rank"])) for row in fts_rows]
             strongest = max(strengths, default=0.0)
-            for position, (row, strength) in enumerate(zip(fts_rows, strengths, strict=True)):
+            for position, (row, strength) in enumerate(
+                zip(fts_rows, strengths, strict=True)
+            ):
                 record = self._record_from_row(row)
                 normalized = (
                     strength / strongest if strongest > 0.0 else 1.0 / (position + 1)
@@ -352,8 +454,38 @@ class SQLiteMemoryRepository:
                 candidates[record.id] = {
                     "record": record,
                     "fts_score": normalized,
+                    "vector_score": None,
                     "sources": {"fts"},
                 }
+
+            if query_vector is not None and vector_profile is not None:
+                vector_hits = self._vector_knn_with_connection(
+                    connection,
+                    query_vector,
+                    vector_profile,
+                    limit=limit,
+                    kinds=request.kinds,
+                    scopes=request.scopes,
+                )
+                for hit in vector_hits:
+                    row = connection.execute(
+                        "SELECT record_json FROM memories WHERE id = ?",
+                        (hit.memory_id,),
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    record = self._record_from_row(row)
+                    existing = candidates.setdefault(
+                        record.id,
+                        {
+                            "record": record,
+                            "fts_score": 0.0,
+                            "vector_score": None,
+                            "sources": set(),
+                        },
+                    )
+                    existing["vector_score"] = hit.score
+                    existing["sources"].add("vector")
 
             kinds = request.kinds or list(MemoryKind)
             for kind in kinds:
@@ -370,7 +502,12 @@ class SQLiteMemoryRepository:
                     record = self._record_from_row(row)
                     existing = candidates.setdefault(
                         record.id,
-                        {"record": record, "fts_score": 0.0, "sources": set()},
+                        {
+                            "record": record,
+                            "fts_score": 0.0,
+                            "vector_score": None,
+                            "sources": set(),
+                        },
                     )
                     existing["sources"].add("recent-kind")
 
@@ -379,9 +516,307 @@ class SQLiteMemoryRepository:
                 record=value["record"],
                 fts_score=float(value["fts_score"]),
                 retrieval_sources=tuple(sorted(value["sources"])),
+                vector_score=value["vector_score"],
             )
             for value in candidates.values()
         ]
+
+    async def upsert_vector(
+        self,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+        vector: EmbeddingVector,
+    ) -> None:
+        self._require_writable()
+        await self.initialize()
+        await asyncio.to_thread(self._upsert_vector_sync, record, profile, vector)
+
+    def _upsert_vector_sync(
+        self,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+        vector: EmbeddingVector,
+    ) -> None:
+        with self._connect() as connection:
+            self._register_profile(connection, profile)
+            self._upsert_vector_with_connection(connection, record, profile, vector)
+            connection.commit()
+
+    async def vector_knn(
+        self,
+        vector: EmbeddingVector,
+        profile: EmbeddingProfile,
+        *,
+        limit: int,
+        kinds: Sequence[MemoryKind] | None = None,
+        scopes: Sequence[Scope] | None = None,
+    ) -> list[VectorHit]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._vector_knn_sync, vector, profile, limit, kinds, scopes
+        )
+
+    def _vector_knn_sync(
+        self,
+        vector: EmbeddingVector,
+        profile: EmbeddingProfile,
+        limit: int,
+        kinds: Sequence[MemoryKind] | None,
+        scopes: Sequence[Scope] | None,
+    ) -> list[VectorHit]:
+        with self._connect() as connection:
+            return self._vector_knn_with_connection(
+                connection,
+                vector,
+                profile,
+                limit=limit,
+                kinds=kinds,
+                scopes=scopes,
+            )
+
+    def _vector_knn_with_connection(
+        self,
+        connection: sqlite3.Connection,
+        vector: EmbeddingVector,
+        profile: EmbeddingProfile,
+        *,
+        limit: int,
+        kinds: Sequence[MemoryKind] | None,
+        scopes: Sequence[Scope] | None,
+    ) -> list[VectorHit]:
+        self._validate_vector(profile, vector)
+        if not self._sqlite_vec_available:
+            return []
+        table = self._vector_table(profile.dimensions)
+        if not self._table_exists(connection, table):
+            return []
+        requested_kinds = list(kinds) if kinds else list(MemoryKind)
+        requested_scopes = list(scopes) if scopes else list(Scope)
+        serialized = json.dumps(vector, separators=(",", ":"))
+        best: dict[str, float] = {}
+        for kind in requested_kinds:
+            for scope in requested_scopes:
+                namespace = self._vector_namespace(kind, scope)
+                rows = connection.execute(
+                    f"SELECT memory_id, distance FROM {table} "
+                    "WHERE embedding MATCH ? AND k = ? "
+                    "AND profile_key = ? AND namespace = ? "
+                    "ORDER BY distance",
+                    (serialized, limit, profile.key, namespace),
+                ).fetchall()
+                for row in rows:
+                    score = min(1.0, max(0.0, 1.0 - float(row["distance"])))
+                    best[row["memory_id"]] = max(best.get(row["memory_id"], 0.0), score)
+        ordered = sorted(best.items(), key=lambda item: (-item[1], item[0]))
+        return [
+            VectorHit(memory_id=memory_id, score=score)
+            for memory_id, score in ordered[:limit]
+        ]
+
+    async def claim_pending_embeddings(
+        self,
+        profile: EmbeddingProfile,
+        *,
+        limit: int,
+        lease_seconds: int = 300,
+    ) -> list[PendingEmbedding]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        if lease_seconds < 1:
+            raise ValueError("lease_seconds must be at least 1")
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._claim_pending_embeddings_sync, profile, limit, lease_seconds
+        )
+
+    def _claim_pending_embeddings_sync(
+        self, profile: EmbeddingProfile, limit: int, lease_seconds: int
+    ) -> list[PendingEmbedding]:
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(seconds=lease_seconds)
+        claim_token = str(uuid4())
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                "SELECT p.record_id, p.attempts, m.record_json "
+                "FROM embedding_pending AS p "
+                "JOIN memories AS m ON m.id = p.record_id "
+                "WHERE p.profile_key = ? "
+                "AND (p.claimed_at IS NULL OR p.claimed_at < ?) "
+                "ORDER BY p.enqueued_at, p.record_id LIMIT ?",
+                (profile.key, cutoff.isoformat(), limit),
+            ).fetchall()
+            record_ids = [row["record_id"] for row in rows]
+            if record_ids:
+                placeholders = ", ".join("?" for _ in record_ids)
+                connection.execute(
+                    f"UPDATE embedding_pending SET claim_token = ?, claimed_at = ? "
+                    f"WHERE profile_key = ? AND record_id IN ({placeholders})",
+                    (claim_token, now.isoformat(), profile.key, *record_ids),
+                )
+            connection.commit()
+        return [
+            PendingEmbedding(
+                record=self._record_from_row(row),
+                profile=profile,
+                claim_token=claim_token,
+                attempts=int(row["attempts"]),
+            )
+            for row in rows
+        ]
+
+    async def complete_pending_embeddings(
+        self, completed: Sequence[CompletedEmbedding]
+    ) -> int:
+        materialized = list(completed)
+        if not materialized:
+            return 0
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._complete_pending_embeddings_sync, materialized
+        )
+
+    def _complete_pending_embeddings_sync(
+        self, completed: Sequence[CompletedEmbedding]
+    ) -> int:
+        count = 0
+        with self._connect() as connection:
+            for item in completed:
+                pending = item.pending
+                row = connection.execute(
+                    "SELECT updated_at FROM memories WHERE id = ?",
+                    (pending.record.id,),
+                ).fetchone()
+                if (
+                    row is None
+                    or row["updated_at"] != pending.record.updated_at.isoformat()
+                ):
+                    continue
+                self._register_profile(connection, pending.profile)
+                self._upsert_vector_with_connection(
+                    connection, pending.record, pending.profile, item.vector
+                )
+                cursor = connection.execute(
+                    "DELETE FROM embedding_pending WHERE profile_key = ? "
+                    "AND record_id = ? AND record_updated_at = ? AND claim_token = ?",
+                    (
+                        pending.profile.key,
+                        pending.record.id,
+                        pending.record.updated_at.isoformat(),
+                        pending.claim_token,
+                    ),
+                )
+                count += cursor.rowcount
+            connection.commit()
+        return count
+
+    async def fail_pending_embeddings(
+        self, pending: Sequence[PendingEmbedding], error: str
+    ) -> int:
+        materialized = list(pending)
+        if not materialized:
+            return 0
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._fail_pending_embeddings_sync, materialized, error[:2_000]
+        )
+
+    def _fail_pending_embeddings_sync(
+        self, pending: Sequence[PendingEmbedding], error: str
+    ) -> int:
+        count = 0
+        with self._connect() as connection:
+            for item in pending:
+                cursor = connection.execute(
+                    "UPDATE embedding_pending SET attempts = attempts + 1, "
+                    "last_error = ?, claim_token = NULL, claimed_at = NULL "
+                    "WHERE profile_key = ? AND record_id = ? AND claim_token = ?",
+                    (error, item.profile.key, item.record.id, item.claim_token),
+                )
+                count += cursor.rowcount
+            connection.commit()
+        return count
+
+    async def scan_records_for_embedding(
+        self,
+        profile: EmbeddingProfile,
+        *,
+        after_id: str | None,
+        limit: int,
+    ) -> tuple[list[MemoryRecord], str | None, int]:
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._scan_records_for_embedding_sync, profile, after_id, limit
+        )
+
+    def _scan_records_for_embedding_sync(
+        self, profile: EmbeddingProfile, after_id: str | None, limit: int
+    ) -> tuple[list[MemoryRecord], str | None, int]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT id, updated_at, record_json FROM memories "
+                "WHERE (? IS NULL OR id > ?) ORDER BY id LIMIT ?",
+                (after_id, after_id, limit),
+            ).fetchall()
+            if not rows:
+                return [], None, 0
+            table = self._vector_table(profile.dimensions)
+            table_exists = self._sqlite_vec_available and self._table_exists(
+                connection, table
+            )
+            records: list[MemoryRecord] = []
+            for row in rows:
+                current = None
+                if table_exists:
+                    current = connection.execute(
+                        f"SELECT record_updated_at FROM {table} WHERE vector_id = ?",
+                        (self._vector_id(profile, row["id"]),),
+                    ).fetchone()
+                if current is None or current["record_updated_at"] != row["updated_at"]:
+                    records.append(self._record_from_row(row))
+            return records, rows[-1]["id"], len(rows)
+
+    async def enqueue_unembedded(
+        self, records: Sequence[MemoryRecord], profile: EmbeddingProfile
+    ) -> int:
+        materialized = list(records)
+        if not materialized:
+            return 0
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._enqueue_unembedded_sync, materialized, profile
+        )
+
+    def _enqueue_unembedded_sync(
+        self, records: Sequence[MemoryRecord], profile: EmbeddingProfile
+    ) -> int:
+        count = 0
+        with self._connect() as connection:
+            self._register_profile(connection, profile)
+            for record in records:
+                count += self._enqueue_record(connection, record, profile)
+            connection.commit()
+        return count
+
+    async def pending_embedding_count(self, profile: EmbeddingProfile) -> int:
+        await self.initialize()
+        return await asyncio.to_thread(self._pending_embedding_count_sync, profile)
+
+    def _pending_embedding_count_sync(self, profile: EmbeddingProfile) -> int:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count FROM embedding_pending WHERE profile_key = ?",
+                (profile.key,),
+            ).fetchone()
+        return int(row["count"])
 
     async def save_recall_receipt(self, receipt: RecallReceipt) -> None:
         self._require_writable()
@@ -492,6 +927,127 @@ class SQLiteMemoryRepository:
             if len(tokens) == 32:
                 break
         return " OR ".join(f'"{token}"' for token in tokens)
+
+    @staticmethod
+    def _register_profile(
+        connection: sqlite3.Connection, profile: EmbeddingProfile
+    ) -> None:
+        connection.execute(
+            "INSERT INTO vector_profiles(profile_key, provider, model, dimensions, created_at) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT(profile_key) DO NOTHING",
+            (
+                profile.key,
+                profile.provider,
+                profile.model,
+                profile.dimensions,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+
+    @staticmethod
+    def _vector_table(dimensions: int) -> str:
+        if dimensions < 1 or dimensions > 65_536:
+            raise ValueError("embedding dimensions must be between 1 and 65536")
+        return f"memory_vectors_{dimensions}"
+
+    @staticmethod
+    def _vector_id(profile: EmbeddingProfile, record_id: str) -> str:
+        return hashlib.sha256(f"{profile.key}\0{record_id}".encode()).hexdigest()
+
+    @staticmethod
+    def _vector_namespace(kind: MemoryKind, scope: Scope) -> str:
+        return f"{kind.value}|{scope.value}"
+
+    @staticmethod
+    def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
+        return (
+            connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (table,),
+            ).fetchone()
+            is not None
+        )
+
+    def _ensure_vector_table(
+        self, connection: sqlite3.Connection, profile: EmbeddingProfile
+    ) -> str:
+        if not self._sqlite_vec_available:
+            raise RuntimeError(
+                "sqlite-vec is unavailable; install sqlite-vec to persist embeddings"
+            )
+        table = self._vector_table(profile.dimensions)
+        connection.execute(
+            f"CREATE VIRTUAL TABLE IF NOT EXISTS {table} USING vec0("
+            "vector_id TEXT PRIMARY KEY, "
+            f"embedding FLOAT[{profile.dimensions}] distance_metric=cosine, "
+            "profile_key TEXT PARTITION KEY, "
+            "namespace TEXT PARTITION KEY, "
+            "+memory_id TEXT, "
+            "+record_updated_at TEXT)"
+        )
+        return table
+
+    @staticmethod
+    def _validate_vector(profile: EmbeddingProfile, vector: Sequence[float]) -> None:
+        if len(vector) != profile.dimensions:
+            raise ValueError(
+                f"vector has {len(vector)} dimensions; expected {profile.dimensions}"
+            )
+        if not all(math.isfinite(float(value)) for value in vector):
+            raise ValueError("vector values must be finite")
+
+    def _upsert_vector_with_connection(
+        self,
+        connection: sqlite3.Connection,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+        vector: EmbeddingVector,
+    ) -> None:
+        self._validate_vector(profile, vector)
+        table = self._ensure_vector_table(connection, profile)
+        vector_id = self._vector_id(profile, record.id)
+        connection.execute(f"DELETE FROM {table} WHERE vector_id = ?", (vector_id,))
+        connection.execute(
+            f"INSERT INTO {table}("
+            "vector_id, embedding, profile_key, namespace, memory_id, record_updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                vector_id,
+                json.dumps(vector, separators=(",", ":")),
+                profile.key,
+                self._vector_namespace(record.kind, record.scope),
+                record.id,
+                record.updated_at.isoformat(),
+            ),
+        )
+
+    def _enqueue_record(
+        self,
+        connection: sqlite3.Connection,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+    ) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        existing = connection.execute(
+            "SELECT record_updated_at FROM embedding_pending "
+            "WHERE profile_key = ? AND record_id = ?",
+            (profile.key, record.id),
+        ).fetchone()
+        connection.execute(
+            "INSERT INTO embedding_pending("
+            "profile_key, record_id, record_updated_at, enqueued_at"
+            ") VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(profile_key, record_id) DO UPDATE SET "
+            "record_updated_at = excluded.record_updated_at, "
+            "enqueued_at = excluded.enqueued_at, attempts = 0, last_error = NULL, "
+            "claim_token = NULL, claimed_at = NULL "
+            "WHERE embedding_pending.record_updated_at != excluded.record_updated_at",
+            (profile.key, record.id, record.updated_at.isoformat(), now),
+        )
+        return int(
+            existing is None
+            or existing["record_updated_at"] != record.updated_at.isoformat()
+        )
 
     def _require_writable(self) -> None:
         if self.read_only:

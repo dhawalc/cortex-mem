@@ -25,6 +25,10 @@ class AOMSSettings(BaseModel):
     data_dir: Path
     db_path: Path
     receipt_retention: int = Field(default=1_000, ge=1)
+    embedding_provider: str = "fastembed"
+    embedding_model: str | None = None
+    embedding_dimensions: int | None = Field(default=None, ge=1)
+    ollama_url: str = "http://localhost:11434"
 
     @classmethod
     def load(cls, environ: Mapping[str, str] | None = None) -> AOMSSettings:
@@ -43,4 +47,14 @@ class AOMSSettings(BaseModel):
             data_dir=data_dir,
             db_path=data_dir / "aoms.sqlite3",
             receipt_retention=receipt_retention,
+            embedding_provider=env.get("AOMS_EMBEDDING_PROVIDER", "fastembed")
+            .strip()
+            .casefold(),
+            embedding_model=env.get("AOMS_EMBEDDING_MODEL"),
+            embedding_dimensions=(
+                int(env["AOMS_EMBEDDING_DIMENSIONS"])
+                if "AOMS_EMBEDDING_DIMENSIONS" in env
+                else None
+            ),
+            ollama_url=env.get("AOMS_OLLAMA_URL", "http://localhost:11434"),
         )

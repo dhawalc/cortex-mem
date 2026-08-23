@@ -73,6 +73,7 @@ class RecallReceipt(ContractModel):
     total_tokens: int = Field(ge=0)
     latency_ms: float = Field(ge=0.0)
     engine_version: str
+    vector_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
 
     @field_validator("created_at")
     @classmethod
@@ -81,9 +82,9 @@ class RecallReceipt(ContractModel):
 
 
 __all__ = [
-    "CandidateScore",
     "ENGINE_VERSION",
     "RECEIPT_SCHEMA_VERSION",
+    "CandidateScore",
     "RecallReceipt",
     "ScoreComponent",
     "SelectedMemory",
