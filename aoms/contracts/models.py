@@ -136,6 +136,16 @@ class RecallSource(ContractModel):
     kind: MemoryKind
     provenance: Provenance
     excerpt: str | None = None
+    scope: Scope | None = None
+    timestamp: datetime | None = None
+    token_count: int | None = Field(default=None, ge=0)
+    score: float | None = Field(default=None, ge=0.0)
+    truncated: bool = False
+
+    @field_validator("timestamp")
+    @classmethod
+    def timestamp_is_utc(cls, value: datetime | None) -> datetime | None:
+        return _ensure_aware(value) if value is not None else None
 
 
 class RecallResult(ContractModel):

@@ -16,11 +16,23 @@ from aoms.contracts import (
     SearchResult,
 )
 from aoms.repositories.base import MemoryRepository
+from aoms.receipts import RecallReceipt
+from aoms.recall import RecallEngine
 
 
 class AOMSApplication:
-    def __init__(self, repository: MemoryRepository):
+    def __init__(
+        self,
+        repository: MemoryRepository,
+        *,
+        receipt_repository: MemoryRepository | None = None,
+        recall_engine: RecallEngine | None = None,
+    ):
         self.repository = repository
+        self.receipt_repository = receipt_repository or repository
+        self.recall_engine = recall_engine or RecallEngine(
+            repository, self.receipt_repository
+        )
 
     async def remember(self, request: RememberRequest) -> RememberResult:
         await self.repository.initialize()
@@ -46,6 +58,9 @@ class AOMSApplication:
         return await self.repository.search_by_keyword(request)
 
     async def recall(self, request: RecallRequest) -> RecallResult:
-        raise NotImplementedError(
-            "The recall engine is intentionally deferred to the next AOMS core slice."
-        )
+        return await self.recall_engine.recall(request)
+
+    async def recent_recall_receipts(self, *, limit: int = 20) -> list[RecallReceipt]:
+        """Return newest receipts for inspection and generated proof artifacts."""
+
+        return await self.receipt_repository.recent_recall_receipts(limit=limit)

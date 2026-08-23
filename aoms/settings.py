@@ -6,7 +6,7 @@ import os
 from collections.abc import Mapping
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 def _platform_data_dir() -> Path:
@@ -24,6 +24,7 @@ class AOMSSettings(BaseModel):
 
     data_dir: Path
     db_path: Path
+    receipt_retention: int = Field(default=1_000, ge=1)
 
     @classmethod
     def load(cls, environ: Mapping[str, str] | None = None) -> AOMSSettings:
@@ -33,4 +34,13 @@ class AOMSSettings(BaseModel):
             data_dir = Path(override).expanduser().resolve()
         else:
             data_dir = _platform_data_dir().resolve()
-        return cls(data_dir=data_dir, db_path=data_dir / "aoms.sqlite3")
+        retention_text = env.get("AOMS_RECEIPT_RETENTION", "1000")
+        try:
+            receipt_retention = int(retention_text)
+        except ValueError as exc:
+            raise ValueError("AOMS_RECEIPT_RETENTION must be an integer") from exc
+        return cls(
+            data_dir=data_dir,
+            db_path=data_dir / "aoms.sqlite3",
+            receipt_retention=receipt_retention,
+        )
