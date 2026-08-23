@@ -50,7 +50,9 @@ stages:
         name: recall
         required: false
         arguments:
-          task: relay dispatch constraints event header retries ordering tokens
+          task: >-
+            relay dispatch constraints event header retries ordering tokens recursive
+            redaction nested lists
           token_budget: 1000
       - tool: file.write
         when_memory: enabled

@@ -2,13 +2,23 @@ from __future__ import annotations
 
 import json
 import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+import yaml
 
 from aoms.application import AOMSApplication
-from aoms.contracts import RecallRequest, ScopeContext
+from aoms.contracts import (
+    MemoryKind,
+    MemoryRecord,
+    Provenance,
+    RecallRequest,
+    Scope,
+    ScopeContext,
+)
 from aoms.embeddings import NullProvider
+from aoms.recall import RecallEngine
 from aoms.repositories import SQLiteMemoryRepository
 from demo.relay_fixture.seed import RELAY_WORKSPACE, load_scenario, seed_store
 from demo.relay_fixture.verify import verify_run
@@ -56,6 +66,26 @@ def _app(repository: SQLiteMemoryRepository, agent_id: str) -> AOMSApplication:
         scope_context=ScopeContext(agent_id=agent_id, workspace_id=RELAY_WORKSPACE),
         embedding_provider=NullProvider(),
         background_embeddings=False,
+    )
+
+
+def _workspace_record(
+    memory_id: str,
+    content: str,
+    *,
+    kind: MemoryKind,
+    timestamp: datetime,
+) -> MemoryRecord:
+    return MemoryRecord(
+        id=memory_id,
+        kind=kind,
+        content=content,
+        scope=Scope.WORKSPACE,
+        scope_workspace_id=RELAY_WORKSPACE,
+        created_by_agent_id="relay-planner",
+        provenance=Provenance(source="relay-ranking-regression"),
+        created_at=timestamp,
+        updated_at=timestamp,
     )
 
 
@@ -126,6 +156,68 @@ async def test_relay_seeder_and_verifier_round_trip(tmp_path: Path) -> None:
     assert "stage-2 selected all injected constraints" in report.checks
     assert "stage-3 selected the private regression clue" in report.checks
     assert "acceptance: durable idempotency" in report.checks
+
+
+@pytest.mark.asyncio
+async def test_implementer_query_keeps_constraints_ahead_of_delayed_handoff(
+    tmp_path: Path,
+) -> None:
+    """The proof must not depend on how quickly the planner subprocess runs."""
+
+    scenario = load_scenario()
+    script_path = Path(__file__).parents[2] / "demo" / "relay_fixture" / "scripted.yaml"
+    script = yaml.safe_load(script_path.read_text(encoding="utf-8"))
+    planner_calls = script["stages"]["planner"]["calls"]
+    implementer_calls = script["stages"]["implementer"]["calls"]
+    handoff = next(call for call in planner_calls if call.get("name") == "remember")
+    recall = next(call for call in implementer_calls if call.get("name") == "recall")
+    assert recall["arguments"]["task"] == scenario["stages"]["implementer"][
+        "recall_query"
+    ]
+
+    seeded_at = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+    handoff_at = seeded_at + timedelta(hours=1)
+    records = [
+        *(
+            _workspace_record(
+                item["memory_id"],
+                item["text"],
+                kind=MemoryKind.FACT,
+                timestamp=seeded_at,
+            )
+            for item in scenario["constraints"]
+        ),
+        _workspace_record(
+            scenario["tempting_wrong_approach"]["memory_id"],
+            scenario["tempting_wrong_approach"]["text"],
+            kind=MemoryKind.DECISION,
+            timestamp=seeded_at,
+        ),
+        _workspace_record(
+            handoff["arguments"]["id"],
+            handoff["arguments"]["content"],
+            kind=MemoryKind(handoff["arguments"]["kind"]),
+            timestamp=handoff_at,
+        ),
+    ]
+    repository = SQLiteMemoryRepository(tmp_path / "ranking.sqlite3")
+    await repository.store_many(records)
+    context = ScopeContext(
+        agent_id=scenario["stages"]["implementer"]["agent_id"],
+        workspace_id=RELAY_WORKSPACE,
+    )
+    engine = RecallEngine(
+        repository,
+        embedding_provider=NullProvider(),
+        scope_context=context,
+        clock=lambda: handoff_at + timedelta(minutes=1),
+    )
+
+    result = await engine.recall(RecallRequest(**recall["arguments"]))
+
+    selected_ids = {source.memory_id for source in result.sources}
+    constraint_ids = {item["memory_id"] for item in scenario["constraints"]}
+    assert constraint_ids <= selected_ids
 
 
 def test_constraints_are_not_present_in_the_tiny_repository() -> None:
