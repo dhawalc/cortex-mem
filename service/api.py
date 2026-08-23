@@ -18,6 +18,8 @@ from typing import Dict, Iterator, Optional
 import yaml
 from fastapi import FastAPI, HTTPException, Query
 
+from cortex_mem.__version__ import __version__
+
 from .models import (
     ConsolidateRequest,
     CortexIngest,
@@ -48,7 +50,7 @@ with open(CONFIG_PATH) as f:
 
 _raw_root = Path(config["storage"]["root"])
 MEMORY_ROOT = _raw_root if _raw_root.is_absolute() else (CONFIG_PATH.parent.parent / _raw_root).resolve()
-VERSION = "1.2.0"
+VERSION = __version__
 
 app = FastAPI(
     title="openclaw-memory",

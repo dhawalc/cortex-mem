@@ -14,9 +14,10 @@ from typing import Literal
 from pydantic import Field, field_validator
 
 from aoms.contracts.models import ContractModel, MemoryKind, Scope
+from cortex_mem.__version__ import __version__
 
 RECEIPT_SCHEMA_VERSION = 1
-ENGINE_VERSION = "2.0.0"
+ENGINE_VERSION = __version__
 
 
 def _utc(value: datetime) -> datetime:
