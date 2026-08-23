@@ -134,6 +134,8 @@ class MemoryRepository(Protocol):
         self, *, limit: int = 20
     ) -> list[RecallReceipt]: ...
 
+    async def prune_recall_receipts(self, *, keep: int | None = None) -> int: ...
+
     async def list(
         self,
         *,

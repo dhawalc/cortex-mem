@@ -873,6 +873,27 @@ class SQLiteMemoryRepository:
             ).fetchall()
         return [RecallReceipt.model_validate_json(row["receipt_json"]) for row in rows]
 
+    async def prune_recall_receipts(self, *, keep: int | None = None) -> int:
+        """Apply receipt retention immediately and return the number removed."""
+
+        self._require_writable()
+        keep = self.receipt_retention if keep is None else keep
+        if keep < 1:
+            raise ValueError("keep must be at least 1")
+        await self.initialize()
+        return await asyncio.to_thread(self._prune_recall_receipts_sync, keep)
+
+    def _prune_recall_receipts_sync(self, keep: int) -> int:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM recall_receipts WHERE receipt_id NOT IN ("
+                "SELECT receipt_id FROM recall_receipts "
+                "ORDER BY created_at DESC, receipt_id DESC LIMIT ?)",
+                (keep,),
+            )
+            connection.commit()
+        return cursor.rowcount
+
     @staticmethod
     def _filters(
         *,
