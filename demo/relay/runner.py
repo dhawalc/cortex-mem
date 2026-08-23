@@ -97,10 +97,6 @@ def _mcp_config(
     data_dir: Path,
     agent_id: str,
 ) -> None:
-    inherited_pythonpath = os.environ.get("PYTHONPATH")
-    pythonpath = os.pathsep.join(
-        item for item in (str(PROJECT_ROOT), inherited_pythonpath) if item
-    )
     server_command = [
         sys.executable,
         "-m",
@@ -116,7 +112,6 @@ def _mcp_config(
         "AOMS_LOG_LEVEL": "ERROR",
         "AOMS_WORKSPACE": RELAY_WORKSPACE,
         "PATH": os.environ.get("PATH", ""),
-        "PYTHONPATH": pythonpath,
     }
     payload = {
         "mcpServers": {
@@ -124,12 +119,13 @@ def _mcp_config(
                 "type": "stdio",
                 "command": sys.executable,
                 "args": [
-                    "-m",
-                    "demo.relay.mcp_proxy",
+                    str(PROJECT_ROOT / "demo" / "relay" / "mcp_proxy.py"),
                     "--traffic",
                     str(traffic_path),
                     "--server-command-json",
                     json.dumps(server_command),
+                    "--server-cwd",
+                    str(PROJECT_ROOT),
                 ],
                 "env": environment,
             }
