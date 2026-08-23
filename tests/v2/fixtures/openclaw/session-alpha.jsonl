@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"session-alpha","timestamp":"2026-08-23T10:00:00Z","cwd":"/fixture/workspace"}
+{"type":"message","id":"m1","timestamp":"2026-08-23T10:01:00Z","message":{"role":"user","content":[{"type":"text","text":"Background chatter that must never be stored.\nDecision: Use SQLite WAL for the canonical local store."}]}}
+{"type":"message","id":"m2","timestamp":"2026-08-23T10:02:00Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Failure: hidden reasoning is not text capture"},{"type":"text","text":"Learning: Bind agent and workspace identity from the process environment.\nFailure: Retrying transcript writes without a stable key created duplicates."}]}}
+{"type":"message","id":"m3","timestamp":"2026-08-23T10:03:00Z","message":{"role":"assistant","content":"Ordinary assistant prose is not a durable marker and must be skipped."}}
+{"type":"message","id":"m4","timestamp":"2026-08-23T10:04:00Z","message":{"role":"user","content":"Decision: api\u005fkey=fixture-secret-value must never be captured."}}
+not valid json

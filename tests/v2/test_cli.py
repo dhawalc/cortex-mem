@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -14,6 +15,8 @@ def run_cli(
     *arguments: str,
     data_dir: Path,
     check: bool = False,
+    input_text: str | None = None,
+    environ_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     environ = dict(os.environ)
     environ.update(
@@ -23,11 +26,13 @@ def run_cli(
             "PYTHONPATH": str(ROOT),
         }
     )
+    environ.update(environ_overrides or {})
     return subprocess.run(
         [sys.executable, "-m", "aoms.cli", *arguments],
         cwd=ROOT,
         env=environ,
         text=True,
+        input=input_text,
         capture_output=True,
         check=check,
     )
@@ -38,6 +43,8 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
     assert "Local-first shared memory for MCP agent fleets." in help_result.stdout
     for command in (
         "init",
+        "recall",
+        "remember",
         "doctor",
         "import",
         "backfill",
@@ -149,3 +156,66 @@ def test_doctor_missing_corrupt_and_empty_store_findings(tmp_path: Path) -> None
     assert "[WARN] Memory records: store is healthy but empty" in empty.stdout
     assert "[PASS] Receipt store" in empty.stdout
     assert "Doctor finished: 0 failure(s)" in empty.stdout
+
+
+def test_cli_recall_remember_round_trip_and_idempotency(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    binding = {
+        "AOMS_AGENT_ID": "cli-test-agent",
+        "AOMS_WORKSPACE": "cli-test-workspace",
+    }
+    run_cli("init", data_dir=data_dir, check=True)
+
+    created = run_cli(
+        "remember",
+        "--content",
+        "-",
+        "--kind",
+        "decision",
+        "--tags",
+        "release,marmalade",
+        "--idempotency-key",
+        "release-channel",
+        data_dir=data_dir,
+        input_text="Decision: deploy marmalade through the amber channel.",
+        environ_overrides=binding,
+        check=True,
+    )
+    updated = run_cli(
+        "remember",
+        "--content",
+        "Decision: deploy marmalade through the green channel.",
+        "--kind",
+        "decision",
+        "--tags",
+        "release",
+        "--idempotency-key",
+        "release-channel",
+        data_dir=data_dir,
+        environ_overrides=binding,
+        check=True,
+    )
+    recalled = run_cli(
+        "recall",
+        "--task",
+        "Which marmalade deployment channel should be used?",
+        "--budget",
+        "300",
+        "--format",
+        "json",
+        data_dir=data_dir,
+        environ_overrides=binding,
+        check=True,
+    )
+
+    payload = json.loads(recalled.stdout)
+    assert created.stdout.startswith("Created memory cli-")
+    assert updated.stdout.startswith("Updated memory cli-")
+    assert "green channel" in payload["context"]
+    assert "amber channel" not in payload["context"]
+    assert payload["sources"][0]["kind"] == "decision"
+    with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
+        row = connection.execute(
+            "SELECT scope_workspace_id, created_by_agent_id, COUNT(*) FROM memories"
+        ).fetchone()
+    assert row == ("cli-test-workspace", "cli-test-agent", 1)

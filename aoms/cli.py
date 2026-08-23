@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import importlib.util
 import inspect
@@ -18,9 +19,16 @@ from typing import Any
 
 import click
 
+from aoms.application import AOMSApplication
 from aoms.backfill import BackfillProgress, backfill_embeddings
 from aoms.auth import TokenScope, TokenStore
-from aoms.contracts import ScopeContext
+from aoms.contracts import (
+    MemoryKind,
+    Provenance,
+    RecallRequest,
+    RememberRequest,
+    ScopeContext,
+)
 from aoms.embeddings import (
     DEFAULT_FASTEMBED_MODEL,
     DEFAULT_OLLAMA_MODEL,
@@ -68,6 +76,43 @@ def _scope_context() -> ScopeContext:
         agent_id=os.environ.get("AOMS_AGENT_ID", "").strip() or "default",
         workspace_id=os.environ.get("AOMS_WORKSPACE", "").strip() or "default",
     )
+
+
+def _application(settings: AOMSSettings) -> AOMSApplication:
+    """Build the same scoped application used by transport adapters."""
+
+    return AOMSApplication(
+        _repository(settings),
+        scope_context=_scope_context(),
+        embedding_provider=provider_from_config(_embedding_environment(settings)),
+    )
+
+
+def _idempotent_record_id(key: str, scope_context: ScopeContext) -> str:
+    namespace = (
+        f"cortex-mem-cli\0{scope_context.agent_id}\0"
+        f"{scope_context.workspace_id}\0{key}"
+    )
+    return "cli-" + hashlib.sha256(namespace.encode("utf-8")).hexdigest()
+
+
+def _normalized_tags(values: tuple[str, ...]) -> list[str]:
+    return [
+        tag.strip()
+        for value in values
+        for tag in value.split(",")
+        if tag.strip()
+    ]
+
+
+async def _remember_once(
+    application: AOMSApplication, request: RememberRequest
+) -> Any:
+    result = await application.remember(request)
+    # A one-shot process must not abandon application-owned embedding work when
+    # asyncio.run closes its loop. Provider failures remain durably queued.
+    await application.wait_for_background_embeddings()
+    return result
 
 
 def _require_database(settings: AOMSSettings) -> None:
@@ -150,6 +195,107 @@ def init_command(data_dir: Path | None) -> None:
             f"({settings.embedding_model or DEFAULT_OLLAMA_MODEL})."
         )
     _print_host_setup()
+
+
+@main.command("recall")
+@click.option("--task", required=True, help="Describe the current task in plain language.")
+@click.option(
+    "--budget",
+    type=click.IntRange(min=1, max=100_000),
+    default=2_000,
+    show_default=True,
+    help="Maximum number of context tokens to pack.",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(("markdown", "json"), case_sensitive=False),
+    default="markdown",
+    show_default=True,
+)
+@_data_dir_option
+def recall_command(
+    task: str, budget: int, output_format: str, data_dir: Path | None
+) -> None:
+    """Recall scoped memory as packed context for a shell hook or agent."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    try:
+        result = asyncio.run(
+            _application(settings).recall(
+                RecallRequest(task=task, token_budget=budget)
+            )
+        )
+    except Exception as exc:
+        raise click.ClickException(f"recall failed: {exc}") from exc
+    if output_format.casefold() == "json":
+        click.echo(result.model_dump_json(indent=2))
+    else:
+        click.echo(result.context)
+
+
+@main.command("remember")
+@click.option(
+    "--content",
+    required=True,
+    help="Durable memory text, or '-' to read UTF-8 text from stdin.",
+)
+@click.option(
+    "--kind",
+    type=click.Choice(tuple(kind.value for kind in MemoryKind), case_sensitive=False),
+    default=MemoryKind.FACT.value,
+    show_default=True,
+)
+@click.option(
+    "--tags",
+    multiple=True,
+    help="Comma-separated tags; the option may be repeated.",
+)
+@click.option(
+    "--idempotency-key",
+    help="Stable logical-write key; retries update instead of duplicating.",
+)
+@_data_dir_option
+def remember_command(
+    content: str,
+    kind: str,
+    tags: tuple[str, ...],
+    idempotency_key: str | None,
+    data_dir: Path | None,
+) -> None:
+    """Write one selective, scoped memory from a shell hook or pipeline."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    if content == "-":
+        content = click.get_text_stream("stdin").read()
+    content = content.strip()
+    if not content:
+        raise click.ClickException("content must not be empty")
+    key = idempotency_key.strip() if idempotency_key else None
+    if idempotency_key is not None and not key:
+        raise click.ClickException("idempotency key must not be empty")
+    scope_context = _scope_context()
+    request = RememberRequest(
+        id=_idempotent_record_id(key, scope_context) if key else None,
+        kind=MemoryKind(kind.casefold()),
+        content=content,
+        tags=_normalized_tags(tags),
+        provenance=Provenance(
+            source="cli",
+            details={"idempotency_key": key} if key else {},
+        ),
+    )
+    try:
+        result = asyncio.run(_remember_once(_application(settings), request))
+    except Exception as exc:
+        raise click.ClickException(f"remember failed: {exc}") from exc
+    action = "Created" if result.created else "Updated"
+    click.echo(
+        f"{action} memory {result.record.id} "
+        f"(kind={result.record.kind.value}, scope={result.record.scope.value})."
+    )
 
 
 @dataclass(slots=True)

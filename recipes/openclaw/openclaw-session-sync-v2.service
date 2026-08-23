@@ -1,0 +1,12 @@
+[Unit]
+Description=Selectively sync durable OpenClaw learnings to AOMS
+After=network.target
+
+[Service]
+Type=oneshot
+Environment=AOMS_AGENT_ID=openclaw
+Environment=AOMS_WORKSPACE=%h/.openclaw/workspace
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin
+ExecStart=/usr/bin/python3 @RECIPE_DIR@/session_sync_v2.py --sessions-dir %h/.openclaw/agents/main/sessions --state-file %h/.local/state/aoms/openclaw-session-sync-v2.json --workspace %h/.openclaw/workspace
+
+# Replace @RECIPE_DIR@ with the absolute recipes/openclaw directory before install.
