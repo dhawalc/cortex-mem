@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,12 +92,14 @@ class JSONLImporter:
         *,
         scope_context: ScopeContext,
         batch_size: int = 500,
+        progress: Callable[[Path, ImportReport], None] | None = None,
     ):
         if batch_size < 1:
             raise ValueError("batch_size must be at least 1")
         self.repository = repository
         self.scope_context = scope_context
         self.batch_size = batch_size
+        self.progress = progress
 
     async def import_directory(self, corpus_root: str | Path) -> ImportReport:
         root = Path(corpus_root).expanduser().resolve()
@@ -113,10 +116,14 @@ class JSONLImporter:
             tier = relative.parts[0] if len(relative.parts) > 1 else ""
             if tier not in KIND_MAPPING:
                 report.issues.append(
-                    ImportIssue(relative.as_posix(), 0, f"unsupported tier: {tier or '<none>'}")
+                    ImportIssue(
+                        relative.as_posix(), 0, f"unsupported tier: {tier or '<none>'}"
+                    )
                 )
                 continue
             await self._import_file(root, path, tier, report)
+            if self.progress is not None:
+                self.progress(relative, report)
         return report
 
     async def _import_file(
@@ -136,11 +143,15 @@ class JSONLImporter:
                 try:
                     value = json.loads(raw_line)
                 except json.JSONDecodeError as exc:
-                    report.issues.append(ImportIssue(relative, line_number, f"invalid JSON: {exc.msg}"))
+                    report.issues.append(
+                        ImportIssue(relative, line_number, f"invalid JSON: {exc.msg}")
+                    )
                     continue
                 if not isinstance(value, dict):
                     report.issues.append(
-                        ImportIssue(relative, line_number, "top-level value is not an object")
+                        ImportIssue(
+                            relative, line_number, "top-level value is not an object"
+                        )
                     )
                     continue
                 if "schema" in value and "id" not in value:
@@ -201,13 +212,16 @@ class JSONLImporter:
         )
         updated_at = max(updated_at, created_at)
 
-        content = {key: item for key, item in value.items() if key not in ENVELOPE_FIELDS}
+        content = {
+            key: item for key, item in value.items() if key not in ENVELOPE_FIELDS
+        }
         if not content:
             content = {"legacy_type": legacy_type}
         legacy_metadata = {
             key: item
             for key, item in value.items()
-            if key in ENVELOPE_FIELDS and key not in {"id", "ts", "tags", "_tier", "_type"}
+            if key in ENVELOPE_FIELDS
+            and key not in {"id", "ts", "tags", "_tier", "_type"}
         }
         metadata: dict[str, Any] = {}
         if legacy_metadata:

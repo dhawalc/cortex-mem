@@ -34,7 +34,7 @@ from aoms.contracts import (
 from aoms.embeddings import NullProvider
 from aoms.recall import RecallEngine
 from aoms.repositories import SQLiteMemoryRepository
-from cortex_mem.__version__ import __version__
+from aoms.version import __version__
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SNAPSHOT_PATH = Path(__file__).with_name("fixtures") / "mcp_tool_schemas.snapshot.json"
@@ -103,7 +103,7 @@ async def test_stdio_handshake_contract_snapshot_and_tools_end_to_end(
     )
     parameters = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "aoms.adapters.mcp_server"],
+        args=["-m", "aoms.cli", "mcp"],
         env=environment,
         cwd=PROJECT_ROOT,
     )

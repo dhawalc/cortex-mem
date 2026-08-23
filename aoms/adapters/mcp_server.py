@@ -35,7 +35,7 @@ from aoms.contracts import (
 from aoms.embeddings import provider_from_config
 from aoms.repositories import SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
-from cortex_mem.__version__ import __version__ as AOMS_VERSION
+from aoms.version import __version__ as AOMS_VERSION
 
 logger = logging.getLogger(__name__)
 
