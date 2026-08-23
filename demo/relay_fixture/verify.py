@@ -51,10 +51,18 @@ def verify_run(
         ("stage-3", "stage_3_recall"),
     ):
         path = root / scenario["artifacts"][artifact_key]
+        if not path.is_file():
+            failures.append(
+                f"{stage_name} recall artifact missing: {path.relative_to(root)}"
+            )
+            continue
         try:
             receipt, context, raw_text = _load_recall_artifact(path)
         except (OSError, ValueError, KeyError) as exc:
-            failures.append(f"{stage_name} recall artifact invalid: {exc}")
+            failures.append(
+                f"{stage_name} recall artifact invalid "
+                f"({path.relative_to(root)}): {exc}"
+            )
             continue
         stage_receipts[stage_name] = receipt
         selected_ids = {item.memory_id for item in receipt.selected}
@@ -102,7 +110,8 @@ def verify_run(
     try:
         passed_acceptance = run_acceptance(workspace)
     except (AssertionError, OSError, ImportError, AttributeError, TypeError) as exc:
-        failures.append(f"acceptance tests failed: {exc}")
+        detail = str(exc) or exc.__class__.__name__
+        failures.append(f"acceptance tests failed: {detail}")
     else:
         checks.extend(f"acceptance: {name}" for name in passed_acceptance)
 

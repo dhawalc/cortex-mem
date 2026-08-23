@@ -62,11 +62,19 @@ exclude = ["tests*", "scripts*", "snapshots*", "index*"]
 ]
 
 [tool.setuptools.package-data]
+"demo.relay" = ["README.md"]
 "demo.relay_fixture" = [
     "scenario.yaml",
+    "scripted.yaml",
     "README.md",
     "repository/README.md",
     "repository/pyproject.toml",
     "repository/relay_service/*.py",
     "repository/tests/*.py",
 ]
+
+[tool.pytest.ini_options]
+# Keep the product suite separate from the nested fixture repository's own
+# three tests. Run those from demo/relay_fixture/repository when testing the
+# deliberately incomplete starting project itself.
+testpaths = ["tests"]
