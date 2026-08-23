@@ -1,0 +1,2 @@
+{"schema":"synthetic.pattern.v1","fields":["ts","pattern_name","trigger","response","frequency","weight"]}
+{"id":"synthetic-pattern-1","ts":"2026-03-04T07:00:00+00:00","pattern_name":"Synthetic weighted lookup","trigger":"fixture search request","response":"rank matching fixture tokens","frequency":3,"tags":["synthetic"],"weight":1.0,"_tier":"procedural","_type":"pattern","_written_at":"2026-03-04T07:00:00+00:00"}

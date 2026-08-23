@@ -1,0 +1,3 @@
+{"schema":"synthetic.fact.v1","fields":["ts","subject","predicate","object","confidence","tags","weight"]}
+{"id":"synthetic-fact-1","ts":"2026-03-02T09:00:00+00:00","subject":"orchid-service","predicate":"uses","object":"synthetic-port-9000","confidence":0.95,"tags":["synthetic"],"weight":1.0,"_tier":"semantic","_type":"fact","_written_at":"2026-03-02T09:00:00+00:00"}
+{"id":"synthetic-entity-1","ts":"2026-03-02T09:05:00+00:00","entity":"Orchid Test Agent","entity_type":"agent","aliases":["OTA"],"attributes":{"environment":"fixture"},"tags":["synthetic"],"weight":1.0,"_tier":"semantic","_type":"entity","_written_at":"2026-03-02T09:05:00+00:00"}
