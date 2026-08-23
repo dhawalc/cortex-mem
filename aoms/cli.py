@@ -7,6 +7,7 @@ import hashlib
 import importlib
 import importlib.util
 import inspect
+import json
 import os
 import sqlite3
 import sys
@@ -27,6 +28,7 @@ from aoms.contracts import (
     Provenance,
     RecallRequest,
     RememberRequest,
+    Scope,
     ScopeContext,
 )
 from aoms.embeddings import (
@@ -36,6 +38,7 @@ from aoms.embeddings import (
     provider_from_config,
 )
 from aoms.importer import ImportReport, JSONLImporter
+from aoms.ownership import UNSCOPED_SQL, OwnershipReport, assign_ownership
 from aoms.portable import PortableExportError, export_bundle, restore_bundle
 from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION, SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
@@ -543,6 +546,21 @@ def _doctor_database(
         else:
             report.pass_("Memory records", f"{total} canonical records")
 
+        unscoped = int(
+            connection.execute(
+                f"SELECT COUNT(*) FROM memories WHERE {UNSCOPED_SQL}"
+            ).fetchone()[0]
+        )
+        if unscoped:
+            report.warn(
+                "Unscoped records",
+                f"{unscoped} record(s) are excluded from scoped reads",
+                "Run: cortex-mem assign-ownership --scope user-global --execute "
+                f"--data-dir {settings.data_dir}",
+            )
+        else:
+            report.pass_("Unscoped records", "0 records")
+
         receipt_count = int(
             connection.execute("SELECT COUNT(*) FROM recall_receipts").fetchone()[0]
         )
@@ -627,6 +645,88 @@ def doctor_command(data_dir: Path | None) -> None:
         f"{report.warnings} warning(s)."
     )
     if report.failures:
+        raise click.exceptions.Exit(1)
+
+
+def _format_ownership_counts(counts: dict[str, int]) -> str:
+    return ", ".join(f"{name}={count}" for name, count in counts.items()) or "none"
+
+
+def _print_ownership_report(report: OwnershipReport) -> None:
+    mode = "DRY RUN" if report.dry_run else "EXECUTE"
+    click.echo(f"Ownership assignment ({mode})")
+    click.echo(f"Scope: {report.scope}")
+    click.echo(
+        f"Before: {report.before.unscoped_records} unscoped record(s); "
+        f"by kind: {_format_ownership_counts(report.before.by_kind)}; "
+        f"by tier: {_format_ownership_counts(report.before.by_tier)}"
+    )
+    click.echo(
+        f"After: {report.after.unscoped_records} unscoped record(s); "
+        f"by kind: {_format_ownership_counts(report.after.by_kind)}; "
+        f"by tier: {_format_ownership_counts(report.after.by_tier)}"
+    )
+    if report.dry_run:
+        click.echo(
+            f"Dry run: would assign {report.would_assign} record(s); wrote 0. "
+            "Pass --execute to commit."
+        )
+    else:
+        click.echo(f"Assigned: {report.assigned_records} record(s).")
+    click.echo(f"Remaining unscoped: {report.remaining_unscoped}")
+    click.echo("JSON report:")
+    click.echo(json.dumps(report.to_dict(), sort_keys=True, separators=(",", ":")))
+
+
+@main.command("assign-ownership")
+@click.option(
+    "--scope",
+    type=click.Choice((Scope.USER_GLOBAL.value,)),
+    required=True,
+    help="Bulk assignment scope; only user-global is trusted for legacy imports.",
+)
+@click.option(
+    "--dry-run/--execute",
+    default=True,
+    show_default=True,
+    help="Preview by default; --execute is required to write any record.",
+)
+@click.option(
+    "--batch-size", type=click.IntRange(min=1), default=500, show_default=True
+)
+@_data_dir_option
+def assign_ownership_command(
+    scope: str,
+    dry_run: bool,
+    batch_size: int,
+    data_dir: Path | None,
+) -> None:
+    """Assign legacy unscoped records to the fleet-shared user scope.
+
+    Agent-private and workspace bulk assignment are deliberately unavailable:
+    without per-record knowledge, restrictive scopes would fabricate ownership
+    claims. Every committed batch is atomic, and completed records are skipped
+    on resume.
+    """
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    assignment_timestamp = datetime.now(timezone.utc).isoformat()
+    try:
+        result = asyncio.run(
+            assign_ownership(
+                _repository(settings),
+                scope=Scope(scope),
+                dry_run=dry_run,
+                batch_size=batch_size,
+                assignment_timestamp=assignment_timestamp,
+                tool_version=__version__,
+            )
+        )
+    except (OSError, RuntimeError, sqlite3.Error, ValueError) as exc:
+        raise click.ClickException(f"ownership assignment failed: {exc}") from exc
+    _print_ownership_report(result)
+    if not dry_run and result.remaining_unscoped:
         raise click.exceptions.Exit(1)
 
 

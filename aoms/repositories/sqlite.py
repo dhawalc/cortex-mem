@@ -43,6 +43,7 @@ from aoms.contracts import (
     SearchResult,
 )
 from aoms.embeddings import EmbeddingProfile, EmbeddingVector
+from aoms.ownership import LEGACY_IMPORT_ACTOR, UNSCOPED_SQL, OwnershipSnapshot
 from aoms.receipts import RecallReceipt
 from aoms.repositories.base import (
     CompletedEmbedding,
@@ -1023,6 +1024,119 @@ class SQLiteMemoryRepository:
         await self.initialize()
         return await asyncio.to_thread(self._integrity_report_sync)
 
+    async def ownership_snapshot(self) -> OwnershipSnapshot:
+        """Count only records that the scope integrity rule considers unscoped."""
+
+        await self.initialize()
+        return await asyncio.to_thread(self._ownership_snapshot_sync)
+
+    def _ownership_snapshot_sync(self) -> OwnershipSnapshot:
+        with self._connect() as connection:
+            unscoped_records = int(
+                connection.execute(
+                    f"SELECT COUNT(*) AS count FROM memories WHERE {UNSCOPED_SQL}"
+                ).fetchone()["count"]
+            )
+            by_kind = {
+                str(row["bucket"]): int(row["count"])
+                for row in connection.execute(
+                    "SELECT kind AS bucket, COUNT(*) AS count FROM memories "
+                    f"WHERE {UNSCOPED_SQL} GROUP BY kind ORDER BY kind"
+                ).fetchall()
+            }
+            by_tier = {
+                str(row["bucket"]): int(row["count"])
+                for row in connection.execute(
+                    "SELECT COALESCE(NULLIF(json_extract(record_json, "
+                    "'$.provenance.tier'), ''), 'unknown') AS bucket, "
+                    "COUNT(*) AS count FROM memories "
+                    f"WHERE {UNSCOPED_SQL} GROUP BY bucket ORDER BY bucket"
+                ).fetchall()
+            }
+        return OwnershipSnapshot(
+            unscoped_records=unscoped_records,
+            by_kind=by_kind,
+            by_tier=by_tier,
+        )
+
+    async def assign_unscoped_user_global_batch(
+        self,
+        *,
+        limit: int,
+        assignment_timestamp: str,
+        tool_version: str,
+        reason: str,
+    ) -> int:
+        """Assign one atomic batch; reruns cannot select completed records."""
+
+        if limit < 1:
+            raise ValueError("limit must be at least 1")
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._assign_unscoped_user_global_batch_sync,
+            limit,
+            assignment_timestamp,
+            tool_version,
+            reason,
+        )
+
+    def _assign_unscoped_user_global_batch_sync(
+        self,
+        limit: int,
+        assignment_timestamp: str,
+        tool_version: str,
+        reason: str,
+    ) -> int:
+        annotation = {
+            "assignment_timestamp": assignment_timestamp,
+            "tool_version": tool_version,
+            "reason": reason,
+        }
+        assigned = 0
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                "SELECT id, record_json FROM memories "
+                f"WHERE {UNSCOPED_SQL} ORDER BY id LIMIT ?",
+                (limit,),
+            ).fetchall()
+            for row in rows:
+                record = self._record_from_row(row)
+                provenance = record.provenance.model_copy(
+                    update={
+                        "details": {
+                            **record.provenance.details,
+                            "ownership_assignment": annotation,
+                        }
+                    }
+                )
+                assigned_record = record.model_copy(
+                    update={
+                        "scope": Scope.USER_GLOBAL,
+                        "scope_agent_id": None,
+                        "scope_workspace_id": None,
+                        "created_by_agent_id": (
+                            record.created_by_agent_id or LEGACY_IMPORT_ACTOR
+                        ),
+                        "provenance": provenance,
+                    }
+                )
+                cursor = connection.execute(
+                    "UPDATE memories SET scope = ?, scope_agent_id = NULL, "
+                    "scope_workspace_id = NULL, created_by_agent_id = ?, "
+                    "record_json = ? WHERE id = ? AND (" + UNSCOPED_SQL + ")",
+                    (
+                        Scope.USER_GLOBAL.value,
+                        assigned_record.created_by_agent_id,
+                        assigned_record.model_dump_json(),
+                        assigned_record.id,
+                    ),
+                )
+                assigned += cursor.rowcount
+            connection.commit()
+        return assigned
+
     def _integrity_report_sync(self) -> IntegrityReport:
         with self._connect() as connection:
             memory_count = int(
@@ -1054,10 +1168,7 @@ class SQLiteMemoryRepository:
             unscoped = [
                 row["id"]
                 for row in connection.execute(
-                    "SELECT id FROM memories WHERE created_by_agent_id IS NULL OR "
-                    "(scope = ? AND scope_agent_id IS NULL) OR "
-                    "(scope = ? AND scope_workspace_id IS NULL) ORDER BY id",
-                    (Scope.AGENT_PRIVATE.value, Scope.WORKSPACE.value),
+                    f"SELECT id FROM memories WHERE {UNSCOPED_SQL} ORDER BY id"
                 ).fetchall()
             ]
 

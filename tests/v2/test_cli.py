@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sqlite3
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+from aoms.application import AOMSApplication
+from aoms.contracts import (
+    MemoryKind,
+    MemoryRecord,
+    Provenance,
+    RecallRequest,
+    Scope,
+    ScopeContext,
+    SearchRequest,
+)
+from aoms.embeddings import NullProvider
+from aoms.repositories import SQLiteMemoryRepository
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_CORPUS = ROOT / "tests" / "v2" / "fixtures" / "corpus"
@@ -46,6 +61,7 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
         "recall",
         "remember",
         "doctor",
+        "assign-ownership",
         "import",
         "backfill",
         "sweep",
@@ -156,6 +172,197 @@ def test_doctor_missing_corrupt_and_empty_store_findings(tmp_path: Path) -> None
     assert "[WARN] Memory records: store is healthy but empty" in empty.stdout
     assert "[PASS] Receipt store" in empty.stdout
     assert "Doctor finished: 0 failure(s)" in empty.stdout
+
+
+def _seed_ownership_fixture(data_dir: Path) -> None:
+    run_cli("init", data_dir=data_dir, check=True)
+    timestamp = datetime(2026, 8, 22, 12, 0, tzinfo=timezone.utc)
+    records = [
+        MemoryRecord(
+            id="legacy-fact",
+            kind=MemoryKind.FACT,
+            content="heritagequartz fleet history",
+            scope=Scope.WORKSPACE,
+            provenance=Provenance(source="legacy.jsonl", tier="semantic"),
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+        MemoryRecord(
+            id="legacy-decision",
+            kind=MemoryKind.DECISION,
+            content="heritagequartz migration decision",
+            scope=Scope.AGENT_PRIVATE,
+            created_by_agent_id="known-importer",
+            provenance=Provenance(source="legacy.jsonl", tier="episodic"),
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+        MemoryRecord(
+            id="already-scoped",
+            kind=MemoryKind.PROCEDURE,
+            content="unrelated scoped procedure",
+            scope=Scope.WORKSPACE,
+            scope_workspace_id="fixture-workspace",
+            created_by_agent_id="fixture-agent",
+            provenance=Provenance(source="current"),
+            created_at=timestamp,
+            updated_at=timestamp,
+        ),
+    ]
+    asyncio.run(
+        SQLiteMemoryRepository(data_dir / "aoms.sqlite3").store_many(records)
+    )
+
+
+def _ownership_result(result: subprocess.CompletedProcess[str]) -> dict[str, object]:
+    assert result.stdout.splitlines()[-2] == "JSON report:"
+    return json.loads(result.stdout.splitlines()[-1])
+
+
+def test_assign_ownership_help_limits_bulk_scope(tmp_path: Path) -> None:
+    result = run_cli(
+        "assign-ownership", "--help", data_dir=tmp_path / "unused", check=True
+    )
+
+    assert "--scope [user-global]" in result.stdout
+    assert "--dry-run / --execute" in result.stdout
+    assert "[default: dry-run]" in result.stdout
+    assert "restrictive scopes would fabricate" in result.stdout
+    assert "--batch-size INTEGER" in result.stdout
+    assert "--data-dir DIRECTORY" in result.stdout
+
+
+def test_assign_ownership_dry_run_does_not_change_records(tmp_path: Path) -> None:
+    data_dir = tmp_path / "ownership-dry-run"
+    _seed_ownership_fixture(data_dir)
+
+    result = run_cli(
+        "assign-ownership",
+        "--scope",
+        "user-global",
+        "--batch-size",
+        "1",
+        data_dir=data_dir,
+        check=True,
+    )
+    payload = _ownership_result(result)
+
+    assert "Ownership assignment (DRY RUN)" in result.stdout
+    assert payload["dry_run"] is True
+    assert payload["would_assign"] == 2
+    assert payload["assigned_records"] == 0
+    assert payload["remaining_unscoped"] == 2
+    assert payload["before"]["by_kind"] == {"decision": 1, "fact": 1}
+    assert payload["before"]["by_tier"] == {"episodic": 1, "semantic": 1}
+    assert payload["after"] == payload["before"]
+    with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
+        rows = connection.execute(
+            "SELECT id, scope, created_by_agent_id, record_json FROM memories "
+            "ORDER BY id"
+        ).fetchall()
+    by_id = {row[0]: row for row in rows}
+    assert by_id["legacy-fact"][1:3] == ("workspace", None)
+    assert "ownership_assignment" not in by_id["legacy-fact"][3]
+    assert by_id["already-scoped"][1:3] == ("workspace", "fixture-agent")
+
+
+def test_assign_ownership_execute_is_exact_idempotent_and_restores_visibility(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "ownership-execute"
+    _seed_ownership_fixture(data_dir)
+    repository = SQLiteMemoryRepository(data_dir / "aoms.sqlite3")
+    context = ScopeContext(
+        agent_id="fixture-reader", workspace_id="fixture-workspace"
+    )
+
+    async def visible_ids() -> tuple[set[str], set[str]]:
+        application = AOMSApplication(
+            repository,
+            scope_context=context,
+            embedding_provider=NullProvider(),
+        )
+        search = await application.search(SearchRequest(query="heritagequartz"))
+        recall = await application.recall(
+            RecallRequest(task="heritagequartz", token_budget=1_000)
+        )
+        return (
+            {item.record.id for item in search.items},
+            {source.memory_id for source in recall.sources},
+        )
+
+    search_ids_before, recall_ids_before = asyncio.run(visible_ids())
+    assert search_ids_before == set()
+    assert {"legacy-decision", "legacy-fact"}.isdisjoint(recall_ids_before)
+    executed = run_cli(
+        "assign-ownership",
+        "--scope",
+        "user-global",
+        "--execute",
+        "--batch-size",
+        "1",
+        data_dir=data_dir,
+        check=True,
+    )
+    payload = _ownership_result(executed)
+
+    assert payload["assigned_records"] == 2
+    assert payload["remaining_unscoped"] == 0
+    assert payload["after"] == {
+        "by_kind": {},
+        "by_tier": {},
+        "unscoped_records": 0,
+    }
+    search_ids, recall_ids = asyncio.run(visible_ids())
+    assert search_ids == {"legacy-decision", "legacy-fact"}
+    assert {"legacy-decision", "legacy-fact"}.issubset(recall_ids)
+
+    fact = asyncio.run(repository.get("legacy-fact"))
+    decision = asyncio.run(repository.get("legacy-decision"))
+    scoped = asyncio.run(repository.get("already-scoped"))
+    assert fact is not None and decision is not None and scoped is not None
+    for record in (fact, decision):
+        assert record.scope is Scope.USER_GLOBAL
+        assert record.scope_agent_id is None
+        assert record.scope_workspace_id is None
+        annotation = record.provenance.details["ownership_assignment"]
+        assert annotation["assignment_timestamp"] == payload[
+            "assignment_timestamp"
+        ]
+        assert annotation["tool_version"] == payload["tool_version"]
+        assert annotation["reason"] == (
+            "legacy-import bulk assignment 2026-08-23"
+        )
+    assert fact.created_by_agent_id == "legacy-import"
+    assert decision.created_by_agent_id == "known-importer"
+    assert "ownership_assignment" not in scoped.provenance.details
+
+    repeated = run_cli(
+        "assign-ownership",
+        "--scope",
+        "user-global",
+        "--execute",
+        data_dir=data_dir,
+        check=True,
+    )
+    repeated_payload = _ownership_result(repeated)
+    assert repeated_payload["would_assign"] == 0
+    assert repeated_payload["assigned_records"] == 0
+    assert repeated_payload["remaining_unscoped"] == 0
+    assert asyncio.run(repository.get("legacy-fact")) == fact
+
+
+def test_doctor_unscoped_finding_references_assignment_command(tmp_path: Path) -> None:
+    data_dir = tmp_path / "doctor-unscoped"
+    _seed_ownership_fixture(data_dir)
+
+    result = run_cli("doctor", data_dir=data_dir, check=True)
+
+    assert "[WARN] Unscoped records: 2 record(s) are excluded" in result.stdout
+    assert (
+        "Action: Run: cortex-mem assign-ownership --scope user-global --execute"
+        in result.stdout
+    )
 
 
 def test_cli_recall_remember_round_trip_and_idempotency(tmp_path: Path) -> None:

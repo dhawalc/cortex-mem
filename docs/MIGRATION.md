@@ -1,5 +1,29 @@
 # Migration Guide
 
+## Assigning ownership to imported legacy records
+
+Records imported before scope enforcement may have no trustworthy agent or
+workspace anchor. They are intentionally excluded from scoped reads until an
+operator makes an explicit assignment. For a reviewed legacy corpus that is
+fleet-shared user history, preview and then execute the assignment:
+
+```bash
+cortex-mem assign-ownership --scope user-global --data-dir /path/to/aoms-data
+cortex-mem assign-ownership --scope user-global --execute \
+  --data-dir /path/to/aoms-data
+```
+
+Dry-run is the default. The command reports the unscoped distribution by kind
+and legacy tier before and after the operation, followed by a JSON report. On
+execution it commits fixed-size batches, skips records already assigned, and
+adds the assignment timestamp, cortex-mem version, and fixed migration reason
+to each record's provenance.
+
+This tool deliberately does not offer bulk `agent-private` or `workspace`
+assignment. Those restrictive scopes require per-record knowledge of the real
+owner; choosing either for an undifferentiated corpus would fabricate ownership
+claims. `user-global` adds no invented agent or workspace visibility boundary.
+
 ## From OpenClaw Workspace
 
 If you have an existing OpenClaw workspace (`~/.openclaw/workspace/`), cortex-mem can import it:
