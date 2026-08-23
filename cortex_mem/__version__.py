@@ -1,3 +1,5 @@
-"""The single version source for the cortex-mem/AOMS distribution."""
+"""Legacy source-tree compatibility import for the AOMS package version."""
 
-__version__ = "2.0.0"
+from aoms.version import __version__
+
+__all__ = ["__version__"]

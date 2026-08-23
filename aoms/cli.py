@@ -28,7 +28,7 @@ from aoms.importer import ImportReport, JSONLImporter
 from aoms.portable import PortableExportError, export_bundle, restore_bundle
 from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION, SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
-from cortex_mem.__version__ import __version__
+from aoms.version import __version__
 
 DEFAULT_MODEL_SIZE_MB = 67
 CLAUDE_SETUP = "claude mcp add aoms -- uvx cortex-mem mcp"

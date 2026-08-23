@@ -14,7 +14,7 @@ from typing import Any
 from aoms.contracts import MemoryRecord
 from aoms.receipts import RecallReceipt
 from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION, SQLiteMemoryRepository
-from cortex_mem.__version__ import __version__
+from aoms.version import __version__
 
 EXPORT_FORMAT = "aoms-portable-export"
 EXPORT_FORMAT_VERSION = 1

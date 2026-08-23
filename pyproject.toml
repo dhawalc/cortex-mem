@@ -44,8 +44,8 @@ Repository = "https://github.com/dhawalc/cortex-mem"
 Issues = "https://github.com/dhawalc/cortex-mem/issues"
 
 [tool.setuptools.dynamic]
-version = {attr = "cortex_mem.__version__.__version__"}
+version = {attr = "aoms.version.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["aoms*", "cortex_mem*"]
+include = ["aoms*"]
 exclude = ["tests*", "scripts*", "snapshots*", "index*"]

@@ -18,7 +18,7 @@ from typing import Dict, Iterator, Optional
 import yaml
 from fastapi import FastAPI, HTTPException, Query
 
-from cortex_mem.__version__ import __version__
+from aoms.version import __version__
 
 from .models import (
     ConsolidateRequest,
