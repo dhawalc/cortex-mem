@@ -472,6 +472,8 @@ async def decay_weights(req: DecayRequest):
     """
     from datetime import datetime, timezone, timedelta
     import json
+    import os
+    import tempfile
     
     tiers = [req.tier] if req.tier else ALL_TIERS
     cutoff = datetime.now(timezone.utc) - timedelta(days=req.min_age_days)
@@ -491,17 +493,17 @@ async def decay_weights(req: DecayRequest):
             for line in lines:
                 stripped = line.strip()
                 if not stripped:
-                    new_lines.append(line)
+                    new_lines.append(line + "\n")
                     continue
                 
                 try:
                     entry = json.loads(stripped)
                 except json.JSONDecodeError:
-                    new_lines.append(line)
+                    new_lines.append(line + "\n")
                     continue
                 
                 if "schema" in entry:
-                    new_lines.append(line)
+                    new_lines.append(line + "\n")
                     continue
                 
                 total_scanned += 1
@@ -509,7 +511,7 @@ async def decay_weights(req: DecayRequest):
                 # Check age
                 ts = entry.get("ts") or entry.get("_written_at")
                 if not ts:
-                    new_lines.append(line)
+                    new_lines.append(line + "\n")
                     continue
                 
                 try:
@@ -520,10 +522,10 @@ async def decay_weights(req: DecayRequest):
                         entry_time = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
                     
                     if entry_time > cutoff:
-                        new_lines.append(line)
+                        new_lines.append(line + "\n")
                         continue
                 except (ValueError, TypeError, OSError):
-                    new_lines.append(line)
+                    new_lines.append(line + "\n")
                     continue
                 
                 # Apply decay
@@ -551,13 +553,29 @@ async def decay_weights(req: DecayRequest):
                         new_lines.append(json.dumps(entry, ensure_ascii=False) + "\n")
                         total_decayed += 1
                     else:
-                        new_lines.append(line)
+                        new_lines.append(line + "\n")
                         total_decayed += 1
                 else:
-                    new_lines.append(line)
+                    new_lines.append(line + "\n")
             
             if not req.dry_run:
-                filepath.write_text("".join(new_lines), encoding="utf-8")
+                tmp_path = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        mode="w",
+                        encoding="utf-8",
+                        dir=filepath.parent,
+                        delete=False,
+                    ) as tmp_file:
+                        tmp_path = Path(tmp_file.name)
+                        tmp_file.write("".join(new_lines))
+                        tmp_file.flush()
+                        os.fsync(tmp_file.fileno())
+                    os.replace(tmp_path, filepath)
+                    tmp_path = None
+                finally:
+                    if tmp_path is not None:
+                        tmp_path.unlink(missing_ok=True)
     
     return {
         "status": "ok" if not req.dry_run else "dry_run",
