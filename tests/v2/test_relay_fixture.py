@@ -69,26 +69,6 @@ def _app(repository: SQLiteMemoryRepository, agent_id: str) -> AOMSApplication:
     )
 
 
-def _workspace_record(
-    memory_id: str,
-    content: str,
-    *,
-    kind: MemoryKind,
-    timestamp: datetime,
-) -> MemoryRecord:
-    return MemoryRecord(
-        id=memory_id,
-        kind=kind,
-        content=content,
-        scope=Scope.WORKSPACE,
-        scope_workspace_id=RELAY_WORKSPACE,
-        created_by_agent_id="relay-planner",
-        provenance=Provenance(source="relay-ranking-regression"),
-        created_at=timestamp,
-        updated_at=timestamp,
-    )
-
-
 async def _write_stage_artifact(
     root: Path,
     relative_path: str,
@@ -162,7 +142,7 @@ async def test_relay_seeder_and_verifier_round_trip(tmp_path: Path) -> None:
 async def test_implementer_query_keeps_constraints_ahead_of_delayed_handoff(
     tmp_path: Path,
 ) -> None:
-    """The proof must not depend on how quickly the planner subprocess runs."""
+    """A slow planner must not let its newer handoff displace a constraint."""
 
     scenario = load_scenario()
     script_path = Path(__file__).parents[2] / "demo" / "relay_fixture" / "scripted.yaml"
@@ -171,37 +151,45 @@ async def test_implementer_query_keeps_constraints_ahead_of_delayed_handoff(
     implementer_calls = script["stages"]["implementer"]["calls"]
     handoff = next(call for call in planner_calls if call.get("name") == "remember")
     recall = next(call for call in implementer_calls if call.get("name") == "recall")
-    assert recall["arguments"]["task"] == scenario["stages"]["implementer"][
-        "recall_query"
-    ]
+    assert (
+        recall["arguments"]["task"] == scenario["stages"]["implementer"]["recall_query"]
+    )
 
     seeded_at = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
     handoff_at = seeded_at + timedelta(hours=1)
-    records = [
-        *(
-            _workspace_record(
-                item["memory_id"],
-                item["text"],
-                kind=MemoryKind.FACT,
-                timestamp=seeded_at,
-            )
-            for item in scenario["constraints"]
-        ),
-        _workspace_record(
-            scenario["tempting_wrong_approach"]["memory_id"],
-            scenario["tempting_wrong_approach"]["text"],
-            kind=MemoryKind.DECISION,
-            timestamp=seeded_at,
-        ),
-        _workspace_record(
-            handoff["arguments"]["id"],
-            handoff["arguments"]["content"],
-            kind=MemoryKind(handoff["arguments"]["kind"]),
-            timestamp=handoff_at,
-        ),
-    ]
     repository = SQLiteMemoryRepository(tmp_path / "ranking.sqlite3")
-    await repository.store_many(records)
+    await seed_store(tmp_path / "ranking.sqlite3")
+    seeded_ids = [
+        *(item["memory_id"] for item in scenario["constraints"]),
+        scenario["tempting_wrong_approach"]["memory_id"],
+    ]
+    seeded_records = [await repository.get(memory_id) for memory_id in seeded_ids]
+    assert all(record is not None for record in seeded_records)
+    await repository.store_many(
+        [
+            record.model_copy(update={"created_at": seeded_at, "updated_at": seeded_at})
+            for record in seeded_records
+            if record is not None
+        ]
+    )
+    handoff_arguments = handoff["arguments"]
+    handoff_provenance = Provenance.model_validate(handoff_arguments["provenance"])
+    await repository.store(
+        MemoryRecord(
+            id=handoff_arguments["id"],
+            kind=MemoryKind(handoff_arguments["kind"]),
+            content=handoff_arguments["content"],
+            tags=handoff_arguments["tags"],
+            scope=Scope(handoff_arguments["scope"]),
+            scope_workspace_id=RELAY_WORKSPACE,
+            created_by_agent_id="relay-planner",
+            provenance=handoff_provenance.model_copy(
+                update={"details": {"agent_id": "relay-planner"}}
+            ),
+            created_at=handoff_at,
+            updated_at=handoff_at,
+        )
+    )
     context = ScopeContext(
         agent_id=scenario["stages"]["implementer"]["agent_id"],
         workspace_id=RELAY_WORKSPACE,
@@ -218,6 +206,7 @@ async def test_implementer_query_keeps_constraints_ahead_of_delayed_handoff(
     selected_ids = {source.memory_id for source in result.sources}
     constraint_ids = {item["memory_id"] for item in scenario["constraints"]}
     assert constraint_ids <= selected_ids
+    assert handoff_arguments["id"] not in selected_ids
 
 
 def test_constraints_are_not_present_in_the_tiny_repository() -> None:
