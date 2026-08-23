@@ -36,8 +36,14 @@ async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_recall_is_explicitly_deferred(tmp_path: Path) -> None:
+async def test_recall_emits_an_empty_receipt_for_an_empty_store(tmp_path: Path) -> None:
     app = AOMSApplication(SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"))
 
-    with pytest.raises(NotImplementedError, match="next AOMS core slice"):
-        await app.recall(RecallRequest(task="Pack context", token_budget=100))
+    result = await app.recall(RecallRequest(task="Pack context", token_budget=100))
+    receipts = await app.recent_recall_receipts()
+
+    assert result.context == ""
+    assert result.sources == []
+    assert result.token_count == 0
+    assert len(receipts) == 1
+    assert receipts[0].receipt_id == result.diagnostics["receipt_id"]

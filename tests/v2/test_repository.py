@@ -47,7 +47,10 @@ async def test_migrations_are_idempotent_and_enable_wal(tmp_path: Path) -> None:
     assert await repository.schema_version() == LATEST_SCHEMA_VERSION
     with sqlite3.connect(db_path) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert connection.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 1
+        assert (
+            connection.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0]
+            == LATEST_SCHEMA_VERSION
+        )
 
 
 @pytest.mark.asyncio
