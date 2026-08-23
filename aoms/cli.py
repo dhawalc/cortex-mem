@@ -12,12 +12,14 @@ import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import click
 
 from aoms.backfill import BackfillProgress, backfill_embeddings
+from aoms.auth import TokenScope, TokenStore
 from aoms.contracts import ScopeContext
 from aoms.embeddings import (
     DEFAULT_FASTEMBED_MODEL,
@@ -482,6 +484,133 @@ def doctor_command(data_dir: Path | None) -> None:
         raise click.exceptions.Exit(1)
 
 
+@main.group("token")
+def token_group() -> None:
+    """Create, inspect, and revoke remote MCP bearer tokens.
+
+    These commands require local access to the AOMS data directory. The admin
+    scope is reserved for future remote maintenance endpoints.
+    """
+
+
+def _parse_expiry(value: str | None) -> datetime | None:
+    if value is None:
+        return None
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise click.BadParameter(
+            "must be an ISO-8601 timestamp, for example 2026-09-01T12:00:00Z",
+            param_hint="--expires-at",
+        ) from exc
+    if parsed.tzinfo is None:
+        raise click.BadParameter(
+            "must include a timezone, for example a trailing Z",
+            param_hint="--expires-at",
+        )
+    return parsed.astimezone(timezone.utc)
+
+
+@token_group.command("create")
+@click.argument("name")
+@click.option(
+    "--scope",
+    "scopes",
+    type=click.Choice([scope.value for scope in TokenScope]),
+    multiple=True,
+    required=True,
+    help="Grant a scope; repeat for multiple scopes.",
+)
+@click.option("--agent-id", help="Agent identity bound to the token.")
+@click.option("--workspace-id", help="Workspace identity bound to the token.")
+@click.option("--expires-at", help="Optional ISO-8601 expiry timestamp.")
+@_data_dir_option
+def token_create_command(
+    name: str,
+    scopes: tuple[str, ...],
+    agent_id: str | None,
+    workspace_id: str | None,
+    expires_at: str | None,
+    data_dir: Path | None,
+) -> None:
+    """Create a token and print its bearer secret exactly once."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    process_scope = _scope_context()
+    try:
+        created = asyncio.run(
+            TokenStore(settings.db_path).create(
+                name=name,
+                scopes=scopes,
+                agent_id=agent_id or process_scope.agent_id,
+                workspace_id=workspace_id or process_scope.workspace_id,
+                expires_at=_parse_expiry(expires_at),
+            )
+        )
+    except (OSError, RuntimeError, sqlite3.Error, ValueError) as exc:
+        raise click.ClickException(f"could not create token: {exc}") from exc
+    record = created.token
+    click.echo(f"Created token {record.token_id} ({record.name}).")
+    click.echo(f"Scopes: {','.join(record.scopes)}")
+    click.echo(
+        f"Identity: agent_id={record.agent_id} workspace_id={record.workspace_id}"
+    )
+    click.echo("Bearer token (shown once):")
+    click.echo(created.secret)
+
+
+@token_group.command("list")
+@_data_dir_option
+def token_list_command(data_dir: Path | None) -> None:
+    """List token metadata without exposing bearer secrets or hashes."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    try:
+        records = asyncio.run(TokenStore(settings.db_path).list())
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
+        raise click.ClickException(f"could not list tokens: {exc}") from exc
+    if not records:
+        click.echo("No tokens configured.")
+        return
+    click.echo(
+        "TOKEN_ID         STATUS   SCOPES           AGENT / WORKSPACE             NAME"
+    )
+    for record in records:
+        identity = f"{record.agent_id} / {record.workspace_id}"
+        click.echo(
+            f"{record.token_id:<16} {record.status:<8} "
+            f"{','.join(record.scopes):<16} {identity:<29} {record.name}"
+        )
+        click.echo(
+            " " * 17
+            + f"created={record.created_at.isoformat()} "
+            + "last_used="
+            + (record.last_used_at.isoformat() if record.last_used_at else "-")
+            + " "
+            + f"expires={record.expires_at.isoformat() if record.expires_at else '-'}"
+        )
+
+
+@token_group.command("revoke")
+@click.argument("token_id")
+@_data_dir_option
+def token_revoke_command(token_id: str, data_dir: Path | None) -> None:
+    """Permanently revoke a token by its non-secret token id."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    try:
+        revoked = asyncio.run(TokenStore(settings.db_path).revoke(token_id))
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
+        raise click.ClickException(f"could not revoke token: {exc}") from exc
+    if not revoked:
+        raise click.ClickException(f"active token not found: {token_id}")
+    click.echo(f"Revoked token {token_id}.")
+
+
 @main.command("import")
 @click.argument("source", type=click.Path(path_type=Path, exists=True, file_okay=False))
 @click.option(
@@ -662,7 +791,7 @@ def _mcp_entrypoint(module: Any) -> Callable[..., Any] | None:
 )
 @click.pass_context
 def mcp_command(context: click.Context) -> None:
-    """Run the MCP adapter over stdio (when the adapter package is present)."""
+    """Run the MCP adapter (stdio by default; HTTP via forwarded options)."""
 
     module = None
     module_name = ""

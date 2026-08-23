@@ -126,6 +126,10 @@ single-user setup, either variable may be omitted and defaults to `default`.
 Set `AOMS_DATA_DIR` to choose the v2 SQLite fixture/data directory and
 `AOMS_EMBEDDING_PROVIDER=none` to disable embeddings.
 
+Streamable HTTP supports hashed bearer tokens whose agent/workspace identity is
+bound at creation. See [remote authentication](docs/REMOTE_AUTH.md) for token,
+TLS, Origin, request-limit, and rate-limit configuration.
+
 ### OpenClaw
 
 ```bash
@@ -212,7 +216,7 @@ weights:
 ## Development
 
 Run the canonical main suite from the repository root with `python -m pytest`.
-It collects 123 tests. Pytest is pinned to `tests/`; the three tests inside the
+It collects 134 tests. Pytest is pinned to `tests/`; the three tests inside the
 relay fixture repository belong to that fixture's own harness and are excluded.
 
 ## License

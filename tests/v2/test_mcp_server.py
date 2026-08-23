@@ -4,20 +4,24 @@ import copy
 import hashlib
 import json
 import os
+import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
+import httpx
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.memory import create_connected_server_and_client_session
 
 import aoms.adapters.mcp_server as mcp_adapter
 import aoms.application as application_module
 from aoms.adapters.mcp_server import create_server
 from aoms.application import AOMSApplication
+from aoms.auth import TokenStore
 from aoms.contracts import (
     MemoryKind,
     MemoryRecord,
@@ -175,9 +179,7 @@ async def test_stdio_handshake_contract_snapshot_and_tools_end_to_end(
                 searched = await session.call_tool(
                     "search", {"query": "Zephyr amber", "limit": 5}
                 )
-                searched_model = SearchResult.model_validate(
-                    searched.structuredContent
-                )
+                searched_model = SearchResult.model_validate(searched.structuredContent)
                 assert searched_model.total == 1
                 assert searched_model.items[0].record.id == "mcp-fixture-fact"
                 assert "mcp-fixture-fact" in _tool_text(searched)
@@ -186,9 +188,7 @@ async def test_stdio_handshake_contract_snapshot_and_tools_end_to_end(
                     "recall",
                     {"task": "How does Project Zephyr deploy?", "token_budget": 400},
                 )
-                recalled_model = RecallResult.model_validate(
-                    recalled.structuredContent
-                )
+                recalled_model = RecallResult.model_validate(recalled.structuredContent)
                 assert recalled_model.token_count <= 400
                 assert [source.memory_id for source in recalled_model.sources] == [
                     "mcp-fixture-fact"
@@ -323,9 +323,7 @@ async def test_direct_application_and_mcp_tool_results_have_exact_parity(
         mcp_remember = await session.call_tool(
             "remember", remember_request.model_dump(mode="json")
         )
-        assert mcp_remember.structuredContent == direct_remember.model_dump(
-            mode="json"
-        )
+        assert mcp_remember.structuredContent == direct_remember.model_dump(mode="json")
 
         direct_search = await direct.search(search_request)
         mcp_search = await session.call_tool(
@@ -340,7 +338,7 @@ async def test_direct_application_and_mcp_tool_results_have_exact_parity(
         assert mcp_recall.structuredContent == direct_recall.model_dump(mode="json")
 
 
-def test_transport_flag_selects_streamable_http(monkeypatch) -> None:
+def test_transport_flag_selects_streamable_http(monkeypatch, tmp_path: Path) -> None:
     transports = []
 
     class FakeServer:
@@ -353,11 +351,274 @@ def test_transport_flag_selects_streamable_http(monkeypatch) -> None:
     assert (
         mcp_adapter.main(
             ["--streamable-http", "--host", "127.0.0.1", "--port", "9123"],
-            environ={"AOMS_LOG_LEVEL": "ERROR"},
+            environ={
+                "AOMS_LOG_LEVEL": "ERROR",
+                "AOMS_DATA_DIR": str(tmp_path),
+                "AOMS_EMBEDDING_PROVIDER": "none",
+            },
         )
         == 0
     )
     assert transports == ["stdio", "streamable-http"]
+
+
+def _initialize_payload() -> dict:
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": {"name": "auth-test", "version": "1"},
+        },
+    }
+
+
+async def _http_client_session(server, secret: str):
+    app = server.streamable_http_app()
+    transport = httpx.ASGITransport(app=app)
+    client = httpx.AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        headers={"Authorization": f"Bearer {secret}"},
+    )
+    return app, client
+
+
+@pytest.mark.asyncio
+async def test_streamable_http_auth_binds_token_identity_end_to_end(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "aoms.sqlite3")
+    await repository.store(
+        MemoryRecord(
+            id="foreign-http-canary",
+            kind=MemoryKind.FACT,
+            content="FOREIGN_HTTP_CANARY violet narwhal",
+            scope=Scope.AGENT_PRIVATE,
+            scope_agent_id="foreign-agent",
+            created_by_agent_id="foreign-agent",
+            provenance=Provenance(source="http-auth-test"),
+            created_at=FIXED_TIME,
+            updated_at=FIXED_TIME,
+        )
+    )
+    store = TokenStore(repository.db_path)
+    created = await store.create(
+        name="remote-client",
+        scopes=["read", "write"],
+        agent_id="http-agent",
+        workspace_id="http-workspace",
+    )
+    application = AOMSApplication(
+        repository,
+        scope_context=ScopeContext(agent_id="default", workspace_id="default"),
+        embedding_provider=NullProvider(),
+        background_embeddings=False,
+    )
+    server = create_server(
+        application=application,
+        token_store=store,
+        allowed_hosts=["testserver"],
+        environ={"AOMS_AGENT_ID": "default", "AOMS_WORKSPACE": "default"},
+    )
+    app, http_client = await _http_client_session(server, created.secret)
+
+    async with app.router.lifespan_context(app):
+        async with http_client:
+            async with streamable_http_client(
+                "http://testserver/mcp", http_client=http_client
+            ) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    initialized = await session.initialize()
+                    assert initialized.serverInfo.name == "AOMS"
+                    remembered = await session.call_tool(
+                        "remember",
+                        {
+                            "id": "http-bound-memory",
+                            "kind": "fact",
+                            "content": "The remote token binds this memory.",
+                            "scope": "agent-private",
+                        },
+                    )
+                    remembered_model = RememberResult.model_validate(
+                        remembered.structuredContent
+                    )
+                    assert remembered_model.record.scope_agent_id == "http-agent"
+                    assert remembered_model.record.created_by_agent_id == "http-agent"
+
+                    canary = await session.call_tool(
+                        "search",
+                        {
+                            "query": "violet narwhal",
+                            "scopes": ["agent-private"],
+                        },
+                    )
+                    canary_model = SearchResult.model_validate(canary.structuredContent)
+                    assert canary_model.items == []
+                    assert canary_model.diagnostics["scope_filtered_count"] == 1
+                    assert "FOREIGN_HTTP_CANARY" not in json.dumps(
+                        canary.structuredContent
+                    )
+
+
+@pytest.mark.asyncio
+async def test_http_rejects_missing_invalid_and_expired_bearer_tokens(
+    tmp_path: Path,
+) -> None:
+    store = TokenStore(tmp_path / "aoms.sqlite3")
+    created = await store.create(
+        name="expiring",
+        scopes=["read"],
+        agent_id="agent",
+        workspace_id="workspace",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    server = create_server(
+        token_store=store,
+        allowed_hosts=["testserver"],
+        environ={
+            "AOMS_DATA_DIR": str(tmp_path),
+            "AOMS_EMBEDDING_PROVIDER": "none",
+        },
+    )
+    app = server.streamable_http_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        missing = await client.post("/mcp", json=_initialize_payload())
+        invalid = await client.post(
+            "/mcp",
+            json=_initialize_payload(),
+            headers={"Authorization": "Bearer invalid"},
+        )
+        with sqlite3.connect(tmp_path / "aoms.sqlite3") as connection:
+            connection.execute(
+                "UPDATE auth_tokens SET expires_at = ? WHERE token_id = ?",
+                (
+                    (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+                    created.token.token_id,
+                ),
+            )
+        expired = await client.post(
+            "/mcp",
+            json=_initialize_payload(),
+            headers={"Authorization": f"Bearer {created.secret}"},
+        )
+
+    assert missing.status_code == 401
+    assert invalid.status_code == 401
+    assert expired.status_code == 401
+    assert 'error="invalid_token"' in missing.headers["www-authenticate"]
+
+
+@pytest.mark.asyncio
+async def test_http_tool_scopes_and_per_token_rate_limit(tmp_path: Path) -> None:
+    store = TokenStore(tmp_path / "aoms.sqlite3")
+    read_only = await store.create(
+        name="read-only",
+        scopes=["read"],
+        agent_id="reader",
+        workspace_id="workspace",
+    )
+    server = create_server(
+        token_store=store,
+        allowed_hosts=["testserver"],
+        rate_limit_per_second=0.0001,
+        rate_limit_burst=1,
+        environ={
+            "AOMS_DATA_DIR": str(tmp_path),
+            "AOMS_EMBEDDING_PROVIDER": "none",
+        },
+    )
+    app, http_client = await _http_client_session(server, read_only.secret)
+    async with app.router.lifespan_context(app):
+        async with http_client:
+            async with streamable_http_client(
+                "http://testserver/mcp", http_client=http_client
+            ) as (read, write, _):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    insufficient = await session.call_tool(
+                        "remember", {"kind": "fact", "content": "not allowed"}
+                    )
+                    assert insufficient.isError is True
+                    assert "requires 'write' scope" in _tool_text(insufficient)
+
+                    first = await session.call_tool("search", {"query": "anything"})
+                    assert first.isError is False
+                    limited = await session.call_tool("search", {"query": "anything"})
+                    assert limited.isError is True
+                    assert "rate limit exceeded" in _tool_text(limited)
+
+
+@pytest.mark.asyncio
+async def test_http_origin_and_request_size_are_enforced(tmp_path: Path) -> None:
+    store = TokenStore(tmp_path / "aoms.sqlite3")
+    created = await store.create(
+        name="browser",
+        scopes=["read"],
+        agent_id="agent",
+        workspace_id="workspace",
+    )
+    server = create_server(
+        token_store=store,
+        allowed_hosts=["testserver"],
+        allowed_origins=["https://allowed.example"],
+        max_request_bytes=128,
+        environ={
+            "AOMS_DATA_DIR": str(tmp_path),
+            "AOMS_EMBEDDING_PROVIDER": "none",
+        },
+    )
+    app = server.streamable_http_app()
+    headers = {"Authorization": f"Bearer {created.secret}"}
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            wrong_origin = await client.post(
+                "/mcp",
+                content=b"{}",
+                headers={
+                    **headers,
+                    "Content-Type": "application/json",
+                    "Origin": "https://evil.example",
+                },
+            )
+            oversized = await client.post(
+                "/mcp",
+                content=b"x" * 129,
+                headers={**headers, "Content-Type": "application/json"},
+            )
+    assert wrong_origin.status_code == 403
+    assert oversized.status_code == 413
+
+
+def test_non_loopback_startup_requires_active_token_and_tls(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="active token"):
+        mcp_adapter._validate_http_startup(
+            host="0.0.0.0",
+            usable_token_count=0,
+            tls_certfile=None,
+            tls_keyfile=None,
+        )
+    with pytest.raises(RuntimeError, match="tls-certfile"):
+        mcp_adapter._validate_http_startup(
+            host="0.0.0.0",
+            usable_token_count=1,
+            tls_certfile=None,
+            tls_keyfile=None,
+        )
+    mcp_adapter._validate_http_startup(
+        host="127.0.0.2",
+        usable_token_count=0,
+        tls_certfile=None,
+        tls_keyfile=None,
+    )
 
 
 def test_process_scope_defaults_are_single_user_and_non_null() -> None:

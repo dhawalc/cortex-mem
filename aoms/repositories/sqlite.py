@@ -52,7 +52,7 @@ from aoms.repositories.base import (
     VectorHit,
 )
 
-LATEST_SCHEMA_VERSION = 4
+LATEST_SCHEMA_VERSION = 5
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -123,6 +123,25 @@ MIGRATIONS: dict[int, str] = {
         ALTER TABLE recall_receipts ADD COLUMN workspace_id TEXT;
         CREATE INDEX IF NOT EXISTS idx_recall_receipts_agent_created
             ON recall_receipts(agent_id, created_at DESC, receipt_id DESC);
+    """,
+    5: """
+        CREATE TABLE IF NOT EXISTS auth_tokens (
+            token_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            scopes_json TEXT NOT NULL,
+            agent_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            salt BLOB NOT NULL,
+            secret_hash BLOB NOT NULL,
+            created_at TEXT NOT NULL,
+            last_used_at TEXT,
+            expires_at TEXT,
+            revoked_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_name
+            ON auth_tokens(name);
+        CREATE INDEX IF NOT EXISTS idx_auth_tokens_active
+            ON auth_tokens(revoked_at, expires_at);
     """,
 }
 

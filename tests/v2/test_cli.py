@@ -44,6 +44,7 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
         "sweep",
         "export",
         "restore",
+        "token",
         "mcp",
     ):
         assert command in help_result.stdout
@@ -52,7 +53,7 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
     result = run_cli("init", data_dir=data_dir, check=True)
 
     assert (data_dir / "aoms.sqlite3").is_file()
-    assert "SQLite store ready (schema 4)" in result.stdout
+    assert "SQLite store ready (schema 5)" in result.stdout
     assert "claude mcp add aoms -- uvx cortex-mem mcp" in result.stdout
     assert (
         "openclaw config set mcp.servers.aoms "
@@ -80,11 +81,51 @@ def test_cli_import_export_restore_smoke(tmp_path: Path) -> None:
     assert "Restored 5 record(s)" in restored.stdout
     with sqlite3.connect(restored_data / "aoms.sqlite3") as connection:
         assert connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0] == 5
-        assert connection.execute(
-            "SELECT COUNT(*) FROM memories "
-            "WHERE scope_workspace_id = 'default' "
-            "AND created_by_agent_id = 'default'"
-        ).fetchone()[0] == 5
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM memories "
+                "WHERE scope_workspace_id = 'default' "
+                "AND created_by_agent_id = 'default'"
+            ).fetchone()[0]
+            == 5
+        )
+
+
+def test_token_cli_create_list_and_revoke_without_reprinting_secret(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "tokens"
+    run_cli("init", data_dir=data_dir, check=True)
+    created = run_cli(
+        "token",
+        "create",
+        "remote-agent",
+        "--scope",
+        "read",
+        "--scope",
+        "write",
+        "--agent-id",
+        "agent-7",
+        "--workspace-id",
+        "workspace-9",
+        data_dir=data_dir,
+        check=True,
+    )
+    secret = created.stdout.strip().splitlines()[-1]
+    token_id = secret.split("_", 2)[1]
+    assert secret.startswith("aoms_")
+    assert "shown once" in created.stdout
+
+    listed = run_cli("token", "list", data_dir=data_dir, check=True)
+    assert token_id in listed.stdout
+    assert "read,write" in listed.stdout
+    assert "agent-7 / workspace-9" in listed.stdout
+    assert secret not in listed.stdout
+
+    revoked = run_cli("token", "revoke", token_id, data_dir=data_dir, check=True)
+    assert f"Revoked token {token_id}" in revoked.stdout
+    relisted = run_cli("token", "list", data_dir=data_dir, check=True)
+    assert "revoked" in relisted.stdout
 
 
 def test_doctor_missing_corrupt_and_empty_store_findings(tmp_path: Path) -> None:
