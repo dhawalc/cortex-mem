@@ -212,7 +212,7 @@ weights:
 ## Development
 
 Run the canonical main suite from the repository root with `python -m pytest`.
-It collects 119 tests. Pytest is pinned to `tests/`; the three tests inside the
+It collects 123 tests. Pytest is pinned to `tests/`; the three tests inside the
 relay fixture repository belong to that fixture's own harness and are excluded.
 
 ## License

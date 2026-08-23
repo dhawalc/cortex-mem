@@ -11,12 +11,24 @@ summary: >-
 stages:
   planner:
     agent_id: relay-planner
+    prompt: >-
+      Plan the durable webhook relay task in this repository. Recall relevant
+      AOMS context before consequential work, then leave durable project state
+      for the next cold-start agent.
   implementer:
     agent_id: relay-implementer
+    prompt: >-
+      Implement the durable webhook relay task in this repository. Recall
+      relevant AOMS context before editing, run the repository tests, and leave
+      the workspace ready for independent review.
     recall_query: relay dispatch constraints event header retries ordering tokens
     token_ceiling: 1000
   reviewer:
     agent_id: relay-reviewer
+    prompt: >-
+      Independently review and finish the durable webhook relay task in this
+      repository. Recall relevant AOMS context before reviewing, fix any issue
+      you find, and leave a verified final workspace.
     recall_query: relay dispatch constraints regression sqlite retries ordering tokens
     token_ceiling: 1000
 
