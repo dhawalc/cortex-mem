@@ -52,11 +52,21 @@ Issues = "https://github.com/dhawalc/cortex-mem/issues"
 version = {attr = "aoms.version.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["aoms*"]
+include = ["aoms*", "demo*"]
 exclude = ["tests*", "scripts*", "snapshots*", "index*"]
 
 [tool.setuptools.data-files]
 "share/cortex-mem/tests/v2" = ["tests/v2/test_mcp_server.py"]
 "share/cortex-mem/tests/v2/fixtures" = [
     "tests/v2/fixtures/mcp_tool_schemas.snapshot.json",
+]
+
+[tool.setuptools.package-data]
+"demo.relay_fixture" = [
+    "scenario.yaml",
+    "README.md",
+    "repository/README.md",
+    "repository/pyproject.toml",
+    "repository/relay_service/*.py",
+    "repository/tests/*.py",
 ]
