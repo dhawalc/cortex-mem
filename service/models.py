@@ -130,3 +130,4 @@ class StatsResponse(BaseModel):
     recent_24h: int
     oldest_entry: Optional[str]
     newest_entry: Optional[str]
+    computed_at: datetime

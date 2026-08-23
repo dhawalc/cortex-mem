@@ -6,9 +6,14 @@ FastAPI server providing:
 - Cortex L0/L1/L2 progressive disclosure for large documents
 """
 import asyncio
+import json
 import logging
+import os
+import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Dict, Iterator, Optional
 
 import yaml
 from fastapi import FastAPI, HTTPException, Query
@@ -53,6 +58,14 @@ app = FastAPI(
 
 storage = MemoryStorage(MEMORY_ROOT)
 _start_time = time.monotonic()
+STATS_TTL_SECONDS = 300
+UNINDEXED_IDS_PATH = MEMORY_ROOT / "unindexed_ids.jsonl"
+
+_stats_cache: Optional[StatsResponse] = None
+_stats_cache_expires_at = 0.0
+_stats_cache_lock = asyncio.Lock()
+_background_tasks = set()
+_unindexed_marker_lock = threading.Lock()
 
 # Lazy-init cortex components (heavy deps: chromadb, sqlite)
 _tier_generator = None
@@ -924,86 +937,162 @@ async def deduplicate_memories(
 # STATS & ANALYTICS
 # ========================================
 
-@app.get("/stats", response_model=StatsResponse)
-async def get_stats():
-    """Get memory statistics and analytics."""
-    from datetime import datetime, timezone, timedelta
-    import json
-    
-    counts = await storage.count_entries()
-    total = sum(counts.values())
-    
-    # Count by type
-    by_type = {}
+def _iter_json_objects(filepath: Path, chunk_size: int = 64 * 1024) -> Iterator[dict]:
+    """Stream JSON objects, including concatenated objects on giant lines."""
+    max_record_chars = 16 * 1024 * 1024
+    parts = []
+    depth = 0
+    in_string = False
+    escaped = False
+    segment_start = None
+    record_chars = 0
+    oversized = False
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        while chunk := f.read(chunk_size):
+            for index, char in enumerate(chunk):
+                if depth == 0:
+                    if char == "{":
+                        depth = 1
+                        in_string = False
+                        escaped = False
+                        segment_start = index
+                        record_chars = 0
+                        oversized = False
+                    continue
+
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                elif char == '"':
+                    in_string = True
+                elif char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        fragment = chunk[segment_start:index + 1]
+                        if not oversized and record_chars + len(fragment) <= max_record_chars:
+                            try:
+                                entry = json.loads("".join(parts) + fragment)
+                            except json.JSONDecodeError:
+                                pass
+                            else:
+                                if isinstance(entry, dict):
+                                    yield entry
+                        parts = []
+                        segment_start = None
+                elif char == "\n":
+                    # JSONL records are one line. Recover from an unclosed corrupt
+                    # record rather than swallowing all subsequent valid records.
+                    parts = []
+                    depth = 0
+                    segment_start = None
+
+            if depth and segment_start is not None:
+                fragment = chunk[segment_start:]
+                record_chars += len(fragment)
+                if record_chars <= max_record_chars:
+                    parts.append(fragment)
+                else:
+                    parts = []
+                    oversized = True
+                segment_start = 0
+
+
+def _scan_memory_stats(storage_instance: MemoryStorage) -> Dict[str, object]:
+    """Synchronously scan memory files; callers must run this in a worker thread."""
+    counts = {tier: 0 for tier in ALL_TIERS}
+    by_type: Dict[str, int] = {}
     weight_buckets = {"low": 0, "medium": 0, "high": 0}
     recent_24h = 0
     oldest = None
     newest = None
-    
+    oldest_time = None
+    newest_time = None
     cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
-    
+
     for tier in ALL_TIERS:
-        for filepath in storage._all_files_for_tier(tier):
+        for filepath in storage_instance._all_files_for_tier(tier):
             if not filepath.exists():
                 continue
-            
-            with open(filepath, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line.strip())
-                        if "schema" in entry:
-                            continue
-                        
-                        # Type count
-                        entry_type = entry.get("_type", entry.get("type", "unknown"))
-                        by_type[entry_type] = by_type.get(entry_type, 0) + 1
-                        
-                        # Weight distribution
-                        weight = entry.get("weight", 1.0)
-                        if weight < 0.5:
-                            weight_buckets["low"] += 1
-                        elif weight < 1.5:
-                            weight_buckets["medium"] += 1
-                        else:
-                            weight_buckets["high"] += 1
-                        
-                        # Recency
-                        ts = entry.get("ts") or entry.get("_written_at")
-                        if ts:
-                            try:
-                                # Handle both float (unix timestamp) and string (ISO) formats
-                                if isinstance(ts, (int, float)):
-                                    entry_time = datetime.fromtimestamp(ts, tz=timezone.utc)
-                                    ts_str = entry_time.isoformat()
-                                else:
-                                    entry_time = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-                                    ts_str = str(ts)
-                                
-                                if entry_time > cutoff_24h:
-                                    recent_24h += 1
-                                if oldest is None or ts_str < oldest:
-                                    oldest = ts_str
-                                if newest is None or ts_str > newest:
-                                    newest = ts_str
-                            except (ValueError, TypeError, OSError):
-                                pass
-                    except json.JSONDecodeError:
-                        continue
-    
-    # Vector index stats
-    from . import vector_store
-    vector_stats = await vector_store.get_index_stats()
-    
-    return StatsResponse(
-        total_entries=total,
-        by_tier=counts,
-        by_type=by_type,
-        vector_indexed=vector_stats,
-        weight_distribution=weight_buckets,
-        recent_24h=recent_24h,
-        oldest_entry=oldest,
-        newest_entry=newest,
-    )
+
+            for entry in _iter_json_objects(filepath):
+                if "schema" in entry:
+                    continue
+
+                counts[tier] += 1
+                entry_type = entry.get("_type", entry.get("type", "unknown"))
+                by_type[entry_type] = by_type.get(entry_type, 0) + 1
+
+                weight = entry.get("weight", 1.0)
+                if weight < 0.5:
+                    weight_buckets["low"] += 1
+                elif weight < 1.5:
+                    weight_buckets["medium"] += 1
+                else:
+                    weight_buckets["high"] += 1
+
+                ts = entry.get("ts") or entry.get("_written_at")
+                if not ts:
+                    continue
+                try:
+                    if isinstance(ts, (int, float)):
+                        entry_time = datetime.fromtimestamp(ts, tz=timezone.utc)
+                        ts_str = entry_time.isoformat()
+                    else:
+                        entry_time = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+                        if entry_time.tzinfo is None:
+                            entry_time = entry_time.replace(tzinfo=timezone.utc)
+                        ts_str = str(ts)
+
+                    if entry_time > cutoff_24h:
+                        recent_24h += 1
+                    if oldest_time is None or entry_time < oldest_time:
+                        oldest_time = entry_time
+                        oldest = ts_str
+                    if newest_time is None or entry_time > newest_time:
+                        newest_time = entry_time
+                        newest = ts_str
+                except (ValueError, TypeError, OSError):
+                    pass
+
+    return {
+        "total_entries": sum(counts.values()),
+        "by_tier": counts,
+        "by_type": by_type,
+        "weight_distribution": weight_buckets,
+        "recent_24h": recent_24h,
+        "oldest_entry": oldest,
+        "newest_entry": newest,
+    }
+
+
+@app.get("/stats", response_model=StatsResponse)
+async def get_stats():
+    """Get memory statistics and analytics."""
+    global _stats_cache, _stats_cache_expires_at
+
+    now = time.monotonic()
+    if _stats_cache is not None and now < _stats_cache_expires_at:
+        return _stats_cache
+
+    async with _stats_cache_lock:
+        now = time.monotonic()
+        if _stats_cache is not None and now < _stats_cache_expires_at:
+            return _stats_cache
+
+        stats = await asyncio.to_thread(_scan_memory_stats, storage)
+        from . import vector_store
+        stats["vector_indexed"] = await vector_store.get_index_stats()
+        stats["computed_at"] = datetime.now(timezone.utc)
+        _stats_cache = StatsResponse(**stats)
+        _stats_cache_expires_at = time.monotonic() + STATS_TTL_SECONDS
+        return _stats_cache
 
 
 # ========================================
@@ -1087,6 +1176,68 @@ async def index_memories(
 # WRITE MEMORY (wildcard route - must come after specific routes)
 # ========================================
 
+def _append_unindexed_marker(tier: str, record: dict, error: str) -> None:
+    marker = {
+        "id": record["id"],
+        "tier": tier,
+        "error": error,
+        "failed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    UNINDEXED_IDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _unindexed_marker_lock:
+        with open(UNINDEXED_IDS_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(marker, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+
+
+async def _embed_and_index_record(tier: str, record: dict) -> None:
+    from . import embeddings, vector_store
+
+    try:
+        text = embeddings.text_for_embedding(record)
+        embedding = await embeddings.get_embedding(text)
+        if embedding is None:
+            raise RuntimeError("embedding service returned no vector")
+
+        indexed = await vector_store.add_to_index(
+            tier=tier,
+            entry_id=record["id"],
+            embedding=embedding,
+            metadata={
+                "_type": record.get("_type", ""),
+                "_written_at": record.get("_written_at", ""),
+                "weight": record.get("weight", 1.0),
+            },
+            document=text,
+        )
+        if not indexed:
+            raise RuntimeError("vector store rejected the entry")
+        logger.info(f"Embed-on-write indexed {tier}/{record['id']}")
+    except asyncio.CancelledError:
+        await asyncio.to_thread(_append_unindexed_marker, tier, record, "indexing task cancelled")
+        logger.error(f"Embed-on-write cancelled for {tier}/{record['id']}; marker recorded")
+        raise
+    except Exception as exc:
+        try:
+            await asyncio.to_thread(_append_unindexed_marker, tier, record, str(exc))
+        except Exception as marker_exc:
+            logger.exception(
+                f"Embed-on-write failed for {tier}/{record['id']} and marker write failed: {marker_exc}"
+            )
+        else:
+            logger.error(
+                f"Embed-on-write failed for {tier}/{record['id']}: {exc}; "
+                f"marker recorded at {UNINDEXED_IDS_PATH}"
+            )
+
+
+def _schedule_embed_on_write(tier: str, record: dict) -> None:
+    task = asyncio.create_task(_embed_and_index_record(tier, record))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 @app.post("/memory/{tier}")
 async def write_memory(tier: str, entry: MemoryWrite):
     """Append an entry to a memory tier's JSONL log."""
@@ -1103,6 +1254,7 @@ async def write_memory(tier: str, entry: MemoryWrite):
         tags=entry.tags,
         weight=entry.weight,
     )
+    _schedule_embed_on_write(tier, record)
 
     return {
         "status": "ok",

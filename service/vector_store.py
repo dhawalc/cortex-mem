@@ -4,6 +4,7 @@ Vector storage for AOMS semantic search.
 Uses ChromaDB for persistent vector storage with per-tier collections.
 Falls back gracefully if ChromaDB is unavailable (e.g., Python 3.14 compatibility).
 """
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -64,13 +65,23 @@ async def add_to_index(
     document: str,
 ) -> bool:
     """Add a single entry to the vector index."""
+    return await asyncio.to_thread(
+        _add_to_index_sync, tier, entry_id, embedding, metadata, document
+    )
+
+
+def _add_to_index_sync(
+    tier: str,
+    entry_id: str,
+    embedding: List[float],
+    metadata: Dict[str, Any],
+    document: str,
+) -> bool:
     try:
         collection = get_collection(tier)
         if collection is None:
             return False
-        if collection is None:
-            return False
-        
+
         # ChromaDB metadata must be str, int, float, or bool
         clean_meta = {}
         for k, v in metadata.items():
@@ -142,6 +153,10 @@ async def semantic_search(
 
 async def get_index_stats() -> Dict[str, int]:
     """Get entry counts per tier in vector index."""
+    return await asyncio.to_thread(_get_index_stats_sync)
+
+
+def _get_index_stats_sync() -> Dict[str, int]:
     stats = {}
     for tier in ["episodic", "semantic", "procedural"]:
         try:

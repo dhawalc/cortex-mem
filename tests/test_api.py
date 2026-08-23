@@ -1,10 +1,15 @@
 import asyncio
+import json
+import threading
+from datetime import datetime, timezone
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 import service.api as api
+from service.models import MemoryWrite
+from service.storage import MemoryStorage
 
 
 class FakeStorage:
@@ -100,6 +105,7 @@ def client(monkeypatch):
     fake_generator = FakeGenerator()
 
     monkeypatch.setattr(api, "storage", fake_storage)
+    monkeypatch.setattr(api, "_schedule_embed_on_write", lambda _tier, _record: None)
     monkeypatch.setattr(api, "_get_retriever", lambda: fake_retriever)
     monkeypatch.setattr(api, "_get_generator", lambda: fake_generator)
     monkeypatch.setattr(
@@ -212,3 +218,116 @@ async def test_concurrent_memory_writes(client):
 
     assert all(r.status_code == 200 for r in responses)
     assert len(storage.append_calls) == 40
+
+
+@pytest.mark.asyncio
+async def test_stats_scan_is_offloaded_and_cached(monkeypatch, tmp_path):
+    filepath = tmp_path / "modules/memory/episodic/experiences.jsonl"
+    filepath.parent.mkdir(parents=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    schema = {"schema": "experience-v1"}
+    first = {"id": "one", "_type": "experience", "weight": 0.4, "ts": timestamp}
+    second = {"id": "two", "_type": "decision", "weight": 2.0, "ts": timestamp}
+    filepath.write_text(
+        json.dumps(schema) + "\n" + json.dumps(first) + json.dumps(second),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(api, "storage", MemoryStorage(tmp_path))
+    monkeypatch.setattr(api, "_stats_cache", None)
+    monkeypatch.setattr(api, "_stats_cache_expires_at", 0.0)
+    monkeypatch.setattr(api, "_stats_cache_lock", asyncio.Lock())
+
+    from service import vector_store
+
+    async def fake_index_stats():
+        return {"episodic": 2, "semantic": 0, "procedural": 0}
+
+    monkeypatch.setattr(vector_store, "get_index_stats", fake_index_stats)
+    original_scan = api._scan_memory_stats
+    scan_threads = []
+
+    def tracked_scan(storage_instance):
+        scan_threads.append(threading.get_ident())
+        return original_scan(storage_instance)
+
+    monkeypatch.setattr(api, "_scan_memory_stats", tracked_scan)
+    event_loop_thread = threading.get_ident()
+
+    first_result = await api.get_stats()
+    second_result = await api.get_stats()
+
+    assert len(scan_threads) == 1
+    assert scan_threads[0] != event_loop_thread
+    assert first_result.total_entries == 2
+    assert first_result.by_type == {"experience": 1, "decision": 1}
+    assert first_result.weight_distribution == {"low": 1, "medium": 0, "high": 1}
+    assert first_result.computed_at == second_result.computed_at
+
+
+@pytest.mark.asyncio
+async def test_memory_write_schedules_embedding_without_waiting(monkeypatch):
+    from service import embeddings, vector_store
+
+    fake_storage = FakeStorage()
+    embed_started = asyncio.Event()
+    release_embedding = asyncio.Event()
+    indexed = asyncio.Event()
+    indexed_entry = {}
+
+    async def fake_embedding(text):
+        embed_started.set()
+        await release_embedding.wait()
+        return [0.1, 0.2]
+
+    async def fake_add_to_index(**kwargs):
+        indexed_entry.update(kwargs)
+        indexed.set()
+        return True
+
+    monkeypatch.setattr(api, "storage", fake_storage)
+    monkeypatch.setattr(embeddings, "get_embedding", fake_embedding)
+    monkeypatch.setattr(vector_store, "add_to_index", fake_add_to_index)
+
+    response = await api.write_memory(
+        "episodic",
+        MemoryWrite(type="experience", payload={"title": "test", "outcome": "ok"}),
+    )
+    await asyncio.wait_for(embed_started.wait(), timeout=1)
+
+    assert response["status"] == "ok"
+    assert not indexed.is_set()
+
+    release_embedding.set()
+    await asyncio.wait_for(indexed.wait(), timeout=1)
+    assert indexed_entry["entry_id"] == response["id"]
+    assert indexed_entry["tier"] == "episodic"
+
+
+@pytest.mark.asyncio
+async def test_embed_failure_writes_unindexed_marker(monkeypatch, tmp_path):
+    from service import embeddings
+
+    marker_path = tmp_path / "unindexed_ids.jsonl"
+
+    async def failed_embedding(_text):
+        return None
+
+    monkeypatch.setattr(api, "UNINDEXED_IDS_PATH", marker_path)
+    monkeypatch.setattr(embeddings, "get_embedding", failed_embedding)
+
+    await api._embed_and_index_record(
+        "semantic",
+        {
+            "id": "failed-id",
+            "_tier": "semantic",
+            "_type": "fact",
+            "content": "remember me",
+            "weight": 1.0,
+        },
+    )
+
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    assert marker["id"] == "failed-id"
+    assert marker["tier"] == "semantic"
+    assert "no vector" in marker["error"]
