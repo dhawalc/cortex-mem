@@ -23,6 +23,7 @@ from demo.relay.adapters import (
 from demo.relay.artifacts import validate_bundle
 from demo.relay import runner as relay_runner
 from demo.relay.runner import run_relay
+from demo.relay_fixture.seed import load_scenario
 from demo.relay_fixture.verify import verify_run
 
 
@@ -35,6 +36,36 @@ def scripted_bundle(tmp_path_factory: pytest.TempPathFactory):
             agent_names=("scripted", "scripted", "scripted"),
             seed=7319,
             with_baseline=True,
+        )
+    )
+
+
+@pytest.fixture(scope="module")
+def scripted_plan_transmission_bundle(tmp_path_factory: pytest.TempPathFactory):
+    """Force a long planner memory to displace the individual seeded records."""
+
+    root = tmp_path_factory.mktemp("relay-plan-transmission")
+    script = yaml.safe_load(relay_runner.DEFAULT_SCRIPT.read_text(encoding="utf-8"))
+    scenario = load_scenario()
+    planner_calls = script["stages"]["planner"]["calls"]
+    handoff = next(call for call in planner_calls if call.get("name") == "remember")
+    constraint_synopsis = "\n".join(item["text"] for item in scenario["constraints"])
+    ranking_detail = " ".join(
+        [
+            "relay dispatch constraints event header retries ordering tokens "
+            "recursive redaction nested lists durable sqlite implementation detail"
+        ]
+        * 250
+    )
+    handoff["arguments"]["content"] = f"{constraint_synopsis}\n\n{ranking_detail}"
+    script_path = root / "plan-transmission-scripted.yaml"
+    script_path.write_text(yaml.safe_dump(script, sort_keys=False), encoding="utf-8")
+    return asyncio.run(
+        run_relay(
+            root / "bundle",
+            agent_names=("scripted", "scripted", "scripted"),
+            seed=7319,
+            script_path=script_path,
         )
     )
 
@@ -89,6 +120,61 @@ def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     assert (bundle / "verifier" / "report.json").is_file()
     verifier_record = json.loads((bundle / "verifier" / "report.json").read_text())
     assert verifier_record["grade"] == "PROOF"
+
+
+def test_scripted_verifier_accepts_provenanced_plan_transmission(
+    scripted_plan_transmission_bundle,
+) -> None:
+    result = scripted_plan_transmission_bundle
+    artifact = json.loads((result.bundle / "stage-2" / "recall.json").read_text())
+    selected_ids = {item["memory_id"] for item in artifact["receipt"]["selected"]}
+
+    assert selected_ids == {"relay-plan-durable-store"}
+    assert result.verification.passed, result.verification.failures
+    assert (
+        "stage-2 transmitted all injected constraints via AOMS"
+        in result.verification.checks
+    )
+
+
+def test_scripted_verifier_rejects_missing_constraint_content(
+    scripted_plan_transmission_bundle, tmp_path: Path
+) -> None:
+    tampered = tmp_path / "missing-content"
+    shutil.copytree(scripted_plan_transmission_bundle.bundle, tampered)
+    artifact_path = tampered / "stage-2" / "recall.json"
+    artifact = json.loads(artifact_path.read_text())
+    artifact["context"] = artifact["context"].replace("_token", "_credential")
+    artifact_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+
+    report = verify_run(tampered, scenario_path=tampered / "scenario.yaml")
+
+    assert not report.passed
+    assert any(
+        "relay-constraint-recursive-redaction" in failure and "_token" in failure
+        for failure in report.failures
+    )
+
+
+def test_scripted_verifier_rejects_invalid_plan_provenance(
+    scripted_plan_transmission_bundle, tmp_path: Path
+) -> None:
+    tampered = tmp_path / "invalid-provenance"
+    shutil.copytree(scripted_plan_transmission_bundle.bundle, tampered)
+    artifact_path = tampered / "stage-2" / "recall.json"
+    artifact = json.loads(artifact_path.read_text())
+    original = '"source": "scripted-relay-planner"'
+    assert artifact["context"].count(original) == 1
+    artifact["context"] = artifact["context"].replace(original, '"source": ""', 1)
+    artifact_path.write_text(json.dumps(artifact, indent=2), encoding="utf-8")
+
+    report = verify_run(tampered, scenario_path=tampered / "scenario.yaml")
+
+    assert not report.passed
+    assert any(
+        "stage-2 packed AOMS context/provenance is invalid" in failure
+        for failure in report.failures
+    )
 
 
 def test_scripted_relay_pins_model_requested_recall_budget(tmp_path: Path) -> None:

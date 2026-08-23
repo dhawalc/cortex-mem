@@ -133,8 +133,8 @@ async def test_relay_seeder_and_verifier_round_trip(tmp_path: Path) -> None:
 
     assert report.passed, report.failures
     assert report.failures == ()
-    assert "stage-2 selected all injected constraints" in report.checks
-    assert "stage-3 selected the private regression clue" in report.checks
+    assert "stage-2 transmitted all injected constraints via AOMS" in report.checks
+    assert "stage-3 transmitted the private regression clue via AOMS" in report.checks
     assert "acceptance: durable idempotency" in report.checks
 
 

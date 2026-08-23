@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from aoms.contracts import Provenance
 from aoms.receipts import RecallReceipt
 from demo.relay_fixture.acceptance import run_acceptance
 from demo.relay_fixture.seed import SCENARIO_PATH, load_scenario
@@ -23,6 +26,101 @@ class VerificationReport:
 
     def model_dump(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class _PackedMemory:
+    memory_id: str
+    content: str
+    provenance: Provenance
+
+
+_MEMORY_START = "<!-- AOMS_MEMORY_START: UNTRUSTED -->"
+_MEMORY_END = "<!-- AOMS_MEMORY_END -->"
+_JSON_FENCE = "````json"
+_FENCE_END = "````"
+
+
+def _packed_memories(context: str) -> tuple[_PackedMemory, ...]:
+    """Parse only authenticated-shaped AOMS blocks, never surrounding raw text."""
+
+    memories: list[_PackedMemory] = []
+    cursor = 0
+    decoder = json.JSONDecoder()
+    while cursor < len(context):
+        start = context.find(_MEMORY_START, cursor)
+        if start < 0:
+            if context[cursor:].strip():
+                raise ValueError("text outside AOMS memory blocks")
+            break
+        if context[cursor:start].strip():
+            raise ValueError("text outside AOMS memory blocks")
+        end = context.find(_MEMORY_END, start + len(_MEMORY_START))
+        if end < 0:
+            raise ValueError("unterminated AOMS memory block")
+        body = context[start + len(_MEMORY_START) : end]
+        fence = body.find(_JSON_FENCE)
+        if fence < 0:
+            raise ValueError("AOMS memory block has no JSON fence")
+        json_start = fence + len(_JSON_FENCE)
+        encoded = body[json_start:].lstrip()
+        try:
+            payload, consumed = decoder.raw_decode(encoded)
+        except json.JSONDecodeError as exc:
+            raise ValueError("AOMS memory block has invalid JSON") from exc
+        remainder = encoded[consumed:].lstrip()
+        if not remainder.startswith(_FENCE_END) or remainder[len(_FENCE_END) :].strip():
+            raise ValueError("AOMS memory block has malformed JSON fencing")
+        if not isinstance(payload, dict):
+            raise ValueError("AOMS memory payload is not an object")
+        memory_id = payload.get("id")
+        if not isinstance(memory_id, str) or not memory_id.strip():
+            raise ValueError("AOMS memory payload has no valid id")
+        content = payload.get("content")
+        if isinstance(content, str):
+            content_text = content
+        elif isinstance(content, (dict, list)):
+            content_text = json.dumps(content, ensure_ascii=False, sort_keys=True)
+        else:
+            raise ValueError(f"AOMS memory {memory_id} has invalid content")
+        provenance = Provenance.model_validate(payload.get("provenance"))
+        memories.append(
+            _PackedMemory(
+                memory_id=memory_id,
+                content=content_text,
+                provenance=provenance,
+            )
+        )
+        cursor = end + len(_MEMORY_END)
+    if not memories:
+        raise ValueError("packed context contains no AOMS memory blocks")
+    return tuple(memories)
+
+
+def _normalized(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value).casefold()
+    return " ".join(re.sub(r"[^\w]+", " ", value).split())
+
+
+def _missing_phrase_groups(content: str, groups: Any) -> list[str]:
+    """Return required concept groups with no matching declared phrase alternative."""
+
+    normalized_content = _normalized(content)
+    if not isinstance(groups, list) or not groups:
+        return ["<scenario has no key phrases>"]
+    missing: list[str] = []
+    for group in groups:
+        alternatives = [group] if isinstance(group, str) else group
+        if (
+            not isinstance(alternatives, list)
+            or not alternatives
+            or not all(isinstance(item, str) and item.strip() for item in alternatives)
+        ):
+            missing.append("<invalid key phrase group>")
+            continue
+        if not any(_normalized(item) in normalized_content for item in alternatives):
+            missing.append(" | ".join(alternatives))
+    return missing
 
 
 def _load_recall_artifact(path: Path) -> tuple[RecallReceipt, str, str]:
@@ -55,17 +153,22 @@ def _evidence_grade(root: Path) -> str:
 def verify_run(
     run_dir: str | Path, *, scenario_path: Path = SCENARIO_PATH
 ) -> VerificationReport:
-    """Check receipt evidence, scope isolation, budgets, and service behavior."""
+    """Check AOMS transmission, scope isolation, budgets, and service behavior.
+
+    Transmission is content- and provenance-based rather than tied to seeded record
+    IDs. A planner's plan or handoff is itself an honest AOMS memory when its packed
+    content carries the declared constraint phrases, its canonical provenance is
+    valid, and its ID exactly corresponds to a receipt selection.
+    """
 
     root = Path(run_dir)
     scenario = load_scenario(scenario_path)
     checks: list[str] = []
     failures: list[str] = []
-    constraint_ids = {item["memory_id"] for item in scenario["constraints"]}
     canary_ids = {item["memory_id"] for item in scenario["canaries"]}
     canary_facts = {item["text"] for item in scenario["canaries"]}
 
-    stage_receipts: dict[str, RecallReceipt] = {}
+    stage_content: dict[str, str] = {}
     for stage_name, artifact_key in (
         ("stage-2", "stage_2_recall"),
         ("stage-3", "stage_3_recall"),
@@ -84,18 +187,49 @@ def verify_run(
                 f"({path.relative_to(root)}): {exc}"
             )
             continue
-        stage_receipts[stage_name] = receipt
         selected_ids = {item.memory_id for item in receipt.selected}
-        missing = sorted(constraint_ids - selected_ids)
-        if missing:
+        try:
+            packed = _packed_memories(context)
+            packed_ids = [item.memory_id for item in packed]
+            receipt_ids = [item.memory_id for item in receipt.selected]
+            if len(packed_ids) != len(set(packed_ids)):
+                raise ValueError("packed context repeats a memory id")
+            if len(receipt_ids) != len(set(receipt_ids)):
+                raise ValueError("receipt repeats a selected memory id")
+            if set(packed_ids) != set(receipt_ids):
+                raise ValueError(
+                    "packed source ids do not exactly match receipt selections"
+                )
+        except (KeyError, TypeError, ValueError) as exc:
             failures.append(
-                f"{stage_name} receipt is missing constraints: {', '.join(missing)}"
+                f"{stage_name} packed AOMS context/provenance is invalid: {exc}"
             )
         else:
-            checks.append(f"{stage_name} selected all injected constraints")
+            stage_content[stage_name] = "\n".join(item.content for item in packed)
+            checks.append(f"{stage_name} packed sources have valid AOMS provenance")
+            missing_constraints: list[str] = []
+            for constraint in scenario["constraints"]:
+                missing_groups = _missing_phrase_groups(
+                    stage_content[stage_name], constraint.get("key_phrases")
+                )
+                if missing_groups:
+                    missing_constraints.append(
+                        f"{constraint['memory_id']} [{'; '.join(missing_groups)}]"
+                    )
+            if missing_constraints:
+                failures.append(
+                    f"{stage_name} packed AOMS context is missing constraint content: "
+                    + ", ".join(missing_constraints)
+                )
+            else:
+                checks.append(
+                    f"{stage_name} transmitted all injected constraints via AOMS"
+                )
 
         leaked_ids = sorted(canary_ids & selected_ids)
-        leaked_facts = sorted(fact for fact in canary_facts if fact in context or fact in raw_text)
+        leaked_facts = sorted(
+            fact for fact in canary_facts if fact in context or fact in raw_text
+        )
         serialized_canary_ids = sorted(item for item in canary_ids if item in raw_text)
         if leaked_ids or leaked_facts or serialized_canary_ids:
             failures.append(f"{stage_name} contains out-of-scope canary evidence")
@@ -106,9 +240,7 @@ def verify_run(
         ceiling = int(scenario["stages"][stage_key]["token_ceiling"])
         token_sum = sum(item.token_cost for item in receipt.selected)
         if receipt.total_tokens > ceiling or receipt.token_budget > ceiling:
-            failures.append(
-                f"{stage_name} exceeded declared {ceiling}-token ceiling"
-            )
+            failures.append(f"{stage_name} exceeded declared {ceiling}-token ceiling")
         elif token_sum != receipt.total_tokens:
             failures.append(
                 f"{stage_name} token costs sum to {token_sum}, receipt says {receipt.total_tokens}"
@@ -118,13 +250,18 @@ def verify_run(
                 f"{stage_name} tokens reconcile at {receipt.total_tokens}/{ceiling}"
             )
 
-    if "stage-3" in stage_receipts:
-        clue_id = scenario["regression_clue"]["memory_id"]
-        selected = {item.memory_id for item in stage_receipts["stage-3"].selected}
-        if clue_id not in selected:
-            failures.append("stage-3 receipt is missing the reviewer regression clue")
+    if "stage-3" in stage_content:
+        clue = scenario["regression_clue"]
+        missing_groups = _missing_phrase_groups(
+            stage_content["stage-3"], clue.get("key_phrases")
+        )
+        if missing_groups:
+            failures.append(
+                "stage-3 packed AOMS context is missing the reviewer regression "
+                f"clue content: {'; '.join(missing_groups)}"
+            )
         else:
-            checks.append("stage-3 selected the private regression clue")
+            checks.append("stage-3 transmitted the private regression clue via AOMS")
 
     workspace = root / scenario["artifacts"]["completed_repository"]
     try:
