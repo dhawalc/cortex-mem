@@ -38,6 +38,7 @@ from aoms.contracts import (
     MemoryRecord,
     RecallRequest,
     RecallResult,
+    ScopeContext,
     RecallSource,
     Scope,
 )
@@ -405,6 +406,7 @@ class RecallEngine:
         receipt_top_n: int = DEFAULT_RECEIPT_TOP_N,
         rejected_sample_size: int = DEFAULT_REJECTED_SAMPLE_SIZE,
         embedding_provider: EmbeddingProvider | None = None,
+        scope_context: ScopeContext,
         clock: Callable[[], datetime] | None = None,
         timer: Callable[[], float] | None = None,
     ):
@@ -423,6 +425,7 @@ class RecallEngine:
         self.receipt_top_n = receipt_top_n
         self.rejected_sample_size = rejected_sample_size
         self.embedding_provider = embedding_provider or NullProvider()
+        self.scope_context = scope_context
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.timer = timer or time.perf_counter
 
@@ -441,14 +444,16 @@ class RecallEngine:
                 query_vector = await self.embedding_provider.embed_query(request.task)
             except Exception as exc:  # noqa: BLE001 - semantic search is best-effort
                 vector_error = type(exc).__name__
-        candidates = await self.repository.retrieve_recall_candidates(
+        candidate_batch = await self.repository.retrieve_recall_candidates(
             request,
             limit=self.candidate_limit,
             query_vector=query_vector,
             vector_profile=(
                 self.embedding_provider.profile if query_vector is not None else None
             ),
+            scope_context=self.scope_context,
         )
+        candidates = list(candidate_batch.candidates)
         vector_coverage = (
             sum(item.vector_score is not None for item in candidates) / len(candidates)
             if candidates
@@ -473,11 +478,14 @@ class RecallEngine:
         receipt = RecallReceipt(
             receipt_id=receipt_id,
             created_at=now,
+            agent_id=self.scope_context.agent_id,
+            workspace_id=self.scope_context.workspace_id,
             query=request.task,
             scopes=request.scopes,
             kinds=request.kinds,
             token_budget=request.token_budget,
             candidate_count=len(ranked),
+            scope_filtered_count=candidate_batch.scope_filtered_count,
             top_candidates=candidate_scores[: self.receipt_top_n],
             rejected_sample=[item for item in candidate_scores if not item.selected][
                 : self.rejected_sample_size
@@ -519,6 +527,7 @@ class RecallEngine:
                 "receipt_id": receipt_id,
                 "engine_version": ENGINE_VERSION,
                 "candidate_count": len(ranked),
+                "scope_filtered_count": candidate_batch.scope_filtered_count,
                 "selected_count": len(packed),
                 "tokenizer": self.tokenizer.name,
                 "vector_coverage": vector_coverage,

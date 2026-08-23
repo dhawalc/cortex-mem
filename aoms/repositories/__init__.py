@@ -5,6 +5,7 @@ from aoms.repositories.base import (
     MemoryRepository,
     PendingEmbedding,
     RecallCandidate,
+    RecallCandidateBatch,
     VectorHit,
     VectorRepository,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "MemoryRepository",
     "PendingEmbedding",
     "RecallCandidate",
+    "RecallCandidateBatch",
     "SQLiteMemoryRepository",
     "VectorHit",
     "VectorRepository",

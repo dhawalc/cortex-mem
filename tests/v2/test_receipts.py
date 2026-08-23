@@ -6,10 +6,19 @@ from pathlib import Path
 import pytest
 
 from aoms.application import AOMSApplication
-from aoms.contracts import MemoryKind, MemoryRecord, Provenance, RecallRequest, Scope
+from aoms.contracts import (
+    MemoryKind,
+    MemoryRecord,
+    Provenance,
+    RecallRequest,
+    Scope,
+    ScopeContext,
+)
 from aoms.embeddings import NullProvider
 from aoms.receipts import ENGINE_VERSION, RecallReceipt
 from aoms.repositories import SQLiteMemoryRepository
+
+CONTEXT = ScopeContext(agent_id="test-agent", workspace_id="test-workspace")
 
 
 @pytest.mark.asyncio
@@ -22,12 +31,16 @@ async def test_receipt_emission_retrieval_and_retention_cap(tmp_path: Path) -> N
             kind=MemoryKind.FACT,
             content="Orchid deployment uses a blue canary",
             scope=Scope.WORKSPACE,
+            scope_workspace_id=CONTEXT.workspace_id,
+            created_by_agent_id=CONTEXT.agent_id,
             provenance=Provenance(source="receipt-fixture"),
             created_at=now,
             updated_at=now,
         )
     )
-    app = AOMSApplication(repository, embedding_provider=NullProvider())
+    app = AOMSApplication(
+        repository, scope_context=CONTEXT, embedding_provider=NullProvider()
+    )
 
     for query in ("orchid first", "orchid second", "orchid third"):
         result = await app.recall(RecallRequest(task=query, token_budget=300))
@@ -53,18 +66,33 @@ async def test_receipt_emission_retrieval_and_retention_cap(tmp_path: Path) -> N
 
 
 @pytest.mark.asyncio
-async def test_read_only_real_import_recall_uses_separate_receipt_store(
+async def test_read_only_fixture_recall_uses_separate_receipt_store(
     tmp_path: Path,
 ) -> None:
-    real_db = Path.home() / ".local" / "share" / "aoms" / "aoms.sqlite3"
-    if not real_db.is_file():
-        pytest.skip(f"real imported AOMS database is absent: {real_db}")
-
-    before = (real_db.stat().st_size, real_db.stat().st_mtime_ns)
-    source = SQLiteMemoryRepository(real_db, read_only=True)
+    source_path = tmp_path / "source.sqlite3"
+    writable_source = SQLiteMemoryRepository(source_path)
+    now = datetime.now(timezone.utc)
+    await writable_source.store(
+        MemoryRecord(
+            id="fixture-decay-fact",
+            kind=MemoryKind.FACT,
+            content="AOMS decay bug fixture",
+            scope=Scope.WORKSPACE,
+            scope_workspace_id=CONTEXT.workspace_id,
+            created_by_agent_id=CONTEXT.agent_id,
+            provenance=Provenance(source="fixture"),
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    before = (source_path.stat().st_size, source_path.stat().st_mtime_ns)
+    source = SQLiteMemoryRepository(source_path, read_only=True)
     receipts = SQLiteMemoryRepository(tmp_path / "receipts.sqlite3")
     app = AOMSApplication(
-        source, receipt_repository=receipts, embedding_provider=NullProvider()
+        source,
+        scope_context=CONTEXT,
+        receipt_repository=receipts,
+        embedding_provider=NullProvider(),
     )
 
     result = await app.recall(
@@ -80,4 +108,4 @@ async def test_read_only_real_import_recall_uses_separate_receipt_store(
     assert len(result.sources) >= 1
     assert stored[0].receipt_id == result.diagnostics["receipt_id"]
     assert stored[0].total_tokens == result.token_count
-    assert (real_db.stat().st_size, real_db.stat().st_mtime_ns) == before
+    assert (source_path.stat().st_size, source_path.stat().st_mtime_ns) == before

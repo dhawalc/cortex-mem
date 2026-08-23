@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from aoms.contracts import MemoryKind, MemoryRecord, Provenance, Scope
+from aoms.contracts import MemoryKind, MemoryRecord, Provenance, Scope, ScopeContext
 from aoms.repositories.base import MemoryRepository
 
 KIND_MAPPING: dict[str, dict[str, MemoryKind]] = {
@@ -85,10 +85,17 @@ class ImportReport:
 
 
 class JSONLImporter:
-    def __init__(self, repository: MemoryRepository, *, batch_size: int = 500):
+    def __init__(
+        self,
+        repository: MemoryRepository,
+        *,
+        scope_context: ScopeContext,
+        batch_size: int = 500,
+    ):
         if batch_size < 1:
             raise ValueError("batch_size must be at least 1")
         self.repository = repository
+        self.scope_context = scope_context
         self.batch_size = batch_size
 
     async def import_directory(self, corpus_root: str | Path) -> ImportReport:
@@ -147,6 +154,7 @@ class JSONLImporter:
                         source_file=relative,
                         file_stem=path.stem,
                         fallback_time=fallback_time,
+                        scope_context=self.scope_context,
                     )
                 except (TypeError, ValueError) as exc:
                     report.issues.append(ImportIssue(relative, line_number, str(exc)))
@@ -169,6 +177,7 @@ class JSONLImporter:
         source_file: str,
         file_stem: str,
         fallback_time: datetime,
+        scope_context: ScopeContext,
     ) -> MemoryRecord:
         record_id = value.get("id")
         if record_id is None or not str(record_id).strip():
@@ -218,10 +227,13 @@ class JSONLImporter:
             content=content,
             tags=tags,
             scope=Scope.WORKSPACE,
+            scope_workspace_id=scope_context.workspace_id,
+            created_by_agent_id=scope_context.agent_id,
             provenance=Provenance(
                 source=source_file,
                 tier=tier,
                 record_type=legacy_type,
+                details={"agent_id": scope_context.agent_id},
             ),
             created_at=created_at,
             updated_at=updated_at,
@@ -271,8 +283,13 @@ class JSONLImporter:
 
 
 async def import_jsonl_directory(
-    corpus_root: str | Path, repository: MemoryRepository
+    corpus_root: str | Path,
+    repository: MemoryRepository,
+    *,
+    scope_context: ScopeContext,
 ) -> ImportReport:
     """Convenience entry point for programmatic fixture or reviewed imports."""
 
-    return await JSONLImporter(repository).import_directory(corpus_root)
+    return await JSONLImporter(
+        repository, scope_context=scope_context
+    ).import_directory(corpus_root)

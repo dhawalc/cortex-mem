@@ -8,16 +8,20 @@ from aoms.contracts import (
     RecallRequest,
     RememberRequest,
     Scope,
+    ScopeContext,
     SearchRequest,
 )
 from aoms.embeddings import NullProvider
 from aoms.repositories import SQLiteMemoryRepository
+
+CONTEXT = ScopeContext(agent_id="test-agent", workspace_id="test-workspace")
 
 
 @pytest.mark.asyncio
 async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
     app = AOMSApplication(
         SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"),
+        scope_context=CONTEXT,
         embedding_provider=NullProvider(),
     )
     request = RememberRequest(
@@ -45,6 +49,7 @@ async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
 async def test_recall_emits_an_empty_receipt_for_an_empty_store(tmp_path: Path) -> None:
     app = AOMSApplication(
         SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"),
+        scope_context=CONTEXT,
         embedding_provider=NullProvider(),
     )
 
