@@ -172,6 +172,8 @@ class CodexAdapter:
         del session_id  # Codex proves freshness with --ephemeral, not a chosen ID.
         command = [
             "codex",
+            "-a",
+            "never",
             "exec",
             "--json",
             "--ephemeral",
@@ -182,8 +184,6 @@ class CodexAdapter:
             str(request.workdir),
             "-s",
             "workspace-write",
-            "-a",
-            "never",
         ]
         if request.mcp_config_path is not None:
             payload = json.loads(request.mcp_config_path.read_text(encoding="utf-8"))

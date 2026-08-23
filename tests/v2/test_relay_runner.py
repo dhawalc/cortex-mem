@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -124,7 +125,7 @@ def test_bundle_manifest_detects_tampering(
     assert any("hash mismatch for workspace/relay_service/service.py" in failure for failure in validation.failures)
 
 
-def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -> None:
+def _real_adapter_request(tmp_path: Path) -> AdapterRequest:
     config = tmp_path / "mcp.json"
     config.write_text(
         json.dumps(
@@ -139,7 +140,7 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
             }
         )
     )
-    request = AdapterRequest(
+    return AdapterRequest(
         stage="implementer",
         prompt="minimal prompt\n",
         prompt_path=tmp_path / "prompt.txt",
@@ -149,6 +150,10 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
         result_path=tmp_path / "result",
         mcp_config_path=config,
     )
+
+
+def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -> None:
+    request = _real_adapter_request(tmp_path)
     claude = ClaudeAdapter().build_command(request, "fresh-id")
     assert claude[:3] == ["claude", "-p", "minimal prompt\n"]
     assert "--bare" in claude
@@ -157,11 +162,28 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
     assert claude[claude.index("--session-id") + 1] == "fresh-id"
 
     codex = CodexAdapter().build_command(request, "unused")
-    assert codex[:3] == ["codex", "exec", "--json"]
-    assert "--ephemeral" in codex
-    assert "--ignore-user-config" in codex
-    assert "--ignore-rules" in codex
-    assert any("mcp_servers.aoms.command=" in item for item in codex)
+    assert codex == [
+        "codex",
+        "-a",
+        "never",
+        "exec",
+        "--json",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        "-C",
+        str(tmp_path),
+        "-s",
+        "workspace-write",
+        "-c",
+        'mcp_servers.aoms.command="/python"',
+        "-c",
+        'mcp_servers.aoms.args=["-m","proxy"]',
+        "-c",
+        'mcp_servers.aoms.env={AOMS_DATA_DIR="/fixture"}',
+        "minimal prompt\n",
+    ]
 
     openclaw_adapter = OpenClawAdapter()
     openclaw = openclaw_adapter.build_command(request, "fresh-id")
@@ -191,6 +213,29 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
         "OPENCLAW_CONFIG_PATH": str(tmp_path / "openclaw-config.json"),
         "OPENCLAW_STATE_DIR": str(tmp_path / "openclaw-state"),
     }
+
+
+def test_codex_adapter_argv_parses_with_installed_cli(tmp_path: Path) -> None:
+    executable = shutil.which("codex")
+    if executable is None:
+        pytest.skip("codex CLI is not installed")
+    command = CodexAdapter().build_command(
+        _real_adapter_request(tmp_path), "unused"
+    )
+    command[0] = executable
+    # Codex has no validate-only command; help parses every option without a run.
+    command[-1] = "--help"
+
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert "Usage: codex exec [OPTIONS]" in completed.stdout
 
 
 @pytest.mark.parametrize(

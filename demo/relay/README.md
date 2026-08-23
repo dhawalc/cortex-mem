@@ -14,9 +14,9 @@ python -m demo.relay.runner validate /tmp/aoms-relay-7319
 Real adapters are available for orchestrator-supervised runs only. Claude uses
 `claude -p`, disabled slash commands/browser integration,
 `--mcp-config`, `--strict-mcp-config`, verbose stream JSON output, an explicit
-fresh session ID, and `--no-session-persistence`. Codex uses `codex exec
---json`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `-C`,
-workspace-write sandboxing, `-a never`, and `-c mcp_servers.aoms.*` values
+fresh session ID, and `--no-session-persistence`. Codex uses `codex -a never
+exec --json`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `-C`,
+workspace-write sandboxing, and `-c mcp_servers.aoms.*` values
 derived from the same stdio server config.
 
 Claude defaults to `AOMS_RELAY_CLAUDE_AUTH=bare`, which adds `--bare` and
