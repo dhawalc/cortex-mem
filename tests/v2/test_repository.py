@@ -54,6 +54,40 @@ async def test_migrations_are_idempotent_and_enable_wal(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_v3_schema_fixture_migrates_additively(tmp_path: Path) -> None:
+    db_path = tmp_path / "v3.sqlite3"
+    fixture = Path(__file__).parent / "fixtures" / "v3_schema.sql"
+    with sqlite3.connect(db_path) as connection:
+        connection.executescript(fixture.read_text(encoding="utf-8"))
+
+    repository = SQLiteMemoryRepository(db_path)
+    await repository.initialize()
+
+    assert await repository.schema_version() == LATEST_SCHEMA_VERSION
+    preserved = await repository.get("v3-fixture-record")
+    assert preserved is not None
+    assert preserved.content == "preserved v3 fixture"
+    assert preserved.scope_agent_id is None
+    assert preserved.scope_workspace_id is None
+    assert preserved.created_by_agent_id is None
+    with sqlite3.connect(db_path) as connection:
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(memories)")
+        }
+        indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list(memories)")
+        }
+    assert {
+        "scope_agent_id",
+        "scope_workspace_id",
+        "created_by_agent_id",
+    }.issubset(columns)
+    assert {"idx_memories_agent_scope", "idx_memories_workspace_scope"}.issubset(
+        indexes
+    )
+
+
+@pytest.mark.asyncio
 async def test_store_get_upsert_and_list(tmp_path: Path) -> None:
     repository = SQLiteMemoryRepository(tmp_path / "aoms.sqlite3")
     first = make_record("record-1", "Original synthetic content", age_days=1)

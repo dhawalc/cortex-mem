@@ -16,6 +16,7 @@ from aoms.contracts import (
     RecallRequest,
     RememberRequest,
     Scope,
+    ScopeContext,
 )
 from aoms.embeddings import (
     EmbeddingProfile,
@@ -30,6 +31,7 @@ from aoms.recall import RecallRanker
 from aoms.repositories import RecallCandidate, SQLiteMemoryRepository
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+CONTEXT = ScopeContext(agent_id="test-agent", workspace_id="test-workspace")
 
 
 class FixtureProvider:
@@ -66,6 +68,8 @@ def record(record_id: str, content: str) -> MemoryRecord:
         kind=MemoryKind.FACT,
         content=content,
         scope=Scope.WORKSPACE,
+        scope_workspace_id=CONTEXT.workspace_id,
+        created_by_agent_id=CONTEXT.agent_id,
         provenance=Provenance(source="embedding-fixture"),
         created_at=NOW,
         updated_at=NOW,
@@ -124,7 +128,9 @@ async def test_remember_queues_durably_and_does_not_wait_for_provider(
     gate = asyncio.Event()
     provider = FixtureProvider(block=gate)
     repository = SQLiteMemoryRepository(tmp_path / "pending.sqlite3")
-    app = AOMSApplication(repository, embedding_provider=provider)
+    app = AOMSApplication(
+        repository, scope_context=CONTEXT, embedding_provider=provider
+    )
 
     remembered = await asyncio.wait_for(
         app.remember(
@@ -186,7 +192,9 @@ async def test_vector_recall_and_graceful_zero_coverage_receipts(
     await repository.store_many([feline, other])
     await repository.upsert_vector(feline, provider.profile, [1.0, 0.0, 0.0])
 
-    semantic_app = AOMSApplication(repository, embedding_provider=provider)
+    semantic_app = AOMSApplication(
+        repository, scope_context=CONTEXT, embedding_provider=provider
+    )
     semantic = await semantic_app.recall(
         RecallRequest(task="companion animal", token_budget=1_000)
     )
@@ -203,7 +211,11 @@ async def test_vector_recall_and_graceful_zero_coverage_receipts(
 
     lexical_repository = SQLiteMemoryRepository(tmp_path / "lexical.sqlite3")
     await lexical_repository.store(record("lexical", "Orchid deployment runbook"))
-    lexical_app = AOMSApplication(lexical_repository, embedding_provider=NullProvider())
+    lexical_app = AOMSApplication(
+        lexical_repository,
+        scope_context=CONTEXT,
+        embedding_provider=NullProvider(),
+    )
     lexical = await lexical_app.recall(
         RecallRequest(task="orchid deployment", token_budget=1_000)
     )

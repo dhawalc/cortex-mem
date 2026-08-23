@@ -12,6 +12,7 @@ from aoms.contracts import (
     Provenance,
     RecallRequest,
     Scope,
+    ScopeContext,
 )
 from aoms.embeddings import NullProvider
 from aoms.recall import (
@@ -23,6 +24,7 @@ from aoms.recall import (
 from aoms.repositories import RecallCandidate, SQLiteMemoryRepository
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+CONTEXT = ScopeContext(agent_id="test-agent", workspace_id="test-workspace")
 
 
 def make_record(
@@ -40,6 +42,9 @@ def make_record(
         kind=kind,
         content=content,
         scope=scope,
+        scope_agent_id=(CONTEXT.agent_id if scope is Scope.AGENT_PRIVATE else None),
+        scope_workspace_id=(CONTEXT.workspace_id if scope is Scope.WORKSPACE else None),
+        created_by_agent_id=CONTEXT.agent_id,
         provenance=Provenance(source=provenance_source),
         created_at=timestamp,
         updated_at=timestamp,
@@ -148,7 +153,9 @@ async def test_packed_output_fences_untrusted_content_with_provenance(
         provenance_source="fixture/hostile.jsonl",
     )
     await repository.store(record)
-    app = AOMSApplication(repository, embedding_provider=NullProvider())
+    app = AOMSApplication(
+        repository, scope_context=CONTEXT, embedding_provider=NullProvider()
+    )
 
     result = await app.recall(RecallRequest(task="orchid", token_budget=1_000))
 

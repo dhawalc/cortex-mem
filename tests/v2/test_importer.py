@@ -2,17 +2,18 @@ from pathlib import Path
 
 import pytest
 
-from aoms.contracts import MemoryKind
+from aoms.contracts import MemoryKind, ScopeContext
 from aoms.importer import JSONLImporter
 from aoms.repositories import SQLiteMemoryRepository
 
 FIXTURE_CORPUS = Path(__file__).parent / "fixtures" / "corpus"
+CONTEXT = ScopeContext(agent_id="import-agent", workspace_id="import-workspace")
 
 
 @pytest.mark.asyncio
 async def test_fixture_import_is_idempotent_and_preserves_legacy_fields(tmp_path: Path) -> None:
     repository = SQLiteMemoryRepository(tmp_path / "aoms.sqlite3")
-    importer = JSONLImporter(repository, batch_size=2)
+    importer = JSONLImporter(repository, scope_context=CONTEXT, batch_size=2)
 
     first = await importer.import_directory(FIXTURE_CORPUS)
     second = await importer.import_directory(FIXTURE_CORPUS)
@@ -38,3 +39,5 @@ async def test_fixture_import_is_idempotent_and_preserves_legacy_fields(tmp_path
     assert by_id["synthetic-experience-1"].provenance.tier == "episodic"
     assert by_id["synthetic-experience-1"].content["source"] == "fixture:sensor"
     assert by_id["synthetic-experience-1"].metadata["legacy"]["weight"] == 1.0
+    assert by_id["synthetic-experience-1"].scope_workspace_id == CONTEXT.workspace_id
+    assert by_id["synthetic-experience-1"].created_by_agent_id == CONTEXT.agent_id
