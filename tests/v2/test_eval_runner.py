@@ -43,6 +43,24 @@ async def test_full_mini_eval_run_and_engine_matrix(tmp_path: Path) -> None:
     assert next(
         run for run in runs if run.engine_config.name == "hybrid"
     ).metrics.canary_count == 0
+    for config_name in ("lexical-only", "hybrid"):
+        temporal = next(
+            case
+            for case in next(
+                run for run in runs if run.engine_config.name == config_name
+            ).cases
+            if case.case_id == "temporal-00"
+        )
+        assert temporal.contradiction_numerator == 0
+        assert temporal.forbidden_surfaced_ids == []
+    no_resolution_temporal = next(
+        case
+        for case in next(
+            run for run in runs if run.engine_config.name == "no-supersession"
+        ).cases
+        if case.case_id == "temporal-00"
+    )
+    assert no_resolution_temporal.contradiction_numerator == 1
 
 
 @pytest.mark.asyncio

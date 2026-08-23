@@ -74,6 +74,8 @@ class RecallReceipt(ContractModel):
     top_candidates: list[CandidateScore]
     rejected_sample: list[CandidateScore]
     selected: list[SelectedMemory]
+    supersession_resolution: bool = True
+    superseded_suppressed: list[str] = Field(default_factory=list)
     total_tokens: int = Field(ge=0)
     latency_ms: float = Field(ge=0.0)
     engine_version: str

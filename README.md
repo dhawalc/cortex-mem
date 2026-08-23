@@ -209,6 +209,12 @@ weights:
 - Optional: [Ollama](https://ollama.ai) with `nomic-embed-text` for vector search
 - Optional: [Ollama](https://ollama.ai) with any chat model for consolidation/entity extraction
 
+## Development
+
+Run the canonical main suite from the repository root with `python -m pytest`.
+It collects 119 tests. Pytest is pinned to `tests/`; the three tests inside the
+relay fixture repository belong to that fixture's own harness and are excluded.
+
 ## License
 
 MIT

@@ -59,7 +59,11 @@ def _candidate(
 
 
 def _receipt(
-    receipt_id: str = "receipt-primary", *, total_tokens: int = 100
+    receipt_id: str = "receipt-primary",
+    *,
+    total_tokens: int = 100,
+    supersession_resolution: bool = True,
+    superseded_suppressed: list[str] | None = None,
 ) -> RecallReceipt:
     return RecallReceipt(
         receipt_id=receipt_id,
@@ -94,6 +98,12 @@ def _receipt(
                 truncated=True,
             ),
         ],
+        supersession_resolution=supersession_resolution,
+        superseded_suppressed=(
+            ["constraint-old"]
+            if superseded_suppressed is None
+            else superseded_suppressed
+        ),
         total_tokens=total_tokens,
         latency_ms=12.345,
         engine_version="2.0.0",
@@ -161,6 +171,7 @@ async def test_anatomy_renders_receipt_numbers_and_reconciles_tokens(
     assert parser.tags.count("table") >= 2
     assert "Retrieved</span><strong>5" in report
     assert "Scope-visible &amp; scored</span><strong>3" in report
+    assert "Superseded suppressed</span><strong>1" in report
     assert "constraint-current" in report
     assert "constraint-old" in report
     assert "token_budget" in report
@@ -175,7 +186,12 @@ async def test_anatomy_renders_receipt_numbers_and_reconciles_tokens(
 async def test_anatomy_renders_labeled_ablation_comparison(tmp_path: Path) -> None:
     repository = SQLiteMemoryRepository(tmp_path / "ablation.sqlite3")
     await _store_fixture(repository)
-    comparison = _receipt("receipt-vector", total_tokens=80)
+    comparison = _receipt(
+        "receipt-vector",
+        total_tokens=80,
+        supersession_resolution=False,
+        superseded_suppressed=[],
+    )
 
     report = await generate_anatomy_html(
         _receipt(),
@@ -187,6 +203,9 @@ async def test_anatomy_renders_labeled_ablation_comparison(tmp_path: Path) -> No
     assert '<section id="ablations">' in report
     assert "full engine" in report
     assert "vector-only" in report
+    assert "Supersession resolution" in report
+    assert "<td>off</td>" in report
+    assert "Superseded suppressed" in report
     assert "100 / 1000" in report
     assert "80 / 1000" in report
 

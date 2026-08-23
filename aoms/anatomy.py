@@ -178,6 +178,8 @@ def _comparison(receipts: Sequence[LabeledReceipt]) -> str:
         f"<td>{item.receipt.candidate_count + item.receipt.scope_filtered_count}</td>"
         f"<td>{item.receipt.scope_filtered_count}</td>"
         f"<td>{len(item.receipt.selected)}</td>"
+        f"<td>{'on' if item.receipt.supersession_resolution else 'off'}</td>"
+        f"<td>{_e(', '.join(item.receipt.superseded_suppressed) or 'none')}</td>"
         f"<td>{item.receipt.total_tokens} / {item.receipt.token_budget}</td>"
         f"<td>{item.receipt.vector_coverage:.1%}</td>"
         f"<td>{item.receipt.latency_ms:.2f} ms</td>"
@@ -190,6 +192,8 @@ def _comparison(receipts: Sequence[LabeledReceipt]) -> str:
         '<p>Same query, different retrieval and packing configurations.</p>'
         '<div class="table-wrap"><table><thead><tr><th>Configuration</th>'
         '<th>Retrieved</th><th>Scope filtered</th><th>Selected</th>'
+        '<th>Supersession resolution</th>'
+        '<th>Superseded suppressed</th>'
         '<th>Tokens / ceiling</th><th>Vector coverage</th><th>Latency</th>'
         f"<th>Selected IDs</th></tr></thead><tbody>{rows}</tbody></table></div></section>"
     )
@@ -272,6 +276,7 @@ th { color:var(--muted); } .breakdown { margin:.4rem 0 0; padding-left:1.2rem; w
 <section id="funnel"><h2>Candidate funnel</h2><div class="funnel">
 <div class="stage"><span>Retrieved</span><strong>{retrieved}</strong><small>before scope policy</small></div><div class="arrow">→</div>
 <div class="stage"><span>Scope-visible &amp; scored</span><strong>{receipt.candidate_count}</strong><small>{receipt.scope_filtered_count} filtered</small></div><div class="arrow">→</div>
+<div class="stage"><span>Superseded suppressed</span><strong>{len(receipt.superseded_suppressed)}</strong><small>resolution {'on' if receipt.supersession_resolution else 'off'} · {_e(', '.join(receipt.superseded_suppressed) or 'none')}</small></div><div class="arrow">→</div>
 <div class="stage"><span>Selected</span><strong>{len(receipt.selected)}</strong><small>serialized</small></div><div class="arrow">/</div>
 <div class="stage"><span>Rejected</span><strong>{rejected}</strong><small>not serialized</small></div></div>
 <p class="muted">Vector coverage among scored candidates: {receipt.vector_coverage:.1%}. Candidate detail is the receipt's bounded top set plus rejected sample.</p>

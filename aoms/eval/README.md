@@ -10,8 +10,11 @@ python -m aoms.eval compare BASELINE_RUN CURRENT_RUN
 
 Every run prints a compact table and stores a complete JSON artifact under
 `.aoms-eval/runs`. `--config` is repeatable; the presets are `lexical-only`,
-`vector-only`, `hybrid`, and `no-scope`. Synthetic runs use a temporary fixture
-database and deterministic network-free embeddings.
+`vector-only`, `hybrid`, `no-supersession`, and `no-scope`.
+`no-supersession` is the hybrid ablation that packs obsolete predecessors next
+to matching successors; all other presets resolve candidate-set chains to
+their newest heads. Synthetic runs use a temporary fixture database and
+deterministic network-free embeddings.
 
 An orchestrator can evaluate an existing database without writing to it:
 

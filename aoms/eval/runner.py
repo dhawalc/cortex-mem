@@ -54,6 +54,13 @@ PRESET_CONFIGS: dict[str, EngineConfig] = {
     "hybrid": EngineConfig(
         name="hybrid", lexical=True, vector=True, enforce_scope=True
     ),
+    "no-supersession": EngineConfig(
+        name="no-supersession",
+        lexical=True,
+        vector=True,
+        enforce_scope=True,
+        resolve_supersession=False,
+    ),
     "no-scope": EngineConfig(
         name="no-scope", lexical=True, vector=True, enforce_scope=False
     ),
@@ -207,6 +214,7 @@ async def run_suite(
         scope_context=context,
         candidate_limit=config.candidate_limit,
         receipt_top_n=config.candidate_limit,
+        resolve_supersession=config.resolve_supersession,
         clock=(lambda: BASE_TIME + timedelta(days=400)) if corpus_hash else None,
     )
     supersession_pairs = manifest.supersession_pairs if manifest else []

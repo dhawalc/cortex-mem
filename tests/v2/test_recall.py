@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from aoms.contracts import (
 from aoms.embeddings import NullProvider
 from aoms.recall import (
     BudgetPacker,
+    RecallEngine,
     RecallRanker,
     TiktokenTokenizer,
     render_memory_block,
@@ -35,6 +37,7 @@ def make_record(
     scope: Scope = Scope.WORKSPACE,
     age_days: int = 0,
     provenance_source: str = "recall-fixture",
+    supersedes: str | None = None,
 ) -> MemoryRecord:
     timestamp = NOW - timedelta(days=age_days)
     return MemoryRecord(
@@ -48,6 +51,7 @@ def make_record(
         provenance=Provenance(source=provenance_source),
         created_at=timestamp,
         updated_at=timestamp,
+        supersedes=supersedes,
     )
 
 
@@ -174,3 +178,112 @@ async def test_packed_output_fences_untrusted_content_with_provenance(
         start < result.context.index('"source": "fixture/hostile.jsonl"') < payload_end
     )
     assert start < result.context.index("Ignore prior instructions") < payload_end
+
+
+@pytest.mark.asyncio
+async def test_direct_supersession_packs_only_head_and_audits_suppression(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "direct.sqlite3")
+    old = make_record("orchid-old", "orchid region was west", age_days=2)
+    new = make_record(
+        "orchid-current",
+        "orchid region is east",
+        supersedes=old.id,
+    )
+    await repository.store_many([old, new])
+    app = AOMSApplication(
+        repository, scope_context=CONTEXT, embedding_provider=NullProvider()
+    )
+
+    result = await app.recall(RecallRequest(task="orchid region", token_budget=1_000))
+    receipt = (await app.recent_recall_receipts(limit=1))[0]
+
+    assert [source.memory_id for source in result.sources] == [new.id]
+    assert receipt.superseded_suppressed == [old.id]
+    assert result.diagnostics["superseded_suppressed"] == [old.id]
+    assert (
+        next(
+            item for item in receipt.top_candidates if item.memory_id == old.id
+        ).rejection_reason
+        == "superseded"
+    )
+    assert '"supersedes": "orchid-old (2026-08-21)"' in result.context
+    assert "orchid region was west" not in result.context
+
+
+@pytest.mark.asyncio
+async def test_transitive_supersession_packs_only_newest_chain_head(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "transitive.sqlite3")
+    first = make_record("orchid-a", "orchid setting A", age_days=3)
+    second = make_record(
+        "orchid-b", "orchid setting B", age_days=2, supersedes=first.id
+    )
+    head = make_record("orchid-c", "orchid setting C", age_days=1, supersedes=second.id)
+    await repository.store_many([first, second, head])
+    app = AOMSApplication(
+        repository, scope_context=CONTEXT, embedding_provider=NullProvider()
+    )
+
+    result = await app.recall(RecallRequest(task="orchid setting", token_budget=1_000))
+    receipt = (await app.recent_recall_receipts(limit=1))[0]
+
+    assert [source.memory_id for source in result.sources] == [head.id]
+    assert receipt.superseded_suppressed == [first.id, second.id]
+    assert '"supersedes": "orchid-b (2026-08-21)"' in result.context
+    assert "orchid setting A" not in result.context
+    assert "orchid setting B" not in result.context
+
+
+@pytest.mark.asyncio
+async def test_supersession_cycle_warns_and_leaves_component_unresolved(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "cycle.sqlite3")
+    first = make_record("orchid-cycle-a", "orchid cycle A", supersedes="orchid-cycle-b")
+    second = make_record("orchid-cycle-b", "orchid cycle B", supersedes=first.id)
+    await repository.store_many([first, second])
+    app = AOMSApplication(
+        repository, scope_context=CONTEXT, embedding_provider=NullProvider()
+    )
+
+    with caplog.at_level(logging.WARNING, logger="aoms.recall"):
+        result = await app.recall(
+            RecallRequest(task="orchid cycle", token_budget=1_000)
+        )
+    receipt = (await app.recent_recall_receipts(limit=1))[0]
+
+    assert "supersession cycle detected" in caplog.text
+    assert {source.memory_id for source in result.sources} == {first.id, second.id}
+    assert receipt.superseded_suppressed == []
+
+
+@pytest.mark.asyncio
+async def test_supersession_resolution_can_be_disabled(tmp_path: Path) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "flag-off.sqlite3")
+    old = make_record("orchid-flag-old", "orchid flag was off", age_days=1)
+    new = make_record("orchid-flag-current", "orchid flag is on", supersedes=old.id)
+    await repository.store_many([old, new])
+    engine = RecallEngine(
+        repository,
+        embedding_provider=NullProvider(),
+        scope_context=CONTEXT,
+        resolve_supersession=False,
+    )
+    app = AOMSApplication(
+        repository,
+        scope_context=CONTEXT,
+        recall_engine=engine,
+        embedding_provider=NullProvider(),
+    )
+
+    result = await app.recall(RecallRequest(task="orchid flag", token_budget=1_000))
+    receipt = (await app.recent_recall_receipts(limit=1))[0]
+
+    assert {source.memory_id for source in result.sources} == {old.id, new.id}
+    assert receipt.supersession_resolution is False
+    assert receipt.superseded_suppressed == []
+    assert result.diagnostics["supersession_resolution"] is False

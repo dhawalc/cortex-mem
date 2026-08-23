@@ -70,3 +70,7 @@ exclude = ["tests*", "scripts*", "snapshots*", "index*"]
     "repository/relay_service/*.py",
     "repository/tests/*.py",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["demo/relay_fixture/repository"]

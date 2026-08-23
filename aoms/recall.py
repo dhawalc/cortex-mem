@@ -25,8 +25,9 @@ Callers targeting a different model can inject another tokenizer implementation.
 from __future__ import annotations
 
 import json
+import logging
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
@@ -51,6 +52,8 @@ from aoms.receipts import (
     SelectedMemory,
 )
 from aoms.repositories.base import MemoryRepository, RecallCandidate
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CANDIDATE_LIMIT = 100
 DEFAULT_RECEIPT_TOP_N = 20
@@ -180,6 +183,15 @@ class PackedMemory:
     truncated: bool
 
 
+@dataclass(frozen=True, slots=True)
+class SupersessionResolution:
+    """Packable candidates plus the audit evidence removed from their chains."""
+
+    packable: list[RankedCandidate]
+    suppressed_ids: frozenset[str]
+    predecessors_by_head: dict[str, MemoryRecord]
+
+
 class RecallRanker:
     def __init__(self, scorers: Sequence[CandidateScorer] | None = None):
         self.scorers = tuple(
@@ -251,6 +263,107 @@ def memory_content_text(record: MemoryRecord) -> str:
     return json.dumps(record.content, ensure_ascii=False, indent=2, sort_keys=True)
 
 
+def resolve_supersession_chains(
+    ranked: Sequence[RankedCandidate],
+) -> SupersessionResolution:
+    """Keep candidate-set chain heads and leave cyclic components untouched.
+
+    Supersession is resolved only from scope-visible recall candidates. This
+    avoids fetching or disclosing records that retrieval policy excluded.
+    """
+
+    records = {item.candidate.record.id: item.candidate.record for item in ranked}
+    adjacency = {record_id: set() for record_id in records}
+    for record in records.values():
+        if record.supersedes in records:
+            adjacency[record.id].add(record.supersedes)
+            adjacency[record.supersedes].add(record.id)
+
+    cycle_ids: set[str] = set()
+    completed: set[str] = set()
+    for start in records:
+        if start in completed:
+            continue
+        path: list[str] = []
+        path_index: dict[str, int] = {}
+        current: str | None = start
+        while current in records and current not in completed:
+            if current in path_index:
+                cycle_ids.update(path[path_index[current] :])
+                break
+            path_index[current] = len(path)
+            path.append(current)
+            current = records[current].supersedes
+        completed.update(path)
+
+    protected_ids: set[str] = set()
+    visited: set[str] = set()
+    for start in records:
+        if start in visited:
+            continue
+        component: set[str] = set()
+        pending = [start]
+        while pending:
+            current = pending.pop()
+            if current in component:
+                continue
+            component.add(current)
+            pending.extend(adjacency[current] - component)
+        visited.update(component)
+        component_cycle = component & cycle_ids
+        if component_cycle:
+            protected_ids.update(component)
+            logger.warning(
+                "supersession cycle detected among recall candidates "
+                f"({', '.join(sorted(component_cycle))}); leaving the affected "
+                "component unresolved"
+            )
+
+    suppressed_ids = frozenset(
+        record.supersedes
+        for record in records.values()
+        if record.id not in protected_ids
+        and record.supersedes in records
+        and record.supersedes not in protected_ids
+    )
+    packable = [
+        item for item in ranked if item.candidate.record.id not in suppressed_ids
+    ]
+    predecessors_by_head = {
+        record.id: records[record.supersedes]
+        for record in (item.candidate.record for item in packable)
+        if record.id not in protected_ids and record.supersedes in records
+    }
+    return SupersessionResolution(
+        packable=packable,
+        suppressed_ids=suppressed_ids,
+        predecessors_by_head=predecessors_by_head,
+    )
+
+
+def _memory_payload(
+    record: MemoryRecord,
+    content: str,
+    *,
+    truncated: bool,
+    supersedes: MemoryRecord | None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "id": record.id,
+        "kind": record.kind.value,
+        "scope": record.scope.value,
+        "timestamp": record.updated_at.isoformat(),
+        "provenance": record.provenance.model_dump(mode="json"),
+        "truncated": truncated,
+        "content": content,
+    }
+    if supersedes is not None:
+        payload["supersedes"] = (
+            f"{supersedes.id} ({supersedes.updated_at.date().isoformat()})"
+        )
+    return payload
+
+
 def _fence_length(payload: str) -> int:
     current = maximum = 0
     for character in payload:
@@ -267,20 +380,13 @@ def render_memory_block(
     content: str,
     *,
     truncated: bool,
+    supersedes: MemoryRecord | None = None,
     fence_length: int | None = None,
 ) -> str:
     """Serialize one source so no recalled field is interpolated as instructions."""
 
     payload = json.dumps(
-        {
-            "id": record.id,
-            "kind": record.kind.value,
-            "scope": record.scope.value,
-            "timestamp": record.updated_at.isoformat(),
-            "provenance": record.provenance.model_dump(mode="json"),
-            "truncated": truncated,
-            "content": content,
-        },
+        _memory_payload(record, content, truncated=truncated, supersedes=supersedes),
         ensure_ascii=False,
         indent=2,
         sort_keys=True,
@@ -300,16 +406,24 @@ class BudgetPacker:
         self.tokenizer = tokenizer
 
     def pack(
-        self, ranked: Sequence[RankedCandidate], *, token_budget: int
+        self,
+        ranked: Sequence[RankedCandidate],
+        *,
+        token_budget: int,
+        predecessors_by_head: Mapping[str, MemoryRecord] | None = None,
     ) -> tuple[str, list[PackedMemory], set[str]]:
         blocks: list[str] = []
         packed: list[PackedMemory] = []
         rejected_for_budget: set[str] = set()
+        predecessors = predecessors_by_head or {}
 
         for item in ranked:
             record = item.candidate.record
             content = memory_content_text(record)
-            full_block = render_memory_block(record, content, truncated=False)
+            predecessor = predecessors.get(record.id)
+            full_block = render_memory_block(
+                record, content, truncated=False, supersedes=predecessor
+            )
             proposed = PACK_SEPARATOR.join([*blocks, full_block])
             if self.tokenizer.count(proposed) <= token_budget:
                 previous_count = self.tokenizer.count(PACK_SEPARATOR.join(blocks))
@@ -331,7 +445,7 @@ class BudgetPacker:
             # skipped so smaller complete records still get a chance to fit.
             if not blocks:
                 truncated_block, excerpt = self._truncate_first_record(
-                    record, content, token_budget
+                    record, content, token_budget, supersedes=predecessor
                 )
                 if truncated_block is not None:
                     blocks.append(truncated_block)
@@ -353,24 +467,25 @@ class BudgetPacker:
         return context, packed, rejected_for_budget
 
     def _truncate_first_record(
-        self, record: MemoryRecord, content: str, token_budget: int
+        self,
+        record: MemoryRecord,
+        content: str,
+        token_budget: int,
+        *,
+        supersedes: MemoryRecord | None = None,
     ) -> tuple[str | None, str]:
         encoded = self.tokenizer.encode(content)
         original_payload = json.dumps(
-            {
-                "id": record.id,
-                "kind": record.kind.value,
-                "scope": record.scope.value,
-                "timestamp": record.updated_at.isoformat(),
-                "provenance": record.provenance.model_dump(mode="json"),
-                "truncated": True,
-                "content": content,
-            },
+            _memory_payload(record, content, truncated=True, supersedes=supersedes),
             ensure_ascii=False,
         )
         fence_length = _fence_length(original_payload)
         empty = render_memory_block(
-            record, "", truncated=True, fence_length=fence_length
+            record,
+            "",
+            truncated=True,
+            supersedes=supersedes,
+            fence_length=fence_length,
         )
         if self.tokenizer.count(empty) > token_budget:
             return None, ""
@@ -384,6 +499,7 @@ class BudgetPacker:
                 record,
                 excerpt,
                 truncated=True,
+                supersedes=supersedes,
                 fence_length=fence_length,
             )
             if self.tokenizer.count(block) <= token_budget:
@@ -405,6 +521,7 @@ class RecallEngine:
         candidate_limit: int = DEFAULT_CANDIDATE_LIMIT,
         receipt_top_n: int = DEFAULT_RECEIPT_TOP_N,
         rejected_sample_size: int = DEFAULT_REJECTED_SAMPLE_SIZE,
+        resolve_supersession: bool = True,
         embedding_provider: EmbeddingProvider | None = None,
         scope_context: ScopeContext,
         clock: Callable[[], datetime] | None = None,
@@ -424,6 +541,7 @@ class RecallEngine:
         self.candidate_limit = candidate_limit
         self.receipt_top_n = receipt_top_n
         self.rejected_sample_size = rejected_sample_size
+        self.resolve_supersession = resolve_supersession
         self.embedding_provider = embedding_provider or NullProvider()
         self.scope_context = scope_context
         self.clock = clock or (lambda: datetime.now(timezone.utc))
@@ -460,8 +578,25 @@ class RecallEngine:
             else 0.0
         )
         ranked = self.ranker.rank(candidates, request, now=now)
+        if self.resolve_supersession:
+            resolution = resolve_supersession_chains(ranked)
+        else:
+            records = {
+                item.candidate.record.id: item.candidate.record for item in ranked
+            }
+            resolution = SupersessionResolution(
+                packable=list(ranked),
+                suppressed_ids=frozenset(),
+                predecessors_by_head={
+                    record.id: records[record.supersedes]
+                    for record in records.values()
+                    if record.supersedes in records
+                },
+            )
         context, packed, budget_rejections = self.packer.pack(
-            ranked, token_budget=request.token_budget
+            resolution.packable,
+            token_budget=request.token_budget,
+            predecessors_by_head=resolution.predecessors_by_head,
         )
         token_count = self.tokenizer.count(context)
         selected_by_id = {item.ranked.candidate.record.id: item for item in packed}
@@ -470,6 +605,7 @@ class RecallEngine:
                 item,
                 selected_by_id=selected_by_id,
                 budget_rejections=budget_rejections,
+                superseded_suppressed=resolution.suppressed_ids,
             )
             for item in ranked
         ]
@@ -498,6 +634,8 @@ class RecallEngine:
                 )
                 for item in packed
             ],
+            supersession_resolution=self.resolve_supersession,
+            superseded_suppressed=sorted(resolution.suppressed_ids),
             total_tokens=token_count,
             latency_ms=latency_ms,
             engine_version=ENGINE_VERSION,
@@ -529,6 +667,8 @@ class RecallEngine:
                 "candidate_count": len(ranked),
                 "scope_filtered_count": candidate_batch.scope_filtered_count,
                 "selected_count": len(packed),
+                "supersession_resolution": self.resolve_supersession,
+                "superseded_suppressed": sorted(resolution.suppressed_ids),
                 "tokenizer": self.tokenizer.name,
                 "vector_coverage": vector_coverage,
                 "vector_profile": (
@@ -550,14 +690,18 @@ class RecallEngine:
         *,
         selected_by_id: dict[str, PackedMemory],
         budget_rejections: set[str],
+        superseded_suppressed: frozenset[str],
     ) -> CandidateScore:
         record = item.candidate.record
         selected = record.id in selected_by_id
         reason = None
         if not selected:
-            reason = (
-                "token_budget" if record.id in budget_rejections else "not_selected"
-            )
+            if record.id in superseded_suppressed:
+                reason = "superseded"
+            else:
+                reason = (
+                    "token_budget" if record.id in budget_rejections else "not_selected"
+                )
         return CandidateScore(
             memory_id=record.id,
             kind=record.kind,
@@ -577,8 +721,10 @@ __all__ = [
     "EmbeddingScorer",
     "RecallEngine",
     "RecallRanker",
+    "SupersessionResolution",
     "TiktokenTokenizer",
     "Tokenizer",
     "memory_content_text",
     "render_memory_block",
+    "resolve_supersession_chains",
 ]

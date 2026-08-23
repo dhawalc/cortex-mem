@@ -122,6 +122,7 @@ class EngineConfig(EvalModel):
     lexical: bool = True
     vector: bool = False
     enforce_scope: bool = True
+    resolve_supersession: bool = True
     candidate_limit: int = Field(default=100, ge=1, le=10_000)
 
     @model_validator(mode="after")
