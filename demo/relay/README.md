@@ -12,12 +12,19 @@ python -m demo.relay.runner validate /tmp/aoms-relay-7319
 ```
 
 Real adapters are available for orchestrator-supervised runs only. Claude uses
-`claude -p`, `--bare`, disabled slash commands/browser integration,
+`claude -p`, disabled slash commands/browser integration,
 `--mcp-config`, `--strict-mcp-config`, verbose stream JSON output, an explicit
 fresh session ID, and `--no-session-persistence`. Codex uses `codex exec
 --json`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `-C`,
 workspace-write sandboxing, `-a never`, and `-c mcp_servers.aoms.*` values
 derived from the same stdio server config.
+
+Claude defaults to `AOMS_RELAY_CLAUDE_AUTH=bare`, which adds `--bare` and
+excludes user-level configuration but requires API-key authentication. Set
+`AOMS_RELAY_CLAUDE_AUTH=oauth` to omit only `--bare` and use the machine's
+Claude OAuth session. OAuth runs record that user-level configuration was not
+excluded, and the verifier grades their evidence as `REHEARSAL`; bare Claude
+and other adapter runs are graded `PROOF`.
 
 OpenClaw uses its embedded one-shot path so a relay run does not depend on or
 modify the live Gateway configuration:
@@ -77,3 +84,10 @@ output. `--with-baseline` adds a mirrored memory-disabled run plus
 `comparison.json`; the scripted baseline receives no MCP config. Output paths
 are write-once: the runner refuses to reuse an existing destination and seals a
 staging tree before atomically publishing it.
+
+If a stage process fails, the runner seals the partial evidence tree and
+atomically publishes it beside the requested output with a `-FAILED` suffix.
+The failure bundle includes `failure.json`, all completed-stage evidence, and
+the failing stage's complete stdout/stderr and process record. Claude
+stream-JSON `api_error_status` and `result` fields are also included in the
+raised error so an operator can diagnose API failures without replaying them.

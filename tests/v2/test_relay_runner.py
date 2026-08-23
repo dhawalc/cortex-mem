@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,9 @@ from demo.relay.adapters import (
     launch_fresh_process,
 )
 from demo.relay.artifacts import validate_bundle
+from demo.relay import runner as relay_runner
 from demo.relay.runner import run_relay
+from demo.relay_fixture.verify import verify_run
 
 
 @pytest.fixture(scope="module")
@@ -37,6 +40,7 @@ def scripted_bundle(tmp_path_factory: pytest.TempPathFactory):
 def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     bundle = scripted_bundle.bundle
     assert scripted_bundle.verification.passed
+    assert scripted_bundle.verification.grade == "PROOF"
     validation = validate_bundle(bundle)
     assert validation.valid, validation.failures
     assert validation.checked_files > 30
@@ -81,6 +85,8 @@ def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     assert (bundle / "stage-2" / "recall.json").is_file()
     assert (bundle / "stage-3" / "recall.json").is_file()
     assert (bundle / "verifier" / "report.json").is_file()
+    verifier_record = json.loads((bundle / "verifier" / "report.json").read_text())
+    assert verifier_record["grade"] == "PROOF"
 
 
 def test_memory_disabled_baseline_is_comparable(scripted_bundle) -> None:
@@ -185,6 +191,134 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
         "OPENCLAW_CONFIG_PATH": str(tmp_path / "openclaw-config.json"),
         "OPENCLAW_STATE_DIR": str(tmp_path / "openclaw-state"),
     }
+
+
+@pytest.mark.parametrize(
+    ("mode", "expects_bare", "expected_grade"),
+    (("bare", True, "PROOF"), ("oauth", False, "REHEARSAL")),
+)
+def test_claude_auth_mode_controls_argv_and_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    expects_bare: bool,
+    expected_grade: str,
+) -> None:
+    monkeypatch.setenv("AOMS_RELAY_CLAUDE_AUTH", mode)
+    request = AdapterRequest(
+        stage="planner",
+        prompt="prompt\n",
+        prompt_path=tmp_path / "prompt.txt",
+        workdir=tmp_path,
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+        result_path=tmp_path / "result.json",
+        mcp_config_path=None,
+    )
+    adapter = ClaudeAdapter()
+
+    command = adapter.build_command(request, "fresh-id")
+    evidence = adapter.evidence(request, "fresh-id")
+
+    assert ("--bare" in command) is expects_bare
+    assert evidence["auth"]["mode"] == mode
+    assert evidence["evidence_grade"] == expected_grade
+    if mode == "oauth":
+        assert evidence["auth"]["user_level_config_excluded"] is False
+        assert "did NOT exclude user-level config" in evidence["auth"]["note"]
+
+
+def test_verifier_marks_oauth_claude_bundle_as_rehearsal(
+    scripted_bundle, tmp_path: Path
+) -> None:
+    rehearsal = tmp_path / "oauth-rehearsal"
+    shutil.copytree(scripted_bundle.bundle, rehearsal)
+    record_path = rehearsal / "stages" / "stage-1-planner" / "record.json"
+    record = json.loads(record_path.read_text())
+    record["adapter"] = "claude"
+    record["process"]["adapter"] = "claude"
+    record["process"]["adapter_evidence"] = {
+        "auth": {
+            "mode": "oauth",
+            "user_level_config_excluded": False,
+            "note": "OAuth mode did NOT exclude user-level config.",
+        },
+        "evidence_grade": "REHEARSAL",
+    }
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = verify_run(rehearsal, scenario_path=rehearsal / "scenario.yaml")
+
+    assert report.passed
+    assert report.grade == "REHEARSAL"
+
+
+def test_failed_stage_publishes_sealed_bundle_and_surfaces_stdout_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class StubFailingAdapter:
+        name = "stub-failure"
+
+        def build_command(
+            self, request: AdapterRequest, session_id: str
+        ) -> list[str]:
+            del request, session_id
+            return [
+                sys.executable,
+                "-c",
+                (
+                    "import json, sys; "
+                    "print(json.dumps({'type': 'result', 'is_error': True, "
+                    "'api_error_status': 400, "
+                    "'result': 'Credit balance is too low'})); "
+                    "print('stub stderr', file=sys.stderr); sys.exit(1)"
+                ),
+            ]
+
+        def version(self) -> str:
+            return "stub-failure/1"
+
+    monkeypatch.setitem(
+        relay_runner.ADAPTERS, StubFailingAdapter.name, StubFailingAdapter()
+    )
+    output = tmp_path / "failed-relay"
+    failed_output = Path(f"{output.resolve()}-FAILED")
+
+    with pytest.raises(RuntimeError) as caught:
+        asyncio.run(
+            run_relay(
+                output,
+                agent_names=("scripted", "stub-failure", "scripted"),
+                seed=7319,
+            )
+        )
+
+    message = str(caught.value)
+    assert "api_error_status=400" in message
+    assert "Credit balance is too low" in message
+    assert str(failed_output) in message
+    assert not output.exists()
+    assert failed_output.is_dir()
+
+    validation = validate_bundle(failed_output)
+    assert validation.valid, validation.failures
+    failure = json.loads((failed_output / "failure.json").read_text())
+    assert failure["status"] == "failed"
+    assert failure["variant"] == "memory-enabled"
+    assert failure["stage"] == "implementer"
+    assert failure["adapter"] == "stub-failure"
+    assert failure["returncode"] == 1
+    stage_root = failed_output / "stages" / "stage-2-implementer"
+    assert json.loads((stage_root / "record.json").read_text())["process"][
+        "returncode"
+    ] == 1
+    assert "Credit balance is too low" in (stage_root / "stdout.log").read_text()
+    assert (stage_root / "stderr.log").read_text() == "stub stderr\n"
+    assert (failed_output / "stages" / "stage-1-planner" / "record.json").is_file()
+    assert not (failed_output / "stages" / "stage-3-reviewer").exists()
+    manifest = json.loads((failed_output / "manifest.json").read_text())
+    assert manifest["metadata"]["status"] == "failed"
+    assert manifest["metadata"]["failure"]["stage"] == "implementer"
 
 
 def test_openclaw_adapter_launches_stub_with_private_state_and_captures_json(

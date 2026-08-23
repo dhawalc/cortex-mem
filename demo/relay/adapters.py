@@ -84,8 +84,20 @@ class ClaudeAdapter:
     """Claude Code print-mode adapter with only the injected MCP configuration."""
 
     name = "claude"
+    _auth_environment_key = "AOMS_RELAY_CLAUDE_AUTH"
+
+    def auth_mode(self) -> str:
+        mode = os.environ.get(self._auth_environment_key, "bare").strip().lower()
+        mode = mode or "bare"
+        if mode not in {"bare", "oauth"}:
+            raise ValueError(
+                f"{self._auth_environment_key} must be 'bare' or 'oauth', got "
+                f"{mode!r}"
+            )
+        return mode
 
     def build_command(self, request: AdapterRequest, session_id: str) -> list[str]:
+        auth_mode = self.auth_mode()
         if request.mcp_config_path is None:
             mcp_arguments: list[str] = []
         else:
@@ -98,7 +110,7 @@ class ClaudeAdapter:
             "claude",
             "-p",
             request.prompt,
-            "--bare",
+            *(["--bare"] if auth_mode == "bare" else []),
             "--disable-slash-commands",
             "--no-chrome",
             "--output-format",
@@ -111,6 +123,25 @@ class ClaudeAdapter:
             "acceptEdits",
             *mcp_arguments,
         ]
+
+    def evidence(
+        self, request: AdapterRequest, session_id: str
+    ) -> dict[str, object]:
+        del request, session_id
+        mode = self.auth_mode()
+        auth: dict[str, object] = {
+            "mode": mode,
+            "user_level_config_excluded": mode == "bare",
+        }
+        if mode == "oauth":
+            auth["note"] = (
+                "OAuth mode did NOT exclude user-level config; this is weaker "
+                "isolation evidence and is rehearsal grade."
+            )
+        return {
+            "auth": auth,
+            "evidence_grade": "REHEARSAL" if mode == "oauth" else "PROOF",
+        }
 
     def version(self) -> str:
         return _executable_version("claude", "--version")

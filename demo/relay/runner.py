@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Sequence
+from typing import Any, NoReturn, Sequence
 
 from aoms.contracts import ScopeContext
 from aoms.portable import export_bundle
@@ -54,6 +54,60 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
+
+
+def _text_tail(path: Path, *, limit: int = 2000) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[-limit:].strip()
+    except OSError:
+        return ""
+
+
+def _stream_json_error(path: Path) -> str | None:
+    """Extract the useful error fields Claude emits on stream-json stdout."""
+
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    candidates: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            candidates.append(payload)
+    for payload in reversed(candidates):
+        status = payload.get("api_error_status")
+        result = payload.get("result")
+        if status is None and (result is None or result == ""):
+            continue
+        details: list[str] = []
+        if status is not None:
+            details.append(f"api_error_status={status}")
+        if result is not None and result != "":
+            rendered = result if isinstance(result, str) else json.dumps(result)
+            details.append(f"result={rendered}")
+        return ", ".join(details)
+    return None
+
+
+def _process_failure_message(request: AdapterRequest) -> str:
+    details: list[str] = []
+    stdout_error = _stream_json_error(request.stdout_path)
+    if stdout_error:
+        details.append(f"stdout stream-json: {stdout_error}")
+    stderr_tail = _text_tail(request.stderr_path)
+    if stderr_tail:
+        details.append(f"stderr: {stderr_tail}")
+    if not stdout_error:
+        stdout_tail = _text_tail(request.stdout_path)
+        if stdout_tail:
+            details.append(f"stdout: {stdout_tail}")
+    return "; ".join(details) or "no process diagnostic output"
 
 
 def _run_git(workdir: Path, *arguments: str, check: bool = True) -> str:
@@ -216,6 +270,29 @@ class RelayResult:
     baseline_verification: VerificationReport | None
 
 
+class RelayStageFailure(RuntimeError):
+    """A stage process could not launch or returned unsuccessfully."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        variant: str,
+        stage: str,
+        adapter: str,
+        returncode: int | None,
+        stdout_path: Path,
+        stderr_path: Path,
+    ) -> None:
+        super().__init__(message)
+        self.variant = variant
+        self.stage = stage
+        self.adapter = adapter
+        self.returncode = returncode
+        self.stdout_path = stdout_path
+        self.stderr_path = stderr_path
+
+
 async def _run_variant(
     *,
     name: str,
@@ -283,7 +360,22 @@ async def _run_variant(
             mcp_config_path=mcp_config_path,
             script_path=script_path if adapter.name == "scripted" else None,
         )
-        process = await launch_fresh_process(adapter, request, project_root=PROJECT_ROOT)
+        try:
+            process = await launch_fresh_process(
+                adapter, request, project_root=PROJECT_ROOT
+            )
+        except Exception as exc:
+            request.stdout_path.touch(exist_ok=True)
+            request.stderr_path.touch(exist_ok=True)
+            raise RelayStageFailure(
+                f"{name} {stage} {adapter.name} process could not launch: {exc}",
+                variant=name,
+                stage=stage,
+                adapter=adapter.name,
+                returncode=None,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
+            ) from exc
         after_commit = _run_git(workdir, "rev-parse", "HEAD").strip()
         diff = _run_git(workdir, "diff", "--binary", before_commit, "--", ".")
         (stage_root / "changes.patch").write_text(diff, encoding="utf-8")
@@ -320,12 +412,15 @@ async def _run_variant(
         }
         _write_json(stage_root / "record.json", record)
         if process.returncode != 0:
-            stderr_tail = request.stderr_path.read_text(
-                encoding="utf-8", errors="replace"
-            )[-2000:]
-            raise RuntimeError(
+            raise RelayStageFailure(
                 f"{name} {stage} {adapter.name} process failed with {process.returncode}; "
-                f"stderr: {stderr_tail}"
+                f"{_process_failure_message(request)}",
+                variant=name,
+                stage=stage,
+                adapter=adapter.name,
+                returncode=process.returncode,
+                stdout_path=request.stdout_path,
+                stderr_path=request.stderr_path,
             )
         if repository is not None:
             await _write_recall_artifact(
@@ -364,6 +459,91 @@ def _copy_protocol_inputs(target: Path, scenario_path: Path, script_path: Path) 
     shutil.copy2(script_path, target / "scripted.yaml")
 
 
+def _relative_evidence_path(bundle: Path, path: Path) -> str:
+    try:
+        return path.relative_to(bundle).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _publish_failure_bundle(
+    *,
+    bundle: Path,
+    destination: Path,
+    failure: RelayStageFailure,
+    scenario: dict[str, Any],
+    seed: int,
+    with_baseline: bool,
+) -> Path:
+    failure_record = {
+        "schema_version": RUNNER_SCHEMA_VERSION,
+        "status": "failed",
+        "failed_at": _utc_now(),
+        "variant": failure.variant,
+        "stage": failure.stage,
+        "stage_number": STAGE_NUMBERS[failure.stage],
+        "adapter": failure.adapter,
+        "returncode": failure.returncode,
+        "error": {
+            "type": failure.__class__.__name__,
+            "message": str(failure),
+        },
+        "evidence": {
+            "stdout": _relative_evidence_path(bundle, failure.stdout_path),
+            "stderr": _relative_evidence_path(bundle, failure.stderr_path),
+        },
+    }
+    _write_json(bundle / "failure.json", failure_record)
+    source_revision = _run_git(PROJECT_ROOT, "rev-parse", "HEAD").strip()
+    fixture_hash = sha256_tree(FIXTURE_ROOT / scenario["repository"])
+    manifest = write_manifest(
+        bundle,
+        metadata={
+            "status": "failed",
+            "scenario_id": scenario["id"],
+            "seed": seed,
+            "source_revision": source_revision,
+            "fixture_repository_sha256": fixture_hash,
+            "with_baseline": with_baseline,
+            "failure": {
+                "variant": failure.variant,
+                "stage": failure.stage,
+                "adapter": failure.adapter,
+                "returncode": failure.returncode,
+            },
+        },
+    )
+    validation = validate_bundle(bundle)
+    if not validation.valid:
+        raise RuntimeError(
+            f"new relay failure bundle failed validation: {validation.failures}"
+        )
+    os.replace(bundle, destination)
+    return manifest
+
+
+def _raise_published_failure(
+    *,
+    bundle: Path,
+    destination: Path,
+    failure: RelayStageFailure,
+    scenario: dict[str, Any],
+    seed: int,
+    with_baseline: bool,
+) -> NoReturn:
+    _publish_failure_bundle(
+        bundle=bundle,
+        destination=destination,
+        failure=failure,
+        scenario=scenario,
+        seed=seed,
+        with_baseline=with_baseline,
+    )
+    raise RuntimeError(
+        f"{failure}; failure bundle: {destination}"
+    ) from failure
+
+
 async def run_relay(
     output: str | Path,
     *,
@@ -376,8 +556,14 @@ async def run_relay(
     """Run all stages and atomically publish a manifest-sealed output directory."""
 
     destination = Path(output).expanduser().resolve()
+    failure_destination = Path(f"{destination}-FAILED")
     if destination.exists():
         raise FileExistsError(f"relay output already exists (write-once): {destination}")
+    if failure_destination.exists():
+        raise FileExistsError(
+            "relay failure output already exists (write-once): "
+            f"{failure_destination}"
+        )
     if len(agent_names) != len(STAGE_ORDER):
         raise ValueError("exactly three adapters are required: planner, implementer, reviewer")
     unknown = [name for name in agent_names if name not in ADAPTERS]
@@ -412,15 +598,25 @@ async def run_relay(
             bundle / "seed-result.json",
             {"memory_ids": list(seeded.memory_ids), "count": len(seeded.memory_ids)},
         )
-        primary = await _run_variant(
-            name="memory-enabled",
-            run_root=bundle,
-            working_root=build_root / "memory-enabled-workdirs",
-            scenario=scenario,
-            adapters=adapters,
-            script_path=bundle / "scripted.yaml",
-            memory_data_dir=memory_data_dir,
-        )
+        try:
+            primary = await _run_variant(
+                name="memory-enabled",
+                run_root=bundle,
+                working_root=build_root / "memory-enabled-workdirs",
+                scenario=scenario,
+                adapters=adapters,
+                script_path=bundle / "scripted.yaml",
+                memory_data_dir=memory_data_dir,
+            )
+        except RelayStageFailure as exc:
+            _raise_published_failure(
+                bundle=bundle,
+                destination=failure_destination,
+                failure=exc,
+                scenario=scenario,
+                seed=selected_seed,
+                with_baseline=with_baseline,
+            )
         await export_bundle(
             SQLiteMemoryRepository(memory_data_dir / "aoms.sqlite3"),
             bundle / "receipts-export",
@@ -431,15 +627,25 @@ async def run_relay(
             baseline_root = bundle / "baseline"
             baseline_root.mkdir()
             _copy_protocol_inputs(baseline_root, scenario_path, script_path)
-            baseline = await _run_variant(
-                name="memory-disabled-baseline",
-                run_root=baseline_root,
-                working_root=build_root / "baseline-workdirs",
-                scenario=scenario,
-                adapters=adapters,
-                script_path=baseline_root / "scripted.yaml",
-                memory_data_dir=None,
-            )
+            try:
+                baseline = await _run_variant(
+                    name="memory-disabled-baseline",
+                    run_root=baseline_root,
+                    working_root=build_root / "baseline-workdirs",
+                    scenario=scenario,
+                    adapters=adapters,
+                    script_path=baseline_root / "scripted.yaml",
+                    memory_data_dir=None,
+                )
+            except RelayStageFailure as exc:
+                _raise_published_failure(
+                    bundle=bundle,
+                    destination=failure_destination,
+                    failure=exc,
+                    scenario=scenario,
+                    seed=selected_seed,
+                    with_baseline=with_baseline,
+                )
             _write_json(
                 bundle / "comparison.json",
                 {

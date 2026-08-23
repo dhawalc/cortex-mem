@@ -17,6 +17,7 @@ from demo.relay_fixture.seed import SCENARIO_PATH, load_scenario
 class VerificationReport:
     scenario_id: str
     passed: bool
+    grade: str
     checks: tuple[str, ...]
     failures: tuple[str, ...]
 
@@ -30,6 +31,22 @@ def _load_recall_artifact(path: Path) -> tuple[RecallReceipt, str, str]:
     receipt_payload = payload.get("receipt", payload)
     receipt = RecallReceipt.model_validate(receipt_payload)
     return receipt, str(payload.get("context", "")), raw_text
+
+
+def _evidence_grade(root: Path) -> str:
+    """OAuth-backed Claude runs are useful rehearsals, not isolation proofs."""
+
+    for record_path in sorted((root / "stages").glob("stage-*/record.json")):
+        try:
+            record = json.loads(record_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        process = record.get("process", {})
+        evidence = process.get("adapter_evidence", {})
+        auth = evidence.get("auth", {}) if isinstance(evidence, dict) else {}
+        if isinstance(auth, dict) and auth.get("mode") == "oauth":
+            return "REHEARSAL"
+    return "PROOF"
 
 
 def verify_run(
@@ -118,6 +135,7 @@ def verify_run(
     return VerificationReport(
         scenario_id=scenario["id"],
         passed=not failures,
+        grade=_evidence_grade(root),
         checks=tuple(checks),
         failures=tuple(failures),
     )
