@@ -34,7 +34,7 @@ def _load_recall_artifact(path: Path) -> tuple[RecallReceipt, str, str]:
 
 
 def _evidence_grade(root: Path) -> str:
-    """OAuth-backed Claude runs are useful rehearsals, not isolation proofs."""
+    """Cap runs with a weakened adapter isolation mode at rehearsal grade."""
 
     for record_path in sorted((root / "stages").glob("stage-*/record.json")):
         try:
@@ -45,6 +45,9 @@ def _evidence_grade(root: Path) -> str:
         evidence = process.get("adapter_evidence", {})
         auth = evidence.get("auth", {}) if isinstance(evidence, dict) else {}
         if isinstance(auth, dict) and auth.get("mode") == "oauth":
+            return "REHEARSAL"
+        sandbox = evidence.get("sandbox", {}) if isinstance(evidence, dict) else {}
+        if isinstance(sandbox, dict) and sandbox.get("mode") == "danger-full-access":
             return "REHEARSAL"
     return "PROOF"
 

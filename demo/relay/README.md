@@ -18,7 +18,7 @@ fresh session ID, `--no-session-persistence`, and an explicit allow-list for
 the three injected AOMS tools so headless recall is not left waiting for an
 impossible approval. Codex uses `codex -a never
 exec --json`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `-C`,
-workspace-write sandboxing, and `-c mcp_servers.aoms.*` values
+an explicitly selected sandbox mode, and `-c mcp_servers.aoms.*` values
 derived from the same stdio server config.
 
 Claude defaults to `AOMS_RELAY_CLAUDE_AUTH=bare`, which adds `--bare` and
@@ -26,7 +26,19 @@ excludes user-level configuration but requires API-key authentication. Set
 `AOMS_RELAY_CLAUDE_AUTH=oauth` to omit only `--bare` and use the machine's
 Claude OAuth session. OAuth runs record that user-level configuration was not
 excluded, and the verifier grades their evidence as `REHEARSAL`; bare Claude
-and other adapter runs are graded `PROOF`.
+runs remain eligible for `PROOF` grade.
+
+## Host prerequisites
+
+A bwrap-capable Linux host is required for `PROOF`-grade Codex evidence. The
+adapter defaults to `AOMS_RELAY_CODEX_SANDBOX=workspace-write`, which passes
+`-s workspace-write` to `codex exec` and keeps host sandboxing in the isolation
+proof. On hosts where bwrap cannot initialize (including nested environments
+that cannot configure the loopback interface), set
+`AOMS_RELAY_CODEX_SANDBOX=danger-full-access`. That mode preserves the relay's
+fresh context, private working directory, and MCP capture, but disables the
+orthogonal host sandbox; the evidence records the selected mode and the
+verifier caps the bundle at `REHEARSAL` grade.
 
 OpenClaw uses its embedded one-shot path so a relay run does not depend on or
 modify the live Gateway configuration:

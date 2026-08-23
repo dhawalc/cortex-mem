@@ -165,9 +165,25 @@ class CodexAdapter:
     """Codex non-interactive adapter using ephemeral session storage."""
 
     name = "codex"
+    _sandbox_environment_key = "AOMS_RELAY_CODEX_SANDBOX"
+
+    def sandbox_mode(self) -> str:
+        mode = (
+            os.environ.get(self._sandbox_environment_key, "workspace-write")
+            .strip()
+            .lower()
+        )
+        mode = mode or "workspace-write"
+        if mode not in {"workspace-write", "danger-full-access"}:
+            raise ValueError(
+                f"{self._sandbox_environment_key} must be 'workspace-write' or "
+                f"'danger-full-access', got {mode!r}"
+            )
+        return mode
 
     def build_command(self, request: AdapterRequest, session_id: str) -> list[str]:
         del session_id  # Codex proves freshness with --ephemeral, not a chosen ID.
+        sandbox_mode = self.sandbox_mode()
         command = [
             "codex",
             "-a",
@@ -181,7 +197,7 @@ class CodexAdapter:
             "-C",
             str(request.workdir),
             "-s",
-            "workspace-write",
+            sandbox_mode,
         ]
         if request.mcp_config_path is not None:
             payload = json.loads(request.mcp_config_path.read_text(encoding="utf-8"))
@@ -198,6 +214,25 @@ class CodexAdapter:
             )
         command.append(request.prompt)
         return command
+
+    def evidence(self, request: AdapterRequest, session_id: str) -> dict[str, object]:
+        del request, session_id
+        mode = self.sandbox_mode()
+        sandbox: dict[str, object] = {
+            "mode": mode,
+            "host_sandbox_enabled": mode == "workspace-write",
+        }
+        if mode == "danger-full-access":
+            sandbox["note"] = (
+                "Host sandboxing was disabled because the host could not initialize "
+                "the workspace-write sandbox; this is rehearsal-grade evidence."
+            )
+        return {
+            "sandbox": sandbox,
+            "evidence_grade": (
+                "REHEARSAL" if mode == "danger-full-access" else "PROOF"
+            ),
+        }
 
     def version(self) -> str:
         return _executable_version("codex", "--version")

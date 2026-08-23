@@ -221,7 +221,11 @@ def _real_adapter_request(tmp_path: Path) -> AdapterRequest:
     )
 
 
-def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -> None:
+def test_real_adapter_commands_match_discovered_headless_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("AOMS_RELAY_CLAUDE_AUTH", raising=False)
+    monkeypatch.delenv("AOMS_RELAY_CODEX_SANDBOX", raising=False)
     request = _real_adapter_request(tmp_path)
     claude = ClaudeAdapter().build_command(request, "fresh-id")
     assert claude[:3] == ["claude", "-p", "minimal prompt\n"]
@@ -285,7 +289,10 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
     }
 
 
-def test_codex_adapter_argv_parses_with_installed_cli(tmp_path: Path) -> None:
+def test_codex_adapter_argv_parses_with_installed_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("AOMS_RELAY_CODEX_SANDBOX", raising=False)
     executable = shutil.which("codex")
     if executable is None:
         pytest.skip("codex CLI is not installed")
@@ -341,6 +348,31 @@ def test_claude_auth_mode_controls_argv_and_evidence(
         assert "did NOT exclude user-level config" in evidence["auth"]["note"]
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected_grade"),
+    (("workspace-write", "PROOF"), ("danger-full-access", "REHEARSAL")),
+)
+def test_codex_sandbox_mode_controls_argv_and_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    expected_grade: str,
+) -> None:
+    monkeypatch.setenv("AOMS_RELAY_CODEX_SANDBOX", mode)
+    request = _real_adapter_request(tmp_path)
+    adapter = CodexAdapter()
+
+    command = adapter.build_command(request, "unused")
+    evidence = adapter.evidence(request, "unused")
+
+    assert command[command.index("-s") + 1] == mode
+    assert evidence["sandbox"]["mode"] == mode
+    assert evidence["sandbox"]["host_sandbox_enabled"] is (mode == "workspace-write")
+    assert evidence["evidence_grade"] == expected_grade
+    if mode == "danger-full-access":
+        assert "rehearsal-grade evidence" in evidence["sandbox"]["note"]
+
+
 def test_verifier_marks_oauth_claude_bundle_as_rehearsal(
     scripted_bundle, tmp_path: Path
 ) -> None:
@@ -355,6 +387,31 @@ def test_verifier_marks_oauth_claude_bundle_as_rehearsal(
             "mode": "oauth",
             "user_level_config_excluded": False,
             "note": "OAuth mode did NOT exclude user-level config.",
+        },
+        "evidence_grade": "REHEARSAL",
+    }
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+
+    report = verify_run(rehearsal, scenario_path=rehearsal / "scenario.yaml")
+
+    assert report.passed
+    assert report.grade == "REHEARSAL"
+
+
+def test_verifier_marks_unsandboxed_codex_bundle_as_rehearsal(
+    scripted_bundle, tmp_path: Path
+) -> None:
+    rehearsal = tmp_path / "unsandboxed-codex-rehearsal"
+    shutil.copytree(scripted_bundle.bundle, rehearsal)
+    record_path = rehearsal / "stages" / "stage-2-implementer" / "record.json"
+    record = json.loads(record_path.read_text())
+    record["adapter"] = "codex"
+    record["process"]["adapter"] = "codex"
+    record["process"]["adapter_evidence"] = {
+        "sandbox": {
+            "mode": "danger-full-access",
+            "host_sandbox_enabled": False,
+            "note": "Host sandboxing was disabled.",
         },
         "evidence_grade": "REHEARSAL",
     }
