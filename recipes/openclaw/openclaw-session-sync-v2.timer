@@ -1,0 +1,11 @@
+[Unit]
+Description=Run selective OpenClaw AOMS capture hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=5m
+Unit=openclaw-session-sync-v2.service
+
+[Install]
+WantedBy=timers.target

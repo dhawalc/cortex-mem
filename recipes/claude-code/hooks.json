@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "context=$(AOMS_AGENT_ID=claude-code AOMS_WORKSPACE=\"${CLAUDE_PROJECT_DIR:-$PWD}\" cortex-mem recall --task \"Project context for ${CLAUDE_PROJECT_DIR:-$PWD}: current goals, decisions, constraints, failures, and reusable procedures\" --budget 2000 --format markdown) || exit 0; [ -n \"$context\" ] || exit 0; jq -nc --arg context \"$context\" '{hookSpecificOutput:{hookEventName:\"SessionStart\",additionalContext:$context}}'",
+            "timeout": 20
+          }
+        ]
+      }
+    ]
+  }
+}
