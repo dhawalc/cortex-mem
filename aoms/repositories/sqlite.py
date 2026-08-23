@@ -31,10 +31,13 @@ from typing import Any
 from uuid import uuid4
 
 from aoms.contracts import (
+    IntegrityReport,
     MemoryKind,
     MemoryRecord,
     RecallRequest,
+    ReceiptPruneReport,
     Scope,
+    ScopeContext,
     SearchHit,
     SearchRequest,
     SearchResult,
@@ -45,10 +48,11 @@ from aoms.repositories.base import (
     CompletedEmbedding,
     PendingEmbedding,
     RecallCandidate,
+    RecallCandidateBatch,
     VectorHit,
 )
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -103,6 +107,22 @@ MIGRATIONS: dict[int, str] = {
         );
         CREATE INDEX IF NOT EXISTS idx_embedding_pending_claim
             ON embedding_pending(profile_key, claimed_at, enqueued_at, record_id);
+    """,
+    4: """
+        ALTER TABLE memories ADD COLUMN scope_agent_id TEXT;
+        ALTER TABLE memories ADD COLUMN scope_workspace_id TEXT;
+        ALTER TABLE memories ADD COLUMN created_by_agent_id TEXT;
+        CREATE INDEX IF NOT EXISTS idx_memories_agent_scope
+            ON memories(scope, scope_agent_id);
+        CREATE INDEX IF NOT EXISTS idx_memories_workspace_scope
+            ON memories(scope, scope_workspace_id);
+        CREATE INDEX IF NOT EXISTS idx_memories_creator
+            ON memories(created_by_agent_id);
+
+        ALTER TABLE recall_receipts ADD COLUMN agent_id TEXT;
+        ALTER TABLE recall_receipts ADD COLUMN workspace_id TEXT;
+        CREATE INDEX IF NOT EXISTS idx_recall_receipts_agent_created
+            ON recall_receipts(agent_id, created_at DESC, receipt_id DESC);
     """,
 }
 
@@ -265,11 +285,17 @@ class SQLiteMemoryRepository:
                 )
                 connection.execute(
                     """
-                    INSERT INTO memories(id, kind, scope, created_at, updated_at, record_json)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO memories(
+                        id, kind, scope, scope_agent_id, scope_workspace_id,
+                        created_by_agent_id, created_at, updated_at, record_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id) DO UPDATE SET
                         kind = excluded.kind,
                         scope = excluded.scope,
+                        scope_agent_id = excluded.scope_agent_id,
+                        scope_workspace_id = excluded.scope_workspace_id,
+                        created_by_agent_id = excluded.created_by_agent_id,
                         created_at = excluded.created_at,
                         updated_at = excluded.updated_at,
                         record_json = excluded.record_json
@@ -278,6 +304,9 @@ class SQLiteMemoryRepository:
                         record.id,
                         record.kind.value,
                         record.scope.value,
+                        record.scope_agent_id,
+                        record.scope_workspace_id,
+                        record.created_by_agent_id,
                         record.created_at.isoformat(),
                         record.updated_at.isoformat(),
                         serialized,
@@ -337,11 +366,15 @@ class SQLiteMemoryRepository:
             rows = connection.execute(sql, [*parameters, limit, offset]).fetchall()
         return [self._record_from_row(row) for row in rows]
 
-    async def search_by_keyword(self, request: SearchRequest) -> SearchResult:
+    async def search_by_keyword(
+        self, request: SearchRequest, *, scope_context: ScopeContext | None = None
+    ) -> SearchResult:
         await self.initialize()
-        return await asyncio.to_thread(self._search_sync, request)
+        return await asyncio.to_thread(self._search_sync, request, scope_context)
 
-    def _search_sync(self, request: SearchRequest) -> SearchResult:
+    def _search_sync(
+        self, request: SearchRequest, scope_context: ScopeContext | None
+    ) -> SearchResult:
         expression = self._fts_expression(request.query)
         if not expression:
             return SearchResult(
@@ -351,7 +384,10 @@ class SQLiteMemoryRepository:
             )
 
         clauses, parameters = self._filters(
-            kinds=request.kinds, scopes=request.scopes, table_alias="m."
+            kinds=request.kinds,
+            scopes=request.scopes,
+            table_alias="m.",
+            scope_context=scope_context,
         )
         clauses.insert(0, "memories_fts MATCH ?")
         parameters.insert(0, expression)
@@ -370,6 +406,9 @@ class SQLiteMemoryRepository:
         )
         with self._connect() as connection:
             total = int(connection.execute(count_sql, parameters).fetchone()["count"])
+            scope_filtered_count = self._scope_filtered_fts_count(
+                connection, expression, request, scope_context
+            )
             rows = connection.execute(
                 search_sql, [*parameters, request.limit, request.offset]
             ).fetchall()
@@ -387,6 +426,7 @@ class SQLiteMemoryRepository:
             diagnostics={
                 "strategy": "fts5",
                 "query_tokens": len(expression.split(" AND ")),
+                "scope_filtered_count": scope_filtered_count,
             },
         )
 
@@ -397,7 +437,8 @@ class SQLiteMemoryRepository:
         limit: int = 100,
         query_vector: EmbeddingVector | None = None,
         vector_profile: EmbeddingProfile | None = None,
-    ) -> list[RecallCandidate]:
+        scope_context: ScopeContext | None = None,
+    ) -> RecallCandidateBatch:
         """Return the union of OR-FTS hits and newest records from each kind.
 
         Sampling two recent records per requested kind prevents a corpus's
@@ -414,6 +455,7 @@ class SQLiteMemoryRepository:
             limit,
             query_vector,
             vector_profile,
+            scope_context,
         )
 
     def _retrieve_recall_candidates_sync(
@@ -422,13 +464,18 @@ class SQLiteMemoryRepository:
         limit: int,
         query_vector: EmbeddingVector | None,
         vector_profile: EmbeddingProfile | None,
-    ) -> list[RecallCandidate]:
+        scope_context: ScopeContext | None,
+    ) -> RecallCandidateBatch:
         expression = self._recall_fts_expression(request.task)
         fts_rows: list[sqlite3.Row] = []
+        scope_filtered_count = 0
         with self._connect() as connection:
             if expression:
                 clauses, parameters = self._filters(
-                    kinds=request.kinds, scopes=request.scopes, table_alias="m."
+                    kinds=request.kinds,
+                    scopes=request.scopes,
+                    table_alias="m.",
+                    scope_context=scope_context,
                 )
                 clauses.insert(0, "memories_fts MATCH ?")
                 parameters.insert(0, expression)
@@ -440,6 +487,9 @@ class SQLiteMemoryRepository:
                     "ORDER BY rank ASC, m.updated_at DESC, m.id ASC LIMIT ?",
                     [*parameters, limit],
                 ).fetchall()
+                scope_filtered_count = self._scope_filtered_fts_count(
+                    connection, expression, request, scope_context
+                )
 
             candidates: dict[str, dict[str, Any]] = {}
             strengths = [max(0.0, -float(row["rank"])) for row in fts_rows]
@@ -466,6 +516,7 @@ class SQLiteMemoryRepository:
                     limit=limit,
                     kinds=request.kinds,
                     scopes=request.scopes,
+                    scope_context=scope_context,
                 )
                 for hit in vector_hits:
                     row = connection.execute(
@@ -490,7 +541,10 @@ class SQLiteMemoryRepository:
             kinds = request.kinds or list(MemoryKind)
             for kind in kinds:
                 clauses, parameters = self._filters(
-                    kinds=[kind], scopes=request.scopes, table_alias=""
+                    kinds=[kind],
+                    scopes=request.scopes,
+                    table_alias="",
+                    scope_context=scope_context,
                 )
                 recent_rows = connection.execute(
                     "SELECT record_json FROM memories "
@@ -511,15 +565,18 @@ class SQLiteMemoryRepository:
                     )
                     existing["sources"].add("recent-kind")
 
-        return [
-            RecallCandidate(
-                record=value["record"],
-                fts_score=float(value["fts_score"]),
-                retrieval_sources=tuple(sorted(value["sources"])),
-                vector_score=value["vector_score"],
-            )
-            for value in candidates.values()
-        ]
+        return RecallCandidateBatch(
+            candidates=tuple(
+                RecallCandidate(
+                    record=value["record"],
+                    fts_score=float(value["fts_score"]),
+                    retrieval_sources=tuple(sorted(value["sources"])),
+                    vector_score=value["vector_score"],
+                )
+                for value in candidates.values()
+            ),
+            scope_filtered_count=scope_filtered_count,
+        )
 
     async def upsert_vector(
         self,
@@ -550,12 +607,19 @@ class SQLiteMemoryRepository:
         limit: int,
         kinds: Sequence[MemoryKind] | None = None,
         scopes: Sequence[Scope] | None = None,
+        scope_context: ScopeContext | None = None,
     ) -> list[VectorHit]:
         if limit < 1:
             raise ValueError("limit must be at least 1")
         await self.initialize()
         return await asyncio.to_thread(
-            self._vector_knn_sync, vector, profile, limit, kinds, scopes
+            self._vector_knn_sync,
+            vector,
+            profile,
+            limit,
+            kinds,
+            scopes,
+            scope_context,
         )
 
     def _vector_knn_sync(
@@ -565,6 +629,7 @@ class SQLiteMemoryRepository:
         limit: int,
         kinds: Sequence[MemoryKind] | None,
         scopes: Sequence[Scope] | None,
+        scope_context: ScopeContext | None,
     ) -> list[VectorHit]:
         with self._connect() as connection:
             return self._vector_knn_with_connection(
@@ -574,6 +639,7 @@ class SQLiteMemoryRepository:
                 limit=limit,
                 kinds=kinds,
                 scopes=scopes,
+                scope_context=scope_context,
             )
 
     def _vector_knn_with_connection(
@@ -585,6 +651,7 @@ class SQLiteMemoryRepository:
         limit: int,
         kinds: Sequence[MemoryKind] | None,
         scopes: Sequence[Scope] | None,
+        scope_context: ScopeContext | None = None,
     ) -> list[VectorHit]:
         self._validate_vector(profile, vector)
         if not self._sqlite_vec_available:
@@ -607,6 +674,17 @@ class SQLiteMemoryRepository:
                     (serialized, limit, profile.key, namespace),
                 ).fetchall()
                 for row in rows:
+                    if scope_context is not None:
+                        access_clauses, access_parameters = self._scope_access_filter(
+                            scope_context, table_alias=""
+                        )
+                        visible = connection.execute(
+                            "SELECT 1 FROM memories WHERE id = ? AND "
+                            + " AND ".join(access_clauses),
+                            (row["memory_id"], *access_parameters),
+                        ).fetchone()
+                        if visible is None:
+                            continue
                     score = min(1.0, max(0.0, 1.0 - float(row["distance"])))
                     best[row["memory_id"]] = max(best.get(row["memory_id"], 0.0), score)
         ordered = sorted(best.items(), key=lambda item: (-item[1], item[0]))
@@ -827,15 +905,21 @@ class SQLiteMemoryRepository:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO recall_receipts(receipt_id, created_at, receipt_json)
-                VALUES (?, ?, ?)
+                INSERT INTO recall_receipts(
+                    receipt_id, created_at, agent_id, workspace_id, receipt_json
+                )
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(receipt_id) DO UPDATE SET
                     created_at = excluded.created_at,
+                    agent_id = excluded.agent_id,
+                    workspace_id = excluded.workspace_id,
                     receipt_json = excluded.receipt_json
                 """,
                 (
                     receipt.receipt_id,
                     receipt.created_at.isoformat(),
+                    receipt.agent_id,
+                    receipt.workspace_id,
                     receipt.model_dump_json(),
                 ),
             )
@@ -852,13 +936,19 @@ class SQLiteMemoryRepository:
             )
             connection.commit()
 
-    async def recent_recall_receipts(self, *, limit: int = 20) -> list[RecallReceipt]:
+    async def recent_recall_receipts(
+        self, *, limit: int = 20, scope_context: ScopeContext | None = None
+    ) -> list[RecallReceipt]:
         if limit < 1 or limit > 1_000:
             raise ValueError("limit must be between 1 and 1000")
         await self.initialize()
-        return await asyncio.to_thread(self._recent_recall_receipts_sync, limit)
+        return await asyncio.to_thread(
+            self._recent_recall_receipts_sync, limit, scope_context
+        )
 
-    def _recent_recall_receipts_sync(self, limit: int) -> list[RecallReceipt]:
+    def _recent_recall_receipts_sync(
+        self, limit: int, scope_context: ScopeContext | None
+    ) -> list[RecallReceipt]:
         with self._connect() as connection:
             table_exists = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' "
@@ -866,12 +956,131 @@ class SQLiteMemoryRepository:
             ).fetchone()
             if table_exists is None:
                 return []
-            rows = connection.execute(
-                "SELECT receipt_json FROM recall_receipts "
-                "ORDER BY created_at DESC, receipt_id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            if scope_context is None:
+                rows = connection.execute(
+                    "SELECT receipt_json FROM recall_receipts "
+                    "ORDER BY created_at DESC, receipt_id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT receipt_json FROM recall_receipts WHERE agent_id = ? "
+                    "ORDER BY created_at DESC, receipt_id DESC LIMIT ?",
+                    (scope_context.agent_id, limit),
+                ).fetchall()
         return [RecallReceipt.model_validate_json(row["receipt_json"]) for row in rows]
+
+    async def prune_recall_receipts(
+        self, *, retain: int | None = None
+    ) -> ReceiptPruneReport:
+        self._require_writable()
+        keep = self.receipt_retention if retain is None else retain
+        if keep < 0:
+            raise ValueError("retain must not be negative")
+        await self.initialize()
+        return await asyncio.to_thread(self._prune_recall_receipts_sync, keep)
+
+    def _prune_recall_receipts_sync(self, retain: int) -> ReceiptPruneReport:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM recall_receipts WHERE receipt_id NOT IN ("
+                "SELECT receipt_id FROM recall_receipts "
+                "ORDER BY created_at DESC, receipt_id DESC LIMIT ?)",
+                (retain,),
+            )
+            connection.commit()
+            remaining = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM recall_receipts"
+                ).fetchone()["count"]
+            )
+            return ReceiptPruneReport(
+                retained_limit=retain,
+                deleted_count=cursor.rowcount,
+                remaining_count=remaining,
+            )
+
+    async def integrity_report(self) -> IntegrityReport:
+        await self.initialize()
+        return await asyncio.to_thread(self._integrity_report_sync)
+
+    def _integrity_report_sync(self) -> IntegrityReport:
+        with self._connect() as connection:
+            memory_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM memories"
+                ).fetchone()["count"]
+            )
+            fts_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM memories_fts"
+                ).fetchone()["count"]
+            )
+            missing_fts = [
+                row["id"]
+                for row in connection.execute(
+                    "SELECT m.id FROM memories AS m "
+                    "LEFT JOIN memories_fts AS f ON f.id = m.id "
+                    "WHERE f.id IS NULL ORDER BY m.id"
+                ).fetchall()
+            ]
+            orphan_fts = [
+                row["id"]
+                for row in connection.execute(
+                    "SELECT DISTINCT f.id FROM memories_fts AS f "
+                    "LEFT JOIN memories AS m ON m.id = f.id "
+                    "WHERE m.id IS NULL ORDER BY f.id"
+                ).fetchall()
+            ]
+            unscoped = [
+                row["id"]
+                for row in connection.execute(
+                    "SELECT id FROM memories WHERE created_by_agent_id IS NULL OR "
+                    "(scope = ? AND scope_agent_id IS NULL) OR "
+                    "(scope = ? AND scope_workspace_id IS NULL) ORDER BY id",
+                    (Scope.AGENT_PRIVATE.value, Scope.WORKSPACE.value),
+                ).fetchall()
+            ]
+
+            table_rows = connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' "
+                "AND name GLOB 'memory_vectors_[0-9]*' ORDER BY name"
+            ).fetchall()
+            vector_table_counts: dict[str, int] = {}
+            orphan_vectors: set[str] = set()
+            for row in table_rows:
+                table = row["name"]
+                if re.fullmatch(r"memory_vectors_\d+", table) is None:
+                    continue
+                vector_table_counts[table] = int(
+                    connection.execute(
+                        f"SELECT COUNT(*) AS count FROM {table}"
+                    ).fetchone()["count"]
+                )
+                orphan_vectors.update(
+                    item["memory_id"]
+                    for item in connection.execute(
+                        f"SELECT DISTINCT v.memory_id FROM {table} AS v "
+                        "LEFT JOIN memories AS m ON m.id = v.memory_id "
+                        "WHERE m.id IS NULL"
+                    ).fetchall()
+                )
+
+        vector_count = sum(vector_table_counts.values())
+        healthy = not (
+            missing_fts or orphan_fts or orphan_vectors or unscoped
+        ) and memory_count == fts_count
+        return IntegrityReport(
+            healthy=healthy,
+            memory_count=memory_count,
+            fts_count=fts_count,
+            vector_count=vector_count,
+            vector_table_counts=vector_table_counts,
+            missing_fts_memory_ids=missing_fts,
+            orphan_fts_memory_ids=orphan_fts,
+            orphan_vector_memory_ids=sorted(orphan_vectors),
+            unscoped_memory_ids=unscoped,
+        )
 
     @staticmethod
     def _filters(
@@ -879,6 +1088,7 @@ class SQLiteMemoryRepository:
         kinds: Sequence[MemoryKind] | None,
         scopes: Sequence[Scope] | None,
         table_alias: str,
+        scope_context: ScopeContext | None = None,
     ) -> tuple[list[str], list[Any]]:
         clauses: list[str] = []
         parameters: list[Any] = []
@@ -890,7 +1100,69 @@ class SQLiteMemoryRepository:
             placeholders = ", ".join("?" for _ in scopes)
             clauses.append(f"{table_alias}scope IN ({placeholders})")
             parameters.extend(scope.value for scope in scopes)
+        if scope_context is not None:
+            access_clauses, access_parameters = SQLiteMemoryRepository._scope_access_filter(
+                scope_context, table_alias=table_alias
+            )
+            clauses.extend(access_clauses)
+            parameters.extend(access_parameters)
         return clauses, parameters
+
+    @staticmethod
+    def _scope_access_filter(
+        scope_context: ScopeContext, *, table_alias: str
+    ) -> tuple[list[str], list[Any]]:
+        return [
+            "("
+            f"{table_alias}scope = ? OR "
+            f"({table_alias}scope = ? AND {table_alias}scope_workspace_id = ?) OR "
+            f"({table_alias}scope = ? AND {table_alias}scope_agent_id = ?)"
+            ")"
+        ], [
+            Scope.USER_GLOBAL.value,
+            Scope.WORKSPACE.value,
+            scope_context.workspace_id,
+            Scope.AGENT_PRIVATE.value,
+            scope_context.agent_id,
+        ]
+
+    def _scope_filtered_fts_count(
+        self,
+        connection: sqlite3.Connection,
+        expression: str,
+        request: SearchRequest | RecallRequest,
+        scope_context: ScopeContext | None,
+    ) -> int:
+        if scope_context is None:
+            return 0
+        unscoped_clauses, unscoped_parameters = self._filters(
+            kinds=request.kinds,
+            scopes=request.scopes,
+            table_alias="m.",
+        )
+        unscoped_clauses.insert(0, "memories_fts MATCH ?")
+        unscoped_parameters.insert(0, expression)
+        unscoped = connection.execute(
+            "SELECT COUNT(*) AS count FROM memories_fts "
+            "JOIN memories AS m ON m.id = memories_fts.id "
+            f"WHERE {' AND '.join(unscoped_clauses)}",
+            unscoped_parameters,
+        ).fetchone()["count"]
+        scoped_clauses, scoped_parameters = self._filters(
+            kinds=request.kinds,
+            scopes=request.scopes,
+            table_alias="m.",
+            scope_context=scope_context,
+        )
+        scoped_clauses.insert(0, "memories_fts MATCH ?")
+        scoped_parameters.insert(0, expression)
+        scoped = connection.execute(
+            "SELECT COUNT(*) AS count FROM memories_fts "
+            "JOIN memories AS m ON m.id = memories_fts.id "
+            f"WHERE {' AND '.join(scoped_clauses)}",
+            scoped_parameters,
+        ).fetchone()["count"]
+        return max(0, int(unscoped) - int(scoped))
 
     @staticmethod
     def _fts_expression(query: str) -> str:

@@ -9,10 +9,13 @@ from typing import Protocol, runtime_checkable
 from aoms.contracts import (
     MemoryKind,
     MemoryRecord,
+    IntegrityReport,
     RecallRequest,
     Scope,
+    ScopeContext,
     SearchRequest,
     SearchResult,
+    ReceiptPruneReport,
 )
 from aoms.embeddings import EmbeddingProfile, EmbeddingVector
 from aoms.receipts import RecallReceipt
@@ -26,6 +29,14 @@ class RecallCandidate:
     fts_score: float
     retrieval_sources: tuple[str, ...]
     vector_score: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RecallCandidateBatch:
+    """Visible candidates plus a content-free count rejected by scope policy."""
+
+    candidates: tuple[RecallCandidate, ...]
+    scope_filtered_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +84,7 @@ class VectorRepository(Protocol):
         limit: int,
         kinds: Sequence[MemoryKind] | None = None,
         scopes: Sequence[Scope] | None = None,
+        scope_context: ScopeContext | None = None,
     ) -> list[VectorHit]: ...
 
     async def claim_pending_embeddings(
@@ -117,7 +129,9 @@ class MemoryRepository(Protocol):
 
     async def get(self, record_id: str) -> MemoryRecord | None: ...
 
-    async def search_by_keyword(self, request: SearchRequest) -> SearchResult: ...
+    async def search_by_keyword(
+        self, request: SearchRequest, *, scope_context: ScopeContext | None = None
+    ) -> SearchResult: ...
 
     async def retrieve_recall_candidates(
         self,
@@ -126,13 +140,20 @@ class MemoryRepository(Protocol):
         limit: int = 100,
         query_vector: EmbeddingVector | None = None,
         vector_profile: EmbeddingProfile | None = None,
-    ) -> list[RecallCandidate]: ...
+        scope_context: ScopeContext | None = None,
+    ) -> RecallCandidateBatch: ...
 
     async def save_recall_receipt(self, receipt: RecallReceipt) -> None: ...
 
     async def recent_recall_receipts(
-        self, *, limit: int = 20
+        self, *, limit: int = 20, scope_context: ScopeContext | None = None
     ) -> list[RecallReceipt]: ...
+
+    async def prune_recall_receipts(
+        self, *, retain: int | None = None
+    ) -> ReceiptPruneReport: ...
+
+    async def integrity_report(self) -> IntegrityReport: ...
 
     async def list(
         self,

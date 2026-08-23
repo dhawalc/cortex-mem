@@ -36,6 +36,20 @@ class Scope(str, Enum):
     USER_GLOBAL = "user-global"
 
 
+class ScopeContext(ContractModel):
+    """Authenticated/process-bound identity used to enforce memory visibility."""
+
+    agent_id: str = Field(min_length=1)
+    workspace_id: str = Field(min_length=1)
+
+    @field_validator("agent_id", "workspace_id")
+    @classmethod
+    def identifiers_are_clean(cls, value: str) -> str:
+        if value != value.strip():
+            raise ValueError("scope identifiers must not have surrounding whitespace")
+        return value
+
+
 class Provenance(ContractModel):
     """Where a memory came from, without assuming a transport or filesystem."""
 
@@ -59,6 +73,9 @@ class MemoryRecord(ContractModel):
     content: str | dict[str, Any] | list[Any]
     tags: list[str] = Field(default_factory=list)
     scope: Scope = Scope.WORKSPACE
+    scope_agent_id: str | None = None
+    scope_workspace_id: str | None = None
+    created_by_agent_id: str | None = None
     provenance: Provenance
     created_at: datetime
     updated_at: datetime
@@ -154,3 +171,23 @@ class RecallResult(ContractModel):
     token_count: int = Field(ge=0)
     truncated: bool
     diagnostics: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReceiptPruneReport(ContractModel):
+    retained_limit: int = Field(ge=0)
+    deleted_count: int = Field(ge=0)
+    remaining_count: int = Field(ge=0)
+
+
+class IntegrityReport(ContractModel):
+    """Typed, non-mutating comparison of canonical and derived storage."""
+
+    healthy: bool
+    memory_count: int = Field(ge=0)
+    fts_count: int = Field(ge=0)
+    vector_count: int = Field(ge=0)
+    vector_table_counts: dict[str, int] = Field(default_factory=dict)
+    missing_fts_memory_ids: list[str] = Field(default_factory=list)
+    orphan_fts_memory_ids: list[str] = Field(default_factory=list)
+    orphan_vector_memory_ids: list[str] = Field(default_factory=list)
+    unscoped_memory_ids: list[str] = Field(default_factory=list)

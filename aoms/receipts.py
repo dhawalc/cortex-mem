@@ -62,11 +62,14 @@ class RecallReceipt(ContractModel):
     schema_version: Literal[1] = RECEIPT_SCHEMA_VERSION
     receipt_id: str
     created_at: datetime
+    agent_id: str | None = None
+    workspace_id: str | None = None
     query: str
     scopes: list[Scope] | None
     kinds: list[MemoryKind] | None
     token_budget: int = Field(ge=1)
     candidate_count: int = Field(ge=0)
+    scope_filtered_count: int = Field(default=0, ge=0)
     top_candidates: list[CandidateScore]
     rejected_sample: list[CandidateScore]
     selected: list[SelectedMemory]
