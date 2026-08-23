@@ -122,6 +122,42 @@ def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     assert verifier_record["grade"] == "PROOF"
 
 
+def test_scripted_stage3_complete_handoff_survives_tight_budget(
+    scripted_bundle,
+) -> None:
+    """A complete fact must cover a constraint displaced at 1000 tokens."""
+
+    artifact = json.loads(
+        (scripted_bundle.bundle / "stage-3" / "recall.json").read_text()
+    )
+    selected_ids = {item["memory_id"] for item in artifact["receipt"]["selected"]}
+    rejected = artifact["receipt"]["rejected_sample"]
+
+    assert artifact["receipt"]["token_budget"] == 1000
+    assert artifact["receipt"]["total_tokens"] <= 1000
+    assert "relay-implementation-constraints-handoff" in selected_ids
+    assert any(
+        item["memory_id"].startswith("relay-constraint-")
+        and item["rejection_reason"] == "token_budget"
+        for item in rejected
+    )
+    assert (
+        "stage-3 transmitted all injected constraints via AOMS"
+        in scripted_bundle.verification.checks
+    )
+
+
+def test_scripted_acceptance_loads_package_relative_import(scripted_bundle) -> None:
+    workspace = scripted_bundle.bundle / "workspace"
+    service = (workspace / "relay_service" / "service.py").read_text()
+
+    assert "from .redaction import redact" in service
+    assert (workspace / "relay_service" / "redaction.py").is_file()
+    assert "acceptance: recursive token redaction before persistence" in (
+        scripted_bundle.verification.checks
+    )
+
+
 def test_scripted_verifier_accepts_provenanced_plan_transmission(
     scripted_plan_transmission_bundle,
 ) -> None:
