@@ -31,6 +31,7 @@ dependencies = [
     "aiosqlite>=0.19.0",
     "pyyaml>=6.0",
     "pydantic>=2.0.0",
+    "platformdirs>=4.0",
     "click>=8.0",
 ]
 
@@ -52,5 +53,5 @@ Issues = "https://github.com/dhawalc/cortex-mem/issues"
 version = {attr = "cortex_mem.__version__.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["cortex_mem*", "service*", "cortex*"]
+include = ["aoms*", "cortex_mem*", "service*", "cortex*"]
 exclude = ["tests*", "scripts*", "snapshots*", "index*"]
