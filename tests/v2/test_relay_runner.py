@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from demo.relay.adapters import (
     ClaudeAdapter,
     CodexAdapter,
     OpenClawAdapter,
+    launch_fresh_process,
 )
 from demo.relay.artifacts import validate_bundle
 from demo.relay.runner import run_relay
@@ -155,5 +157,126 @@ def test_real_adapter_commands_match_discovered_headless_flags(tmp_path: Path) -
     assert "--ignore-rules" in codex
     assert any("mcp_servers.aoms.command=" in item for item in codex)
 
-    with pytest.raises(AdapterUnavailable, match="headless invocation"):
-        OpenClawAdapter().build_command(request, "fresh-id")
+    openclaw_adapter = OpenClawAdapter()
+    openclaw = openclaw_adapter.build_command(request, "fresh-id")
+    assert openclaw[:6] == [
+        "openclaw",
+        "agent",
+        "--local",
+        "--agent",
+        "main",
+        "--session-id",
+    ]
+    assert openclaw[6] == "fresh-id"
+    assert openclaw[-3:] == ["--message", "minimal prompt\n", "--json"]
+    assert "--deliver" not in openclaw
+
+    openclaw_config = json.loads(
+        (tmp_path / "openclaw-config.json").read_text()
+    )
+    assert openclaw_config["agents"]["defaults"]["workspace"] == str(tmp_path)
+    assert openclaw_config["agents"]["defaults"]["skipBootstrap"] is True
+    assert openclaw_config["mcp"]["servers"]["aoms"] == {
+        "command": "/python",
+        "args": ["-m", "proxy"],
+        "env": {"AOMS_DATA_DIR": "/fixture"},
+    }
+    assert openclaw_adapter.environment(request) == {
+        "OPENCLAW_CONFIG_PATH": str(tmp_path / "openclaw-config.json"),
+        "OPENCLAW_STATE_DIR": str(tmp_path / "openclaw-state"),
+    }
+
+
+def test_openclaw_adapter_launches_stub_with_private_state_and_captures_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "openclaw"
+    stub.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+
+config_path = os.environ["OPENCLAW_CONFIG_PATH"]
+state_path = os.environ["OPENCLAW_STATE_DIR"]
+os.makedirs(state_path)
+with open(config_path, encoding="utf-8") as handle:
+    config = json.load(handle)
+print(json.dumps({
+    "argv": sys.argv[1:],
+    "config": config,
+    "cwd": os.getcwd(),
+    "state_path": state_path,
+}))
+print("stub diagnostic", file=sys.stderr)
+""",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join((str(bin_dir), os.environ["PATH"])))
+
+    mcp_config = tmp_path / "mcp.json"
+    mcp_config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "aoms": {
+                        "type": "stdio",
+                        "command": "/python",
+                        "args": ["proxy.py"],
+                        "env": {"AOMS_DATA_DIR": "/fixture"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    workdir = tmp_path / "workspace"
+    workdir.mkdir()
+    prompt_path = tmp_path / "prompt.txt"
+    prompt_path.write_text("stub prompt\n", encoding="utf-8")
+    request = AdapterRequest(
+        stage="planner",
+        prompt="stub prompt\n",
+        prompt_path=prompt_path,
+        workdir=workdir,
+        stdout_path=tmp_path / "stdout.log",
+        stderr_path=tmp_path / "stderr.log",
+        result_path=tmp_path / "adapter-result.json",
+        mcp_config_path=mcp_config,
+    )
+    adapter = OpenClawAdapter()
+
+    process = asyncio.run(
+        launch_fresh_process(
+            adapter,
+            request,
+            project_root=Path(__file__).resolve().parents[2],
+        )
+    )
+
+    assert process.returncode == 0
+    output = json.loads(request.stdout_path.read_text())
+    assert output == json.loads(request.result_path.read_text())
+    assert output["cwd"] == str(workdir)
+    assert output["argv"][:5] == [
+        "agent",
+        "--local",
+        "--agent",
+        "main",
+        "--session-id",
+    ]
+    assert output["argv"][5] == process.fresh_session_id
+    assert output["argv"][-3:] == ["--message", "stub prompt\n", "--json"]
+    assert output["config"]["mcp"]["servers"]["aoms"]["command"] == "/python"
+    assert output["state_path"] == str(tmp_path / "openclaw-state")
+    assert request.stderr_path.read_text() == "stub diagnostic\n"
+    assert process.adapter_evidence["fresh_context"][
+        "guaranteed_by_adapter"
+    ] is True
+    assert process.adapter_evidence["mcp"]["per_run_injected"] is True
+
+    with pytest.raises(AdapterUnavailable, match="private state path already exists"):
+        adapter.build_command(request, "another-id")

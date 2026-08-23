@@ -72,6 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--traffic", required=True, type=Path)
     parser.add_argument("--server-command-json", required=True)
+    parser.add_argument("--server-cwd", type=Path)
     args = parser.parse_args(argv)
     command = json.loads(args.server_command_json)
     if not isinstance(command, list) or not all(isinstance(item, str) for item in command):
@@ -81,6 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     args.traffic.touch(exist_ok=True)
     server = subprocess.Popen(
         command,
+        cwd=args.server_cwd,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

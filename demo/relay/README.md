@@ -17,9 +17,42 @@ Real adapters are available for orchestrator-supervised runs only. Claude uses
 fresh session ID, and `--no-session-persistence`. Codex uses `codex exec
 --json`, `--ephemeral`, `--ignore-user-config`, `--ignore-rules`, `-C`,
 workspace-write sandboxing, `-a never`, and `-c mcp_servers.aoms.*` values
-derived from the same stdio server config. The OpenClaw adapter intentionally
-raises a TODO until the user supplies and confirms its headless invocation
-contract.
+derived from the same stdio server config.
+
+OpenClaw uses its embedded one-shot path so a relay run does not depend on or
+modify the live Gateway configuration:
+
+```text
+OPENCLAW_CONFIG_PATH=<stage>/openclaw-config.json \
+OPENCLAW_STATE_DIR=<stage>/openclaw-state \
+openclaw agent --local --agent main --session-id <uuid> \
+  [--model <provider/model>] --message <prompt> --json
+```
+
+The adapter creates the config, refuses a pre-existing private state path, sets
+`agents.defaults.workspace` to the stage repository, disables workspace
+bootstrap-file creation, and omits `--deliver`. Set
+`AOMS_RELAY_OPENCLAW_MODEL` to add the optional `--model` override; otherwise
+OpenClaw uses its embedded default and provider credentials must already be
+available in the process environment. The documented `--json` contract keeps
+stdout machine-readable; stdout, stderr, an exact `adapter-result.json` copy,
+the private config/state, argv, timing, and adapter guarantees are retained in
+the stage evidence.
+
+OpenClaw has no `--ephemeral` or `--no-session-persistence` flag. Empty history
+is instead guaranteed at adapter scope by the new `OPENCLAW_STATE_DIR` plus the
+new UUID; the resulting transcript remains in that private directory as
+evidence. This is fresh conversation state, not cron's internal
+`sessionTarget=isolated` mechanism.
+
+Discovery on OpenClaw 2026.6.10 used `openclaw --help`, `openclaw agent
+--help`, `openclaw cron --help`, `openclaw cron run --help`, `openclaw cron
+list --json`, `openclaw mcp --help`, and the bundled `docs/cli/agent.md`,
+`docs/cli/mcp.md`, `docs/concepts/session.md`, and
+`docs/concepts/multi-agent.md`. The CLI has no `run`/`ask` command, no agent
+`--cwd` flag, and no per-turn MCP flag. Gateway mode therefore needs global
+`mcp.servers` and a globally configured agent workspace. Embedded mode avoids
+that limitation because `OPENCLAW_CONFIG_PATH` supplies both per run.
 
 ## MCP capture
 
@@ -29,6 +62,10 @@ selected Python interpreter (`python -m aoms.cli mcp`), forwards stdio without
 changing it, and records every JSON-RPC frame in `mcp-traffic.jsonl`. Each line
 contains a monotonic sequence, UTC capture time, direction, and parsed message.
 Server stderr stays off protocol stdout and is retained in the stage stderr log.
+For OpenClaw, the adapter translates `mcpServers.aoms` to
+`mcp.servers.aoms` in the private config. The proxy and server use absolute
+paths/explicit cwd rather than an MCP `PYTHONPATH` entry because this OpenClaw
+release rejects interpreter-startup environment overrides in stdio MCP config.
 
 ## Bundle schema
 
