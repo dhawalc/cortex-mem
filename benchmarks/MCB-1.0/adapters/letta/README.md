@@ -100,6 +100,10 @@ transition benchmark.
 **Secondary: archival passages** (`config-archival.json`), reported so the choice
 is transparent rather than convenient. See `RESULTS-LETTA.md`.
 
+Verbatim runner output for both runs lives here: `results.json` is the primary
+core-memory run and `results-archival.json` the secondary. Neither was edited
+after the runner wrote it.
+
 ## Running it
 
 Prerequisites are the prepared environment in `/tmp/letta-probe`: an isolated

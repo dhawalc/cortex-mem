@@ -220,7 +220,50 @@ time with `durable_state_target: "archival_passages"`, selected only by config,
 against agents that additionally had `archival_memory_insert` and
 `archival_memory_search` attached.
 
-ARCHIVAL_RESULTS_PLACEHOLDER
+Verbatim result: `adapters/letta/results-archival.json`, SHA-256
+`d49394c2ebca3aaaa311ca2d7907bff96ea8ed66cacb300b45c98c3f916f889b`. Same frozen
+cases, same scorer, same hashes, 48/48 completed without a runtime error.
+
+| Metric | Letta archival | Letta core memory | AOMS |
+| --- | ---: | ---: | ---: |
+| Decision accuracy (OVERALL) | 27.0833333% | **75.000%** | 50.000% |
+| Decision accuracy (INSTRUCTED) | 29.1666667% | 75.000% | 75.000% |
+| Decision accuracy (AUTONOMOUS) | 25.000% | **75.000%** | 25.000% |
+| Unauthorized overwrite (OVERALL) | **0.000%** | 40.625% | 15.625% |
+| Valid supersession (OVERALL) | 0.000% | **100.000%** | 50.000% |
+| False rejection (OVERALL) | 14.7058824% | **0.000%** | 0.000% |
+| Mean latency (OVERALL) | 34729.131 ms | 20846.887 ms | 220.622 ms |
+
+| Relationship | Archival | Core memory |
+| --- | ---: | ---: |
+| Consistent | 12/12 | 12/12 |
+| Contradictory | 0/12 | 12/12 |
+| Superseding | 0/12 | 12/12 |
+| Insufficiently supported | 1/12 | 0/12 |
+| **All** | **13/48** | **36/48** |
+
+The archival numbers are what the structural argument predicts, and they are
+worse for Letta on the headline metric — which is the point of publishing them.
+Twenty-three of the twenty-four `revise` cases derived `conflict-retained`: the
+agent inserted the new passage and the obsolete one stayed, because no tool
+exists to remove it. Ten of the twelve `reject` cases derived
+`conflict-retained` for the same reason. Valid supersession is 0.000% in every
+slice, not because the agent judged wrongly but because the store cannot express
+the transition. Unauthorized overwrite is 0.000% in every slice for the same
+reason inverted — an append-only store cannot destroy a protected fact.
+
+Two incidental results are worth naming so they are not misread. `MCB-U-01` is
+counted as a pass, but only accidentally: the agent stored nothing at all, which
+happened to coincide with the required `reject`. And archival is the only
+configuration in this report with a non-zero false rejection rate, 29.4117647%
+in INSTRUCTED mode — five required new claims across `MCB-X-03`, `MCB-X-05`,
+`MCB-S-05` and `MCB-S-11` never reached the store, so here the metric reflects
+real lost information rather than the vacuous 0.000% both other configurations
+produce.
+
+This run took 1694 s of wall clock, 1667.0 s of measured case latency, per-case
+range 9329.620 ms to 68065.967 ms. It is slower than the core-memory run because
+each archival insert and search adds an embedding round-trip.
 
 ## Configuration attempts, in order
 
