@@ -1,0 +1,11 @@
+diff --git a/RELAY_PLAN.md b/RELAY_PLAN.md
+new file mode 100644
+index 0000000..4ee6dda
+--- /dev/null
++++ b/RELAY_PLAN.md
+@@ -0,0 +1,5 @@
++# Relay implementation plan
++
++Use the recalled runtime constraints. Persist first acceptance in SQLite,
++order by ingestion sequence, and recursively redact token fields before
++serialization. Do not use an in-memory seen-ID set or replacement writes.

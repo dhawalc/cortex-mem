@@ -1,0 +1,393 @@
+{
+  "files": {
+    "README.md": {
+      "bytes": 2948,
+      "sha256": "b59ca7d37de80b2511912a8ff61f25da6c4d11b2dc2dac4c6bc0f3f83a57f91c"
+    },
+    "eval/20260824T040613052004Z-lexical-only-be6c106b-6d9241.json": {
+      "bytes": 53343,
+      "sha256": "92ff600c7d3eda9a56eac7c565b11bb19d30cbd479b9bf385069d302814ffdfb"
+    },
+    "eval/20260824T040614179802Z-vector-only-a1baff72-6eabd8.json": {
+      "bytes": 121832,
+      "sha256": "120df81b504ace9a60b0dac68c710243541b83a4a1bfcadc46f1dce2ec4d2d08"
+    },
+    "eval/20260824T040615464498Z-hybrid-a37c0ca4-1a5cde.json": {
+      "bytes": 121929,
+      "sha256": "fd2557100e6888f08d1f1f63b0b041af2492118296c1181d9c2e39de908364dd"
+    },
+    "eval/20260824T040616707342Z-no-supersession-ce99c0e8-abf77b.json": {
+      "bytes": 122033,
+      "sha256": "bd14cb7942baa80619b75fdf2de8cba4be458b0e24246d5f0a8abdf294bccc61"
+    },
+    "eval/20260824T040617883056Z-no-scope-d4fec3fa-28095b.json": {
+      "bytes": 121945,
+      "sha256": "681945d249b6bc8c5d1e9dd44a3e8376b2572392e343ec91a81e6936274ba186"
+    },
+    "relay-scripted/baseline/run-record.json": {
+      "bytes": 721,
+      "sha256": "8c624d38273c457e7854f08e6219bcb10af16ac8a75fb39e31bfc11438a75775"
+    },
+    "relay-scripted/baseline/scenario.yaml": {
+      "bytes": 5006,
+      "sha256": "cfcb29dbec179fb7329cb4cff04fc01b807dbfbf5d8d9f6541b45077fb14928c"
+    },
+    "relay-scripted/baseline/scripted.yaml": {
+      "bytes": 7243,
+      "sha256": "6cd1e14d43ff1b15ddd1a5163be67093f17b2a7f98a6544d8497648f82ad541a"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/adapter-result.json": {
+      "bytes": 878,
+      "sha256": "296c5f45712b2036003872b764f473815eb7dbaf2fa48d0b6db4b24c03f45f8b"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/changes.patch": {
+      "bytes": 242,
+      "sha256": "05116bb104314971889d80f8e0248c7be313b1422f29712bae98c0ddd52a600d"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/initial-prompt.txt": {
+      "bytes": 349,
+      "sha256": "17231c4df98e1c0ac10e7b16861e80c842b73053d3a0d4194835a5a0a6b3ed65"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/mcp-traffic.jsonl": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/prompt.json": {
+      "bytes": 205,
+      "sha256": "70926e17ee7247e08bd6ce26b8d05a14a4d9bb8b31f1da6e1aaf9dd6322a39cc"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/record.json": {
+      "bytes": 2154,
+      "sha256": "f83bef1914efa325d54d5fce1693dd40431852362d7b55d84ad76e7c20a4a699"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "relay-scripted/baseline/stages/stage-1-planner/stdout.log": {
+      "bytes": 33,
+      "sha256": "fad89a770f2224fb0f5b855cd9a4125ba6247b1d316bc45490a698beb6666548"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/adapter-result.json": {
+      "bytes": 1211,
+      "sha256": "82eacb2747b2fb673c1a9aa64d8ef332157f253a46cd3ae5a85f1b995e23651c"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/changes.patch": {
+      "bytes": 212,
+      "sha256": "35140ae9136feeda21884064e1425678f34175d9884f0d8f86e42d0eacaadbe7"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/initial-prompt.txt": {
+      "bytes": 680,
+      "sha256": "62e55d7dd3449eac17a78e62c661d5130246541a48fa071afed987f2688e3c02"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/mcp-traffic.jsonl": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/prompt.json": {
+      "bytes": 209,
+      "sha256": "817338f0c3d504529a3c66e90695c7abb29d7df004cd34b28d2313e1a3a35177"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/record.json": {
+      "bytes": 2191,
+      "sha256": "e197184d6d921bb0baddf8f837b96172709c625e1b395a3d6f4f33d7813f2420"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "relay-scripted/baseline/stages/stage-2-implementer/stdout.log": {
+      "bytes": 37,
+      "sha256": "200869ce9e328a59368e649bbb6855d1bdde1a2255bce33e4e14fabafa52644f"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/adapter-result.json": {
+      "bytes": 939,
+      "sha256": "3c6cd4b8909a85bdacb95be68046f35901d87b5bc493e0dd668c8f597bd61a37"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/changes.patch": {
+      "bytes": 216,
+      "sha256": "6bb2500f5b7d556fc851127b20511401bb7475a8a8832cabfebd885aa9629948"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/initial-prompt.txt": {
+      "bytes": 413,
+      "sha256": "a2162a1b5e25f2201c3ce04166f9996bcce18662e9171e79be1d36552d7b4345"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/mcp-traffic.jsonl": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/prompt.json": {
+      "bytes": 206,
+      "sha256": "b1afb95cebdad1d8a9d52e3006fc73cb8b8b52987dae711ec91ecda5081af1e4"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/record.json": {
+      "bytes": 2164,
+      "sha256": "811e981cf61d460db4a7e1c5d0246e019b6ac53c52664745d527fb781854094e"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "relay-scripted/baseline/stages/stage-3-reviewer/stdout.log": {
+      "bytes": 34,
+      "sha256": "ca8026ea857a17f53583851ca6b07feda4b6db7792ba94af638b5480f32f5ae5"
+    },
+    "relay-scripted/baseline/verifier/report.json": {
+      "bytes": 341,
+      "sha256": "4423f363e189c92a98ba167bc46666aa0b69553c51d47ded4f06618a3813c64e"
+    },
+    "relay-scripted/baseline/workspace/BASELINE.md": {
+      "bytes": 82,
+      "sha256": "df11372fa0779410a45c9577b35c3b2e3ade3bb11a0a93cbf3e5089055a8cc67"
+    },
+    "relay-scripted/baseline/workspace/README.md": {
+      "bytes": 258,
+      "sha256": "311c4bc015aaab65b3d8347fb9957be36e36ca8d2a7df29b9071258cf0c38eb5"
+    },
+    "relay-scripted/baseline/workspace/RELAY_PLAN.md": {
+      "bytes": 102,
+      "sha256": "fe6059bdd16d45676167a40a2c5c68f63f436875d25141bcfbbdcc6a5f71858f"
+    },
+    "relay-scripted/baseline/workspace/REVIEW.md": {
+      "bytes": 88,
+      "sha256": "7a40bf374e6006fbd2f8b15cf5ceace4ef95da044591dd9b13fca9c587082059"
+    },
+    "relay-scripted/baseline/workspace/pyproject.toml": {
+      "bytes": 221,
+      "sha256": "7e49d0cac9922ba598434bf97317e08af766bd5c01ca80cd93c8300487069ee4"
+    },
+    "relay-scripted/baseline/workspace/relay_service/__init__.py": {
+      "bytes": 126,
+      "sha256": "a4d575f8ef42521dc104482b85dfbe35aed26c432c2381271f43a725c56c0be9"
+    },
+    "relay-scripted/baseline/workspace/relay_service/service.py": {
+      "bytes": 1209,
+      "sha256": "952de2735c11424c07aefb8c0d89c7442e792dc46fb830b3e9921bebde635e66"
+    },
+    "relay-scripted/baseline/workspace/tests/conftest.py": {
+      "bytes": 162,
+      "sha256": "6fda0d7d00415fe7af8beed40f6319befc345b3e4ace81e96fc0fe0061e3c0ab"
+    },
+    "relay-scripted/baseline/workspace/tests/test_service.py": {
+      "bytes": 1065,
+      "sha256": "ec19292d6a527e69a497d0d2fe545a3b9f3bf0b3af39da18273990d118a4fded"
+    },
+    "relay-scripted/bundle-record.json": {
+      "bytes": 2707,
+      "sha256": "5658d3cdc07bb77fa4744affff500c76cb49b296ecb64af6f72c38684de1fb87"
+    },
+    "relay-scripted/comparison.json": {
+      "bytes": 2195,
+      "sha256": "017d6a7e1df9c0ac9bd99acd1670f44321a91909632f79490c68f671d57b1ca1"
+    },
+    "relay-scripted/manifest.json": {
+      "bytes": 13824,
+      "sha256": "40f0a2e5a7a5b8d7ccb4694264f109ba0d8b1e888445e1d6df8b4c8c8bedd352"
+    },
+    "relay-scripted/receipts-export/manifest.json": {
+      "bytes": 500,
+      "sha256": "773257229727a88c52b510ed7d31bc05655b3f533cd3e28810930bfff51b2f48"
+    },
+    "relay-scripted/receipts-export/receipts.jsonl": {
+      "bytes": 23386,
+      "sha256": "47e62bfb6512097106fab885ef338ace6297cb1a56a80548d30c0eb47d66f4d2"
+    },
+    "relay-scripted/receipts-export/records.jsonl": {
+      "bytes": 6493,
+      "sha256": "a08994f29f85ad86a6f649a510a268004e42baffae037a1f6529b342c530a7de"
+    },
+    "relay-scripted/run-record.json": {
+      "bytes": 1184,
+      "sha256": "f0d591425ad0facaf31ca93ecd9e765991565219edd9488659567b537478225d"
+    },
+    "relay-scripted/scenario.yaml": {
+      "bytes": 5006,
+      "sha256": "cfcb29dbec179fb7329cb4cff04fc01b807dbfbf5d8d9f6541b45077fb14928c"
+    },
+    "relay-scripted/scripted.yaml": {
+      "bytes": 7243,
+      "sha256": "6cd1e14d43ff1b15ddd1a5163be67093f17b2a7f98a6544d8497648f82ad541a"
+    },
+    "relay-scripted/seed-result.json": {
+      "bytes": 320,
+      "sha256": "4d61eef92424329717349a59c85d68e6361f9d9ece97bee84cacf1e5251e2fa9"
+    },
+    "relay-scripted/seed.json": {
+      "bytes": 75,
+      "sha256": "e20ba0dbfa397f5ed2784df65fdfab557abe36a3429dd09074e535da79bcee0a"
+    },
+    "relay-scripted/stage-2/recall.json": {
+      "bytes": 13719,
+      "sha256": "c03ff14aa5788c5b53009ba0578c8579fff923dc94b6e81d86d38cc626e45cb5"
+    },
+    "relay-scripted/stage-3/recall.json": {
+      "bytes": 14347,
+      "sha256": "4c015fc3d7672fc652630fbe0633c3380fde070e802e1499b42dff6e1f47391e"
+    },
+    "relay-scripted/stages/stage-1-planner/adapter-result.json": {
+      "bytes": 9083,
+      "sha256": "908122edd14b32266d4ae14306dfa2f9ca40f8a1f32e3e4746d98272db2ab1da"
+    },
+    "relay-scripted/stages/stage-1-planner/changes.patch": {
+      "bytes": 391,
+      "sha256": "b0fb14bb8ef0bc62df4d946146641d7c61a52152259a64c196e6cd87cef61172"
+    },
+    "relay-scripted/stages/stage-1-planner/initial-prompt.txt": {
+      "bytes": 349,
+      "sha256": "17231c4df98e1c0ac10e7b16861e80c842b73053d3a0d4194835a5a0a6b3ed65"
+    },
+    "relay-scripted/stages/stage-1-planner/mcp-config.json": {
+      "bytes": 2183,
+      "sha256": "38c794c1396d6c67404c65360f1cc6564233e739a77c3ea0daff9c161317116c"
+    },
+    "relay-scripted/stages/stage-1-planner/mcp-traffic.jsonl": {
+      "bytes": 26524,
+      "sha256": "07e462dfcf3be3288320127d60bcb9b66bdd623c2956753735051cdcc561101f"
+    },
+    "relay-scripted/stages/stage-1-planner/prompt.json": {
+      "bytes": 205,
+      "sha256": "8da42dc70270b589a469f4659fc6cbddf9cb0cbf9e52962b7ed04f8086ffc986"
+    },
+    "relay-scripted/stages/stage-1-planner/record.json": {
+      "bytes": 2296,
+      "sha256": "582643e7818046c2223ad976c2fc7811cfb0cdc7a98a8c805722bd1b6ee41734"
+    },
+    "relay-scripted/stages/stage-1-planner/stderr.log": {
+      "bytes": 432,
+      "sha256": "b139a2c86358eae5ef7c66a759382fe95b6482af02782f36fa638609fc0b5967"
+    },
+    "relay-scripted/stages/stage-1-planner/stdout.log": {
+      "bytes": 33,
+      "sha256": "739839f5d619003f108343b5f3411c0b1928d2fd77734c95a293f864efeea3ab"
+    },
+    "relay-scripted/stages/stage-2-implementer/adapter-result.json": {
+      "bytes": 10111,
+      "sha256": "bdbf48702f2e6263feb60592b139c04b84947e98899185be64db28301aa4362a"
+    },
+    "relay-scripted/stages/stage-2-implementer/changes.patch": {
+      "bytes": 3367,
+      "sha256": "bcd7a5571b33b397728f98522b478fdeb3f7df2039ce1b4ce805d31ee0e46826"
+    },
+    "relay-scripted/stages/stage-2-implementer/initial-prompt.txt": {
+      "bytes": 680,
+      "sha256": "62e55d7dd3449eac17a78e62c661d5130246541a48fa071afed987f2688e3c02"
+    },
+    "relay-scripted/stages/stage-2-implementer/mcp-config.json": {
+      "bytes": 2240,
+      "sha256": "40aa26ba2b2f3ab69095f8aa175a9a7c5fca134fd9c51bb5e7e578bac6c9e8a6"
+    },
+    "relay-scripted/stages/stage-2-implementer/mcp-traffic.jsonl": {
+      "bytes": 27615,
+      "sha256": "6b4ad0bdf0dda8c4b4c231dea75bf344b7b1e3707d68a56dfcf4f62270836894"
+    },
+    "relay-scripted/stages/stage-2-implementer/prompt.json": {
+      "bytes": 209,
+      "sha256": "d18b9eb060031dc49898aeee92d9804d4a93c2c9697b2e39eb149ecd824fad5e"
+    },
+    "relay-scripted/stages/stage-2-implementer/record.json": {
+      "bytes": 2338,
+      "sha256": "abd3b9a7c8d4081332137710b63be234a0541c9d2314b0f15c78bef5a3be98a4"
+    },
+    "relay-scripted/stages/stage-2-implementer/stderr.log": {
+      "bytes": 432,
+      "sha256": "b139a2c86358eae5ef7c66a759382fe95b6482af02782f36fa638609fc0b5967"
+    },
+    "relay-scripted/stages/stage-2-implementer/stdout.log": {
+      "bytes": 37,
+      "sha256": "ec4ff3b53045f1206ded169a003b4a95463130939b22e48e75feb38510c666e5"
+    },
+    "relay-scripted/stages/stage-3-reviewer/adapter-result.json": {
+      "bytes": 8648,
+      "sha256": "c1f346c795d2facb5b76ae7409d1736bafaad3c19f09e6aac4f07e5f9548516a"
+    },
+    "relay-scripted/stages/stage-3-reviewer/changes.patch": {
+      "bytes": 306,
+      "sha256": "360dba19232eebc717cefec6ec1525e0a8a9c4996b646c0da7450bb93da6705a"
+    },
+    "relay-scripted/stages/stage-3-reviewer/initial-prompt.txt": {
+      "bytes": 413,
+      "sha256": "a2162a1b5e25f2201c3ce04166f9996bcce18662e9171e79be1d36552d7b4345"
+    },
+    "relay-scripted/stages/stage-3-reviewer/mcp-config.json": {
+      "bytes": 2234,
+      "sha256": "d3f6afe3d376ab0e8bfbc49586c0907ebc54e2218c532f9f1596c12067818978"
+    },
+    "relay-scripted/stages/stage-3-reviewer/mcp-traffic.jsonl": {
+      "bytes": 26045,
+      "sha256": "c628814551363f7f1206df2dd8c774ccbe95a86b4b670ebc482652eb4c770b21"
+    },
+    "relay-scripted/stages/stage-3-reviewer/prompt.json": {
+      "bytes": 206,
+      "sha256": "8c66368cefb3c55a9c89b5e74eee64705694be8d5a37dcdf29484acc4ecdd2f4"
+    },
+    "relay-scripted/stages/stage-3-reviewer/record.json": {
+      "bytes": 2307,
+      "sha256": "c71204fdb1070da89c44bd77555379f6502867b156739761d66f11bbd10d9f9e"
+    },
+    "relay-scripted/stages/stage-3-reviewer/stderr.log": {
+      "bytes": 432,
+      "sha256": "b139a2c86358eae5ef7c66a759382fe95b6482af02782f36fa638609fc0b5967"
+    },
+    "relay-scripted/stages/stage-3-reviewer/stdout.log": {
+      "bytes": 34,
+      "sha256": "ca8026ea857a17f53583851ca6b07feda4b6db7792ba94af638b5480f32f5ae5"
+    },
+    "relay-scripted/verifier/report.json": {
+      "bytes": 797,
+      "sha256": "8045d00589ec4dafdb7ea0099f3940a47c53f7dcafeaf7f7042601b0786fdc69"
+    },
+    "relay-scripted/workspace/README.md": {
+      "bytes": 258,
+      "sha256": "311c4bc015aaab65b3d8347fb9957be36e36ca8d2a7df29b9071258cf0c38eb5"
+    },
+    "relay-scripted/workspace/RELAY_PLAN.md": {
+      "bytes": 249,
+      "sha256": "0cbd2c997b7541909ba196199430d8e066be846c699d68f93ce85ce892635c97"
+    },
+    "relay-scripted/workspace/REVIEW.md": {
+      "bytes": 177,
+      "sha256": "b71b6eec13907ce21fdbe1a794350be013e8767f0fdaa883886b3330070e75fa"
+    },
+    "relay-scripted/workspace/pyproject.toml": {
+      "bytes": 221,
+      "sha256": "7e49d0cac9922ba598434bf97317e08af766bd5c01ca80cd93c8300487069ee4"
+    },
+    "relay-scripted/workspace/relay_service/__init__.py": {
+      "bytes": 126,
+      "sha256": "a4d575f8ef42521dc104482b85dfbe35aed26c432c2381271f43a725c56c0be9"
+    },
+    "relay-scripted/workspace/relay_service/redaction.py": {
+      "bytes": 424,
+      "sha256": "33ff9622251b84d3d15330b2b94a7f3485b8f0fcafc3910b0313c36a98ab1f01"
+    },
+    "relay-scripted/workspace/relay_service/service.py": {
+      "bytes": 1989,
+      "sha256": "513cc20fea973ee29e3ff55b8cd44f0f56f7070537715cdacc53fe602788d07e"
+    },
+    "relay-scripted/workspace/tests/conftest.py": {
+      "bytes": 162,
+      "sha256": "6fda0d7d00415fe7af8beed40f6319befc345b3e4ace81e96fc0fe0061e3c0ab"
+    },
+    "relay-scripted/workspace/tests/test_service.py": {
+      "bytes": 1065,
+      "sha256": "ec19292d6a527e69a497d0d2fe545a3b9f3bf0b3af39da18273990d118a4fded"
+    },
+    "summary.json": {
+      "bytes": 3951,
+      "sha256": "54abc702fa368907c389466efcd0501b5d5d89d6296f86574c5795677f28c3e6"
+    }
+  },
+  "format": "aoms-relay-bundle",
+  "format_version": 1,
+  "metadata": {
+    "artifact_type": "aoms-v2-launch-ablations",
+    "eval_configurations": 5,
+    "eval_seed": 7,
+    "relay_seed": 7319,
+    "relay_with_baseline": true,
+    "release": "v2.0.0",
+    "source_revision": "2d6b88c3cedca9a1842fe05de7167f051d7632c7",
+    "unfiltered": true
+  },
+  "sealed_at": "2026-08-24T04:42:26.126559+00:00"
+}

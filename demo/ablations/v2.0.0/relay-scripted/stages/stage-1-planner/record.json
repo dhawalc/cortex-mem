@@ -1,0 +1,58 @@
+{
+  "adapter": "scripted",
+  "git": {
+    "after_commit": "176e14e2fd14c16332de52ef8b393db653439809",
+    "before_commit": "60c9ac5005af0be7529b97ef49575fd53dedcdf0",
+    "commits": [
+      {
+        "authored_at": "2026-08-23T21:06:12-07:00",
+        "commit": "176e14e2fd14c16332de52ef8b393db653439809",
+        "subject": "relay: record planner handoff"
+      }
+    ],
+    "status_porcelain": []
+  },
+  "mcp_traffic": {
+    "capture": "stdio JSON-RPC proxy with configured recall-budget enforcement",
+    "path": "stages/stage-1-planner/mcp-traffic.jsonl",
+    "sha256": "07e462dfcf3be3288320127d60bcb9b66bdd623c2956753735051cdcc561101f"
+  },
+  "memory_enabled": true,
+  "process": {
+    "adapter": "scripted",
+    "adapter_evidence": {},
+    "argv": [
+      "/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python",
+      "-m",
+      "demo.relay.scripted_agent",
+      "--script",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/scripted.yaml",
+      "--stage",
+      "planner",
+      "--prompt-file",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/stages/stage-1-planner/initial-prompt.txt",
+      "--workdir",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/memory-enabled-workdirs/stage-1-planner",
+      "--result",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/stages/stage-1-planner/adapter-result.json",
+      "--session-id",
+      "19b312c8-c34d-48c0-a847-7a38fd7809f2",
+      "--mcp-config",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/stages/stage-1-planner/mcp-config.json"
+    ],
+    "ended_at": "2026-08-24T04:06:13.108189+00:00",
+    "fresh_session_id": "19b312c8-c34d-48c0-a847-7a38fd7809f2",
+    "pid": 1964318,
+    "returncode": 0,
+    "started_at": "2026-08-24T04:06:11.514667+00:00",
+    "wall_time_seconds": 1.593500536866486
+  },
+  "prompt": {
+    "bytes": 349,
+    "hashed_at": "2026-08-24T04:06:11.513969+00:00",
+    "path": "stages/stage-1-planner/initial-prompt.txt",
+    "sha256": "17231c4df98e1c0ac10e7b16861e80c842b73053d3a0d4194835a5a0a6b3ed65"
+  },
+  "schema_version": 1,
+  "stage": "planner"
+}

@@ -1,0 +1,2 @@
+{"schema":"synthetic.skill.v1","fields":["ts","skill_name","category","success_rate","when_to_use","steps","weight"]}
+{"id":"synthetic-skill-1","ts":"2026-03-03T08:00:00+00:00","skill_name":"Synthetic orchid deployment","category":"testing","success_rate":1.0,"when_to_use":"During fixture verification","steps":["prepare fixture","verify result"],"tags":["synthetic"],"weight":1.2,"_tier":"procedural","_type":"skill","_written_at":"2026-03-03T08:00:00+00:00"}

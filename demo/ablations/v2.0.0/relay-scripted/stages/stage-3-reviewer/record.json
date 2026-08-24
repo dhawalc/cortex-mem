@@ -1,0 +1,58 @@
+{
+  "adapter": "scripted",
+  "git": {
+    "after_commit": "6dfb252d5c7e2aac4f916c5649d356bc81486616",
+    "before_commit": "d24d5be69f1dc4e2f1b5a55a669a96317dfe75e4",
+    "commits": [
+      {
+        "authored_at": "2026-08-23T21:06:16-07:00",
+        "commit": "6dfb252d5c7e2aac4f916c5649d356bc81486616",
+        "subject": "relay: record independent review"
+      }
+    ],
+    "status_porcelain": []
+  },
+  "mcp_traffic": {
+    "capture": "stdio JSON-RPC proxy with configured recall-budget enforcement",
+    "path": "stages/stage-3-reviewer/mcp-traffic.jsonl",
+    "sha256": "c628814551363f7f1206df2dd8c774ccbe95a86b4b670ebc482652eb4c770b21"
+  },
+  "memory_enabled": true,
+  "process": {
+    "adapter": "scripted",
+    "adapter_evidence": {},
+    "argv": [
+      "/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python",
+      "-m",
+      "demo.relay.scripted_agent",
+      "--script",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/scripted.yaml",
+      "--stage",
+      "reviewer",
+      "--prompt-file",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/stages/stage-3-reviewer/initial-prompt.txt",
+      "--workdir",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/memory-enabled-workdirs/stage-3-reviewer",
+      "--result",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/stages/stage-3-reviewer/adapter-result.json",
+      "--session-id",
+      "9f4e31a4-c317-4bc7-a806-59b1cdd63f34",
+      "--mcp-config",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/stages/stage-3-reviewer/mcp-config.json"
+    ],
+    "ended_at": "2026-08-24T04:06:16.383204+00:00",
+    "fresh_session_id": "9f4e31a4-c317-4bc7-a806-59b1cdd63f34",
+    "pid": 1964503,
+    "returncode": 0,
+    "started_at": "2026-08-24T04:06:14.825348+00:00",
+    "wall_time_seconds": 1.557841633912176
+  },
+  "prompt": {
+    "bytes": 413,
+    "hashed_at": "2026-08-24T04:06:14.824772+00:00",
+    "path": "stages/stage-3-reviewer/initial-prompt.txt",
+    "sha256": "a2162a1b5e25f2201c3ce04166f9996bcce18662e9171e79be1d36552d7b4345"
+  },
+  "schema_version": 1,
+  "stage": "reviewer"
+}

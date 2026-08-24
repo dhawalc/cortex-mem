@@ -1,0 +1,2 @@
+{"schema":"synthetic.experience.v1","fields":["ts","type","title","content","outcome","source","importance","tags","weight"]}
+{"id":"synthetic-experience-1","ts":"2026-03-01T10:00:00","type":"observation","title":"Synthetic observatory run","content":"The synthetic orchid sensor completed a dry run","outcome":"success","source":"fixture:sensor","importance":0.7,"tags":["synthetic","orchid"],"weight":1.0,"_tier":"episodic","_type":"experience","_written_at":"2026-03-01T18:00:01+00:00"}

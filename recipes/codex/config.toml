@@ -1,0 +1,4 @@
+[mcp_servers.aoms]
+command = "uvx"
+args = ["cortex-mem", "mcp"]
+env = { AOMS_AGENT_ID = "codex", AOMS_WORKSPACE = "/absolute/path/to/project" }

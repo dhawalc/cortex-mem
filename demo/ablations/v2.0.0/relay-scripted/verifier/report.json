@@ -1,0 +1,21 @@
+{
+  "checks": [
+    "stage-2 packed sources have valid AOMS provenance",
+    "stage-2 transmitted all injected constraints via AOMS",
+    "stage-2 excludes all scope canaries",
+    "stage-2 tokens reconcile at 853/1000",
+    "stage-3 packed sources have valid AOMS provenance",
+    "stage-3 transmitted all injected constraints via AOMS",
+    "stage-3 excludes all scope canaries",
+    "stage-3 tokens reconcile at 910/1000",
+    "stage-3 transmitted the private regression clue via AOMS",
+    "acceptance: durable idempotency",
+    "acceptance: stable equal-timestamp order",
+    "acceptance: recursive token redaction before persistence"
+  ],
+  "failures": [],
+  "grade": "REHEARSAL",
+  "passed": true,
+  "scenario_id": "durable-webhook-relay-7319",
+  "wall_time_seconds": 0.08066456485539675
+}
