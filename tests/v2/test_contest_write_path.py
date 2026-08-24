@@ -604,3 +604,61 @@ async def test_a_declared_provenance_field_is_still_rendered(tmp_path):
     assert payload["provenance"]["derived_from"] == [
         "7f1e2c3d-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
     ]
+
+
+# --- the caller must be told how to avoid contesting its own revisions ----
+
+
+def test_the_model_is_told_to_declare_what_it_replaces():
+    """The 82% autonomous false-rejection rate is manufactured here.
+
+    A caller that adopts `claim_key` without being told to pair it with
+    `supersedes` contests nearly every revision it makes. Measured on MCB:
+    where the caller declares (INSTRUCTED) the gate costs nothing — 0% false
+    rejection, 100% valid supersession; where it does not (AUTONOMOUS) the
+    cost is 82.35%. The lever is guidance, not a weaker gate.
+    """
+
+    from aoms.adapters.mcp_server import REMEMBER_DESCRIPTION
+    from aoms.contracts import RememberRequest
+
+    assert "supersedes" in REMEMBER_DESCRIPTION
+    assert "held aside" in REMEMBER_DESCRIPTION
+
+    fields = RememberRequest.model_fields
+    for name in ("supersedes", "claim_key"):
+        description = fields[name].description
+        assert description, f"{name} must tell the caller how to use it"
+    assert "supersedes" in fields["claim_key"].description
+    assert "contested" in fields["supersedes"].description
+    # And the guidance must not have widened the surface.
+    assert set(fields) == {
+        "id", "kind", "content", "tags", "scope", "provenance",
+        "supersedes", "metadata", "claim_key", "observation_id",
+    }
+
+
+@pytest.mark.asyncio
+async def test_declaring_supersedes_costs_the_gate_nothing(tmp_path):
+    """The same revision, declared and undeclared, on the same slot."""
+
+    application = build(tmp_path)
+    await remember(application, id="v1", claim_key="price")
+
+    undeclared = await remember(
+        application, id="v2-undeclared", claim_key="price", content="now 120"
+    )
+    assert undeclared.disposition is WriteDisposition.CONTESTED
+
+    declared = await remember(
+        application,
+        id="v2-declared",
+        claim_key="price",
+        content="now 130",
+        supersedes="v1",
+    )
+    assert declared.disposition is WriteDisposition.ADMITTED
+    assert declared.contest_id is None
+
+    packed = await application.recall(RecallRequest(task="price"))
+    assert [source.memory_id for source in packed.sources] == ["v2-declared"]

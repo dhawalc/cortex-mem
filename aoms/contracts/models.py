@@ -252,17 +252,49 @@ class MemoryRecord(ContractModel):
 
 class RememberRequest(ContractModel):
     id: str | None = Field(
-        default=None, min_length=1, max_length=MAX_RECORD_ID_LENGTH
+        default=None,
+        min_length=1,
+        max_length=MAX_RECORD_ID_LENGTH,
+        description=(
+            "Stable id for this logical write. Reusing it makes a retry "
+            "idempotent instead of creating a duplicate."
+        ),
     )
     kind: MemoryKind
     content: str | dict[str, Any] | list[Any]
     tags: list[str] = Field(default_factory=list)
     scope: Scope = Scope.WORKSPACE
     provenance: Provenance | None = None
-    supersedes: str | None = None
+    supersedes: str | None = Field(
+        default=None,
+        description=(
+            "Id of the record this one replaces. Set it whenever you are "
+            "correcting or updating something already stored. If you also set "
+            "claim_key and a record already answers that proposition, this is "
+            "required: without it your write is kept in full but held as "
+            "contested, and the existing record stays current until a person "
+            "resolves it."
+        ),
+    )
     metadata: dict[str, Any] = Field(default_factory=dict)
-    claim_key: str | None = None
-    observation_id: str | None = None
+    claim_key: str | None = Field(
+        default=None,
+        description=(
+            "Optional. Names the proposition this record answers, so AOMS can "
+            "tell a declared replacement from a second, conflicting current "
+            "answer to the same question. Use the same key for every record "
+            "answering that question, and pair it with supersedes when "
+            "replacing one. Omit it and this write behaves exactly as it did "
+            "before claim slots existed."
+        ),
+    )
+    observation_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional identifier grouping records that came from a single "
+            "observation. Recorded for audit; it never affects admission."
+        ),
+    )
     # ``disposition`` is deliberately absent. ``extra="forbid"`` turns any
     # attempt to declare one into a boundary error, the same mechanism that
     # keeps scope identity out of tool arguments.

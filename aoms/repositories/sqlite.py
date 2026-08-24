@@ -951,6 +951,7 @@ class SQLiteMemoryRepository:
         state: ContestState | None = None,
         claim_key: str | None = None,
         agent_id: str | None = None,
+        source: str | None = None,
         limit: int = 50,
         offset: int = 0,
         oldest_first: bool = True,
@@ -965,6 +966,7 @@ class SQLiteMemoryRepository:
             state,
             claim_key,
             agent_id,
+            source,
             limit,
             offset,
             oldest_first,
@@ -975,6 +977,7 @@ class SQLiteMemoryRepository:
         state: ContestState | None,
         claim_key: str | None,
         agent_id: str | None,
+        source: str | None,
         limit: int,
         offset: int,
         oldest_first: bool,
@@ -990,6 +993,14 @@ class SQLiteMemoryRepository:
         if agent_id is not None:
             clauses.append("opened_by_agent_id = ?")
             parameters.append(agent_id)
+        if source is not None:
+            # The challenger's declared provenance source, which is the axis a
+            # flood usually arrives on: one importer, one recipe, one hook.
+            clauses.append(
+                "record_id IN (SELECT id FROM memories WHERE "
+                "json_extract(record_json, '$.provenance.source') = ?)"
+            )
+            parameters.append(source)
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         direction = "ASC" if oldest_first else "DESC"
         with self._connect() as connection:
