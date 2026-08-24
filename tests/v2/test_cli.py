@@ -21,6 +21,7 @@ from aoms.contracts import (
 )
 from aoms.embeddings import NullProvider
 from aoms.repositories import SQLiteMemoryRepository
+from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_CORPUS = ROOT / "tests" / "v2" / "fixtures" / "corpus"
@@ -78,7 +79,7 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
     result = run_cli("init", data_dir=data_dir, check=True)
 
     assert (data_dir / "aoms.sqlite3").is_file()
-    assert "SQLite store ready (schema 5)" in result.stdout
+    assert f"SQLite store ready (schema {LATEST_SCHEMA_VERSION})" in result.stdout
     assert "cortex-mem setup claude" in result.stdout
     assert "cortex-mem setup codex" in result.stdout
     assert "cortex-mem setup openclaw" in result.stdout
