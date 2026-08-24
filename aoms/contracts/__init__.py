@@ -2,6 +2,10 @@
 
 from aoms.contracts.errors import ErrorCode, ErrorDetail, ErrorResponse
 from aoms.contracts.models import (
+    ContestEntry,
+    ContestResolution,
+    ContestState,
+    ContestTrigger,
     MemoryKind,
     MemoryRecord,
     IntegrityReport,
@@ -18,9 +22,14 @@ from aoms.contracts.models import (
     SearchHit,
     SearchRequest,
     SearchResult,
+    WriteDisposition,
 )
 
 __all__ = [
+    "ContestEntry",
+    "ContestResolution",
+    "ContestState",
+    "ContestTrigger",
     "ErrorCode",
     "ErrorDetail",
     "ErrorResponse",
@@ -40,4 +49,5 @@ __all__ = [
     "SearchHit",
     "SearchRequest",
     "SearchResult",
+    "WriteDisposition",
 ]

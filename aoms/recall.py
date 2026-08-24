@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -35,6 +36,7 @@ from uuid import uuid4
 
 import tiktoken
 
+from aoms.contest import DEFAULT_RULESET, Ruleset
 from aoms.contracts import (
     MemoryRecord,
     RecallRequest,
@@ -51,7 +53,11 @@ from aoms.receipts import (
     ScoreComponent,
     SelectedMemory,
 )
-from aoms.repositories.base import MemoryRepository, RecallCandidate
+from aoms.repositories.base import (
+    MemoryRepository,
+    RecallCandidate,
+    SlotContestNotice,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -341,19 +347,65 @@ def resolve_supersession_chains(
     )
 
 
+_SERVER_UUID = re.compile(
+    r"\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z"
+)
+
+
+def contested_notice(notice: SlotContestNotice | None) -> dict[str, object] | None:
+    """Render the incumbent's contest notice with zero challenger prose.
+
+    Integers, server UUIDs and one timestamp. A hostile writer's maximum
+    achievable effect on the next model's context is making the true statement
+    "something disputed this" appear. The UUID shape is re-checked here rather
+    than trusted, because this dictionary is dumped straight into a prompt.
+    """
+
+    if notice is None or notice.count < 1:
+        return None
+    return {
+        "count": int(notice.count),
+        "contest_ids": [
+            contest_id
+            for contest_id in notice.contest_ids
+            if _SERVER_UUID.fullmatch(contest_id)
+        ],
+        "since": notice.since.isoformat(),
+    }
+
+
+def _rendered_provenance(record: MemoryRecord) -> dict[str, object]:
+    """Dump provenance without spending context on fields nobody declared.
+
+    This dictionary goes straight into the model's prompt, so an empty new
+    field is not free: it costs tokens in every block, and on a
+    token-budgeted pack that changes which record is the last one to fit.
+    Omitting them when unset keeps a record that does not participate in the
+    gate rendering byte-for-byte as it did before the gate existed.
+    """
+
+    dumped = record.provenance.model_dump(mode="json")
+    if dumped.get("asserted_at") is None:
+        dumped.pop("asserted_at", None)
+    if not dumped.get("derived_from"):
+        dumped.pop("derived_from", None)
+    return dumped
+
+
 def _memory_payload(
     record: MemoryRecord,
     content: str,
     *,
     truncated: bool,
     supersedes: MemoryRecord | None,
+    contested_by: SlotContestNotice | None = None,
 ) -> dict[str, object]:
     payload: dict[str, object] = {
         "id": record.id,
         "kind": record.kind.value,
         "scope": record.scope.value,
         "timestamp": record.updated_at.isoformat(),
-        "provenance": record.provenance.model_dump(mode="json"),
+        "provenance": _rendered_provenance(record),
         "truncated": truncated,
         "content": content,
     }
@@ -361,6 +413,9 @@ def _memory_payload(
         payload["supersedes"] = (
             f"{supersedes.id} ({supersedes.updated_at.date().isoformat()})"
         )
+    notice = contested_notice(contested_by)
+    if notice is not None:
+        payload["contested_by"] = notice
     return payload
 
 
@@ -382,11 +437,18 @@ def render_memory_block(
     truncated: bool,
     supersedes: MemoryRecord | None = None,
     fence_length: int | None = None,
+    contested_by: SlotContestNotice | None = None,
 ) -> str:
     """Serialize one source so no recalled field is interpolated as instructions."""
 
     payload = json.dumps(
-        _memory_payload(record, content, truncated=truncated, supersedes=supersedes),
+        _memory_payload(
+            record,
+            content,
+            truncated=truncated,
+            supersedes=supersedes,
+            contested_by=contested_by,
+        ),
         ensure_ascii=False,
         indent=2,
         sort_keys=True,
@@ -411,18 +473,25 @@ class BudgetPacker:
         *,
         token_budget: int,
         predecessors_by_head: Mapping[str, MemoryRecord] | None = None,
+        contest_notices: Mapping[str, SlotContestNotice] | None = None,
     ) -> tuple[str, list[PackedMemory], set[str]]:
         blocks: list[str] = []
         packed: list[PackedMemory] = []
         rejected_for_budget: set[str] = set()
         predecessors = predecessors_by_head or {}
+        notices = contest_notices or {}
 
         for item in ranked:
             record = item.candidate.record
             content = memory_content_text(record)
             predecessor = predecessors.get(record.id)
+            notice = notices.get(record.id)
             full_block = render_memory_block(
-                record, content, truncated=False, supersedes=predecessor
+                record,
+                content,
+                truncated=False,
+                supersedes=predecessor,
+                contested_by=notice,
             )
             proposed = PACK_SEPARATOR.join([*blocks, full_block])
             if self.tokenizer.count(proposed) <= token_budget:
@@ -445,7 +514,11 @@ class BudgetPacker:
             # skipped so smaller complete records still get a chance to fit.
             if not blocks:
                 truncated_block, excerpt = self._truncate_first_record(
-                    record, content, token_budget, supersedes=predecessor
+                    record,
+                    content,
+                    token_budget,
+                    supersedes=predecessor,
+                    contested_by=notice,
                 )
                 if truncated_block is not None:
                     blocks.append(truncated_block)
@@ -473,10 +546,17 @@ class BudgetPacker:
         token_budget: int,
         *,
         supersedes: MemoryRecord | None = None,
+        contested_by: SlotContestNotice | None = None,
     ) -> tuple[str | None, str]:
         encoded = self.tokenizer.encode(content)
         original_payload = json.dumps(
-            _memory_payload(record, content, truncated=True, supersedes=supersedes),
+            _memory_payload(
+                record,
+                content,
+                truncated=True,
+                supersedes=supersedes,
+                contested_by=contested_by,
+            ),
             ensure_ascii=False,
         )
         fence_length = _fence_length(original_payload)
@@ -486,6 +566,7 @@ class BudgetPacker:
             truncated=True,
             supersedes=supersedes,
             fence_length=fence_length,
+            contested_by=contested_by,
         )
         if self.tokenizer.count(empty) > token_budget:
             return None, ""
@@ -501,6 +582,7 @@ class BudgetPacker:
                 truncated=True,
                 supersedes=supersedes,
                 fence_length=fence_length,
+                contested_by=contested_by,
             )
             if self.tokenizer.count(block) <= token_budget:
                 best_block, best_excerpt = block, excerpt
@@ -526,6 +608,7 @@ class RecallEngine:
         scope_context: ScopeContext,
         clock: Callable[[], datetime] | None = None,
         timer: Callable[[], float] | None = None,
+        ruleset: Ruleset = DEFAULT_RULESET,
     ):
         if candidate_limit < 1:
             raise ValueError("candidate_limit must be at least 1")
@@ -546,6 +629,7 @@ class RecallEngine:
         self.scope_context = scope_context
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.timer = timer or time.perf_counter
+        self.ruleset = ruleset
 
     async def recall(self, request: RecallRequest) -> RecallResult:
         started = self.timer()
@@ -601,10 +685,15 @@ class RecallEngine:
                     if record.supersedes in records
                 },
             )
+        contest_notices = await self._contest_notices(
+            [item.candidate.record for item in resolution.packable]
+        )
+        contested_withheld = await self._contested_withheld(request)
         context, packed, budget_rejections = self.packer.pack(
             resolution.packable,
             token_budget=request.token_budget,
             predecessors_by_head=resolution.predecessors_by_head,
+            contest_notices=contest_notices,
         )
         token_count = self.tokenizer.count(context)
         selected_by_id = {item.ranked.candidate.record.id: item for item in packed}
@@ -649,6 +738,13 @@ class RecallEngine:
             latency_ms=latency_ms,
             engine_version=ENGINE_VERSION,
             vector_coverage=vector_coverage,
+            contested_withheld=contested_withheld,
+            contested_incumbents={
+                memory_id: notice.count
+                for memory_id, notice in sorted(contest_notices.items())
+                if memory_id in selected_by_id
+            },
+            ruleset_digest=self.ruleset.digest,
         )
         await self.receipt_repository.save_recall_receipt(receipt)
 
@@ -665,6 +761,16 @@ class RecallEngine:
                     token_count=item.token_cost,
                     score=item.ranked.total_score,
                     truncated=item.truncated,
+                    contested_count=(
+                        notice.count
+                        if (
+                            notice := contest_notices.get(
+                                item.ranked.candidate.record.id
+                            )
+                        )
+                        is not None
+                        else 0
+                    ),
                 )
                 for item in packed
             ],
@@ -688,11 +794,33 @@ class RecallEngine:
                 "vector_error": vector_error,
                 "visible_memory_count": visible_count,
                 "empty_visible_store": visible_count == 0,
+                "contested_withheld": contested_withheld,
+                "ruleset_digest": self.ruleset.digest,
                 "scoring_formula": (
                     "0.40*fts + 0.35*vector + 0.15*2^(-age_days/30) "
                     "+ 0.10*scope_specificity; unavailable weights renormalized"
                 ),
             },
+        )
+
+    async def _contest_notices(
+        self, records: Sequence[MemoryRecord]
+    ) -> dict[str, SlotContestNotice]:
+        """Ask the repository what stands against each packed record's slot."""
+
+        reader = getattr(self.repository, "slot_contest_notices", None)
+        if reader is None:
+            return {}
+        return await reader(records)
+
+    async def _contested_withheld(self, request: RecallRequest) -> list[str]:
+        """Name what was withheld, so the receipt explains its own output."""
+
+        reader = getattr(self.repository, "contested_candidate_ids", None)
+        if reader is None:
+            return []
+        return sorted(
+            await reader(request, scope_context=self.scope_context)
         )
 
     @staticmethod

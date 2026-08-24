@@ -25,6 +25,8 @@ from aoms.anatomy import generate_anatomy_html
 from aoms.contracts import MemoryKind, Scope
 from aoms.observatory.evidence import receipt_context
 from aoms.observatory.render import (
+    contest_detail_page,
+    contests_page,
     error_page,
     memories_page,
     memory_detail_page,
@@ -105,13 +107,48 @@ class ObservatoryApplication:
                     timeline_page(page, cursor=_one(parameters, "cursor") or None),
                 )
             if path == "/truth":
-                return self._html(200, truth_page(self.repository.chain_health()))
+                return self._html(
+                    200,
+                    truth_page(
+                        self.repository.chain_health(),
+                        contest_counts=self.repository.contest_counts(),
+                    ),
+                )
+            if path == "/contests":
+                offset = _one(parameters, "offset")
+                page = self.repository.contests(
+                    limit=DEFAULT_PAGE_SIZE,
+                    offset=int(offset) if offset.isdigit() else 0,
+                )
+                return self._html(
+                    200,
+                    contests_page(page, counts=self.repository.contest_counts()),
+                )
             if path == "/receipts":
                 page = self.repository.receipts(
                     cursor=_one(parameters, "cursor") or None,
                     limit=DEFAULT_PAGE_SIZE,
                 )
                 return self._html(200, receipts_page(page))
+            if path.startswith("/contests/"):
+                contest_id = unquote(path.removeprefix("/contests/"))
+                entry = self.repository.contest(contest_id)
+                if entry is None:
+                    return self._html(404, error_page(404, "Contest not found"))
+                challenger = self.repository.memory(entry.record_id)
+                incumbents = self.repository.memories_by_id(entry.incumbent_ids)
+                return self._html(
+                    200,
+                    contest_detail_page(
+                        entry,
+                        challenger=challenger,
+                        incumbents=[
+                            incumbents[record_id]
+                            for record_id in entry.incumbent_ids
+                            if record_id in incumbents
+                        ],
+                    ),
+                )
             if path.startswith("/memories/"):
                 record_id = unquote(path.removeprefix("/memories/"))
                 record = self.repository.memory(record_id)

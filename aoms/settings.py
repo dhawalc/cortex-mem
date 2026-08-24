@@ -5,8 +5,12 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from aoms.contest import Ruleset
 
 
 def _platform_data_dir() -> Path:
@@ -29,6 +33,19 @@ class AOMSSettings(BaseModel):
     embedding_model: str | None = None
     embedding_dimensions: int | None = Field(default=None, ge=1)
     ollama_url: str = "http://localhost:11434"
+    contest_sla_days: int = Field(default=14, ge=1)
+    contest_expiry_days: int = Field(default=30, ge=1)
+
+    @property
+    def ruleset(self) -> "Ruleset":
+        """The contest configuration this process stamps on its receipts."""
+
+        from aoms.contest import Ruleset
+
+        return Ruleset(
+            contest_sla_days=self.contest_sla_days,
+            contest_expiry_days=self.contest_expiry_days,
+        )
 
     @classmethod
     def load(cls, environ: Mapping[str, str] | None = None) -> AOMSSettings:
@@ -43,6 +60,11 @@ class AOMSSettings(BaseModel):
             receipt_retention = int(retention_text)
         except ValueError as exc:
             raise ValueError("AOMS_RECEIPT_RETENTION must be an integer") from exc
+        try:
+            contest_sla_days = int(env.get("AOMS_CONTEST_SLA_DAYS", "14"))
+            contest_expiry_days = int(env.get("AOMS_CONTEST_EXPIRY_DAYS", "30"))
+        except ValueError as exc:
+            raise ValueError("AOMS contest day settings must be integers") from exc
         return cls(
             data_dir=data_dir,
             db_path=data_dir / "aoms.sqlite3",
@@ -57,4 +79,6 @@ class AOMSSettings(BaseModel):
                 else None
             ),
             ollama_url=env.get("AOMS_OLLAMA_URL", "http://localhost:11434"),
+            contest_sla_days=contest_sla_days,
+            contest_expiry_days=contest_expiry_days,
         )

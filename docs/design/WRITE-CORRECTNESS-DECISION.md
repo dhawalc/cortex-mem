@@ -1,3 +1,46 @@
+> # ⚠ ERRATUM — read before §2
+>
+> **Two decisions in this document were disproven by measurement on 2026-08-24, after it
+> was written. The document below is preserved byte-unchanged as the historical record of
+> what was decided on the evidence then available. It is not a description of shipped
+> behaviour.**
+>
+> **1. T3 (`derived_from`) does not block the laundering attack, and is disabled by
+> default in shipped code.** This document calls it "the only mechanism that blocks rather
+> than reports the laundering attack," and specifies ordering it before T1 to make the
+> block real. Both are wrong. `derived_from` is a *caller-declared, optional* field: a
+> hostile writer simply omits it and is admitted, while T1 already contests undeclared
+> writes regardless. The only outcome T3 could ever change was to contest a writer honest
+> enough to record where it read something. The asymmetry is pinned by
+> `test_t3_when_deliberately_enabled_still_cannot_constrain_a_hostile_writer`.
+>
+> **2. The live evidence.** In an A/B experiment across twelve real agent sessions, an
+> agent that recalled a fact, corrected it, declared `supersedes` correctly, and cited its
+> source was contested twice — and then wrote itself a durable memory instructing future
+> sessions how to bypass the gate. The feature taught an agent to disable the feature.
+>
+> **3. The open problem, in its correct shape.** This document assumed `derived_from` was
+> server-issued. It is not. A real laundering defence needs provenance the caller cannot
+> omit — the server itself recording that a write followed a recall. That introduces a new
+> trust root and a new attack surface, and is unsolved.
+>
+> **4. A limit of benchmark-driven development, not of MCB.** Five runs against the frozen
+> MCB-1.0 corpus showed *zero* delta from this defect, because a conforming adapter never
+> declares `derived_from` — the benchmark is structurally incapable of expressing it.
+> Twelve live sessions found it immediately. A benchmark can only measure what its
+> interchange format can express. We wrote MCB-1.0, and it did exactly what it was designed
+> to do; the lesson is about relying on any frozen corpus as the sole evidence of safety.
+>
+> Current truth lives in: the trigger-set definition's code comment,
+> `docs/CONTEST-LEDGER.md`, `docs/experiments/declare-ab/`, and the tests named above.
+>
+> *Also note: the panel's own rule that new provenance fields "must render inertly" proved
+> to be the wrong test — the fields rendered inertly and still changed packed context for
+> all 165,347 records, because they rendered at all. The correct rule is "must not render
+> when unset." Fixed in `a786273`.*
+
+---
+
 # Provenance
 
 > Opus design panel, 2026-08-24. Simulator-verified against the frozen MCB-1.0 baseline.

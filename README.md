@@ -122,6 +122,27 @@ The command prints the resulting validity timeline. `cortex-mem chain MEMORY_ID 
 
 Maintenance is deliberately not model-facing. Setup, import, export, restore, diagnostics, token management, embedding backfill, sweeps, and the disposable tour remain CLI operations.
 
+## Contested writes, and what opting in costs
+
+Set `claim_key` on a write to name the proposition it answers, and a later write landing on that same proposition without declaring what it replaces is kept in full but held aside for review, instead of silently becoming a second current answer. Two dispositions exist, `admitted` and `contested`; nothing is refused, deleted, or truncated.
+
+It is off unless you turn it on, per write. `claim_key` defaults to `None`, no importer or recipe sets it, and every record written before the feature shipped is non-participating — measured on the frozen benchmark, not asserted.
+
+The cost when you do turn it on is real, and worth meeting here rather than in production:
+
+| Caller behaviour | False rejection | Valid supersession |
+|---|---:|---:|
+| Declares what it replaces (`supersedes`) | 0% | 100% |
+| Does not declare | 82.35% | 0% |
+
+Pair `claim_key` with `supersedes` and the gate costs nothing. Set `claim_key` without ever declaring replacement and roughly four out of five valid revisions are held for a human instead of applied.
+
+The prerequisite is a capability, not a prompt: **an agent that writes blind cannot declare supersession at all**, because it has no incumbent id to name. Adopt `claim_key` only for writers that read before they write. Measured against real models in [docs/experiments/declare-ab/](docs/experiments/declare-ab/): Claude Code reads first and declares correctly 8/8 without being told, while a smaller local model never read, never declared, and adopted `claim_key` anyway — the one configuration to avoid.
+
+See **[docs/CONTEST-LEDGER.md](docs/CONTEST-LEDGER.md)** for the full picture, including what draining the review queue costs, who should not opt in, and the limits of that experiment.
+
+This is a write-**authority** gate, not an evidence gate: it governs who may displace what, and never judges whether a claim is true, fresh, or well-sourced.
+
 ## The scope model
 
 | Scope | Visible to |
