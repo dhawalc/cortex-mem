@@ -16,7 +16,13 @@ This is infrastructure for people running several agents and sessions—not a pe
 
 Memory systems make different tradeoffs: some center one assistant, a hosted service, or retrieval alone. AOMS is aimed at local multi-agent work where the boundary and the explanation matter as much as the match. It combines hard agent/workspace scope isolation, inspectable recall receipts and a local Observatory, local-first SQLite storage, and preview-first importers so existing notes and reviewed memory stores can move in deliberately. It can complement agent frameworks and RAG stacks rather than requiring them to be replaced.
 
-> **Demo GIF placeholder:** A captioned setup-to-cold-recall walkthrough is planned for [`docs/launch/assets/`](docs/launch/assets/README.md). The slot is intentionally marked as a placeholder until a synthetic-data capture is recorded and checked; no demo evidence is being claimed yet.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/launch/assets/recall-observatory-receipt-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/launch/assets/recall-observatory-receipt-light.png">
+  <img src="docs/launch/assets/recall-observatory-receipt-light.png" alt="Recall Observatory receipt inspector showing packed provenance-fenced context, a March decision marked as a superseded predecessor, the candidate funnel, and exact token arithmetic totaling 842 of a 1,000-token budget.">
+</picture>
+
+<p align="center"><em>Not just what your agent remembered—exactly what entered context, why, from where, and what was kept out.</em></p>
 
 ## Quick start
 
@@ -57,6 +63,10 @@ Now end the host session completely. Start a fresh session in the same project a
 > Recall the release gate for this workspace. What must pass before release?
 
 The new process has no prior transcript. Its answer should come from the workspace-scoped memory, and recall returns a receipt ID documenting the exact serialization path. That cold handoff—not a health check—is the activation check.
+
+![Annotated terminal proof of init, remember, and cold recall in a fresh process, including the workspace-scoped source and receipt ID.](docs/launch/assets/aoms-60-second-proof.png)
+
+The image is a deterministic, annotated rendering of a real two-process CLI run; [open the accessible HTML transcript](docs/launch/assets/aoms-60-second-proof.html) or [read how the assets are regenerated](docs/launch/assets/README.md).
 
 If you do not have a durable fact yet, run an isolated tour:
 
