@@ -36,7 +36,7 @@ or injection filter that AOMS itself lacks.
 From the repository root, with the required interpreter:
 
 ```sh
-/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python \
+PYTHONPATH=. /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python \
   benchmarks/MCB-1.0/runner.py \
   --adapter benchmarks/MCB-1.0/adapters/aoms/adapter.py \
   --config benchmarks/MCB-1.0/adapters/aoms/config.json \
