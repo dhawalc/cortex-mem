@@ -209,6 +209,32 @@ the server would have to know that a write followed a recall and stamp that
 link itself, rather than trusting a self-reported field. That is a new trust
 root and a new attack surface, and it is not in this release.
 
+### How we missed it, and what that says about benchmarks
+
+Worth stating plainly, because it is the most transferable thing this feature
+taught us.
+
+The trigger survived five runs against our own frozen benchmark, MCB-1.0, and
+twelve live model sessions killed it in an afternoon. The benchmark could not
+have caught it: a conforming adapter never declares `derived_from`, so the
+trigger could not fire on that corpus under any build, and the run measuring
+its removal is a verbatim zero
+(`benchmarks/MCB-1.0/results-derived-trigger-disabled.json`).
+
+That is not a knock on MCB. We wrote it, we froze it before we ran it, and it
+did exactly what it was built to do — it measured write-side state transitions
+faithfully and it found real defects, including ones we have not fixed. The
+general point is simply that **a benchmark can only measure what its
+interchange format can express.** A defect living in a field the format has no
+way to carry is invisible to it however many times you run it, and a green run
+is not evidence a mechanism works — only that the benchmark could not see it
+fail.
+
+The practical rule we would give anyone building something like this: if a
+mechanism's safety depends on how a real caller behaves, a frozen corpus with
+a conforming adapter cannot tell you whether it works. Put it in front of a
+live model before you call it a defence.
+
 ## What this does not do
 
 It does not decide whether a claim is true, well-sourced, fresh, or
