@@ -1,0 +1,88 @@
+name: Bug report
+description: Report a reproducible problem with cortex-mem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve AOMS. Remove secrets, private memory content, tokens, and personal data from every field and log excerpt.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and what you expected instead.
+      placeholder: A clear, concise description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include the smallest sequence of commands or MCP calls that reproduces the problem, using synthetic data.
+      placeholder: |
+        1. Run ...
+        2. Configure ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: cortex-mem doctor output
+      description: Run `cortex-mem doctor` against the affected data directory and paste the complete, sanitized output. This section is required.
+      render: text
+      placeholder: Paste sanitized cortex-mem doctor output here.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Give the cortex-mem version, Git tag, or commit SHA.
+      placeholder: v2.0.0 or 0123abc
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - CLI only
+        - MCP over stdio
+        - MCP over streamable HTTP
+        - Recall Observatory
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Python version, install method, and connected host (if any).
+      placeholder: Ubuntu 24.04, Python 3.12, uvx, Claude Code
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Additional logs or context
+      description: Paste only sanitized logs. Do not attach a real memory database or credentials.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data-safety check
+      options:
+        - label: I removed secrets, tokens, private memory content, and personal data from this report.
+          required: true
+        - label: This is not a security vulnerability; security reports belong in GitHub private vulnerability reporting.
+          required: true

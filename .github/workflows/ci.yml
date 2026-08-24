@@ -23,10 +23,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -49,10 +49,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -96,9 +96,46 @@ jobs:
           grep -F "5 canonical records" "$RUNNER_TEMP/restored-doctor.txt"
 
       - name: Upload wheel
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cortex-mem-wheel
           path: dist/*.whl
           if-no-files-found: error
           retention-days: 14
+
+  offline-harnesses:
+    name: Offline eval and scripted relay
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      AOMS_EMBEDDING_PROVIDER: none
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run deterministic retrieval evaluation matrix
+        run: python -m aoms.eval run --records 78 --output-dir "$RUNNER_TEMP/aoms-eval-runs"
+
+      - name: Run and validate scripted relay fixture
+        run: |
+          python -m demo.relay.runner run \
+            --output "$RUNNER_TEMP/aoms-relay" \
+            --agents scripted,scripted,scripted \
+            --seed 7319 \
+            --with-baseline
+          python -m demo.relay.runner validate "$RUNNER_TEMP/aoms-relay"

@@ -1,5 +1,9 @@
 # AOMS — scoped memory for your whole agent fleet
 
+[![CI](https://github.com/dhawalc/cortex-mem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dhawalc/cortex-mem/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+
 **One local brain, hard workspace boundaries.** AOMS lets Claude Code, Codex, OpenClaw, and other MCP agents share durable memory without collapsing every client and project into one undifferentiated profile.
 
 Every process is bound to an agent ID and a workspace ID. A workspace memory crosses agent boundaries only inside that workspace; an agent-private memory stays with its owner; a user-global memory is deliberately fleet-wide. Identity never comes from model-controlled tool arguments, and scope policy is applied before any memory can enter context.
@@ -7,6 +11,12 @@ Every process is bound to an agent ID and a workspace ID. A workspace memory cro
 AOMS stores canonical memory in one SQLite/WAL database, retrieves locally, packs the final context under an exact token ceiling, provenance-fences recalled text as untrusted data, and records a receipt showing what was selected, filtered, superseded, and serialized.
 
 This is infrastructure for people running several agents and sessions—not a per-assistant chat-history plugin and not the retired v1 HTTP daemon.
+
+## Why AOMS
+
+Memory systems make different tradeoffs: some center one assistant, a hosted service, or retrieval alone. AOMS is aimed at local multi-agent work where the boundary and the explanation matter as much as the match. It combines hard agent/workspace scope isolation, inspectable recall receipts and a local Observatory, local-first SQLite storage, and preview-first importers so existing notes and reviewed memory stores can move in deliberately. It can complement agent frameworks and RAG stacks rather than requiring them to be replaced.
+
+> **Demo GIF placeholder:** A captioned setup-to-cold-recall walkthrough is planned for [`docs/launch/assets/`](docs/launch/assets/README.md). The slot is intentionally marked as a placeholder until a synthetic-data capture is recorded and checked; no demo evidence is being claimed yet.
 
 ## Quick start
 

@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose a focused improvement to AOMS.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        AOMS prioritizes scope isolation, inspectable recall, local operation, and a small model-facing tool surface. Explain the problem first so tradeoffs are clear.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What workflow is difficult today, and who encounters it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful behavior change, including a short example if helpful.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recall and ranking
+        - Scope and identity
+        - Receipts and observability
+        - MCP or host integration
+        - Import, export, or recovery
+        - CLI and setup
+        - Evaluation and relay evidence
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Scope, privacy, and compatibility considerations
+      description: Could this affect identity binding, cross-workspace visibility, receipt schemas, local-first operation, migrations, or existing commands?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or smaller changes have you considered?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and discussions for a similar request.
+          required: true
+        - label: This request does not require putting maintenance or destructive operations on the model-facing MCP surface.
+          required: true

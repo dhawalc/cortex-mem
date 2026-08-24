@@ -1,0 +1,97 @@
+name: Memory quality report
+description: Report a scoped recall, ranking, supersession, or token-packing quality problem.
+title: "[Memory quality]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This template is for cases where AOMS ran but recalled the wrong memory, missed an expected memory, exposed an inaccessible scope, surfaced a superseded record, or packed context poorly. Use synthetic or redacted content only.
+
+  - type: dropdown
+    id: failure_mode
+    attributes:
+      label: Failure mode
+      options:
+        - Expected memory was not recalled
+        - Irrelevant memory outranked relevant memory
+        - Inaccessible-scope memory was exposed
+        - Superseded or contradictory memory was surfaced
+        - Token budget or packing was incorrect
+        - Receipt did not explain the result
+        - Other memory-quality problem
+    validations:
+      required: true
+
+  - type: textarea
+    id: task
+    attributes:
+      label: Sanitized recall task and expected result
+      description: Provide the recall task, expected memory IDs or facts, and why they should have been selected.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: List selected and missing memory IDs, ordering, and any relevant rejection reasons. Redact memory content.
+    validations:
+      required: true
+
+  - type: input
+    id: receipt
+    attributes:
+      label: Recall receipt ID
+      description: Provide the receipt ID. If no receipt was created, enter `none` and explain that in the actual-result field.
+      placeholder: Receipt ID or none
+    validations:
+      required: true
+
+  - type: textarea
+    id: binding
+    attributes:
+      label: Scope binding and filters
+      description: State the bound agent ID, workspace ID, intended memory scope, requested kinds/tags, token budget, and transport. Use non-sensitive identifiers.
+      placeholder: |
+        agent: claude
+        workspace: synthetic-demo
+        expected scope: workspace
+        token budget: 1000
+        transport: stdio
+    validations:
+      required: true
+
+  - type: textarea
+    id: lineage
+    attributes:
+      label: Relevant memory lineage
+      description: List synthetic record IDs and any `supersedes` relationships or truth-timeline expectations.
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: cortex-mem doctor output
+      description: Paste complete, sanitized output from `cortex-mem doctor` for the affected store.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v2.0.0 or 0123abc
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Privacy and isolation checks
+      options:
+        - label: I used synthetic or redacted memory content and removed credentials and personal data.
+          required: true
+        - label: If this report suggests cross-scope disclosure of sensitive data, I will use private vulnerability reporting instead of submitting this public issue.
+          required: true

@@ -122,6 +122,25 @@ def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     assert verifier_record["grade"] == "REHEARSAL"
 
 
+def test_fixture_repositories_disable_detached_git_maintenance(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "fixture-repository"
+    relay_runner._initialize_fixture_repository(
+        relay_runner.FIXTURE_ROOT / "repository", repository
+    )
+
+    configured = subprocess.run(
+        ["git", "config", "--get", "maintenance.auto"],
+        cwd=repository,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert configured.stdout.strip() == "false"
+
+
 def test_scripted_stage3_complete_handoff_survives_tight_budget(
     scripted_bundle,
 ) -> None:
