@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ from aoms.contest import (
 )
 from aoms.contracts import (
     ContestEntry,
+    ContestResolution,
     ContestState,
     ContestTrigger,
     MemoryRecord,
@@ -49,6 +51,15 @@ from aoms.repositories.base import (
 from aoms.truth import ChainTimeline, reconstruct_timeline
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ContestResolutionResult:
+    """What one operator verdict did, in terms the CLI can print verbatim."""
+
+    entry: ContestEntry
+    successor_id: str | None
+    summary: str
 
 
 class AOMSApplication:
@@ -439,6 +450,132 @@ class AOMSApplication:
             ),
             create_only=True,
         )
+
+    async def resolve_contest(
+        self,
+        contest_id: str,
+        *,
+        resolution: ContestResolution,
+        resolved_by: str,
+        note: str | None = None,
+        supersede_incumbent_id: str | None = None,
+        new_claim_key: str | None = None,
+    ) -> ContestResolutionResult:
+        """Apply one named operator verdict. Nothing else changes a disposition.
+
+        ``admit-superseding`` routes through ``supersede``, which appends a
+        successor and never rewrites its predecessor. The contested record
+        itself stays contested and durable: it is the evidence that this
+        happened, and rewriting it would destroy what the ledger exists to keep.
+        """
+
+        await self.repository.initialize()
+        entry = await self.repository.get_contest(contest_id)
+        if entry is None:
+            raise LookupError(f"contest not found: {contest_id}")
+        contested = await self.repository.get(entry.record_id)
+        if contested is None:  # pragma: no cover - protected by the foreign key
+            raise LookupError(f"contested record not found: {entry.record_id}")
+        if not self._can_access(contested):
+            raise PermissionError("contest belongs to an inaccessible scope")
+
+        successor_id: str | None = None
+        if resolution is ContestResolution.ADMIT_SUPERSEDING:
+            if supersede_incumbent_id is None:
+                raise ValueError("admit-superseding requires an incumbent id")
+            successor = await self.supersede(
+                supersede_incumbent_id,
+                SupersedeRequest(
+                    content=contested.content,
+                    claim_key=contested.claim_key,
+                    provenance=Provenance(
+                        source="contest-resolution",
+                        details={
+                            "predecessor_id": supersede_incumbent_id,
+                            "contest_id": contest_id,
+                            "resolved_by": resolved_by,
+                        },
+                    ),
+                ),
+            )
+            successor_id = successor.record.id
+            summary = (
+                f"Admitted as successor {successor_id} to {supersede_incumbent_id}. "
+                f"Record {contested.id} stays contested as the ledger's evidence."
+            )
+        elif resolution is ContestResolution.ADMIT:
+            summary = f"Record {contested.id} now holds slot {contested.claim_key}."
+        elif resolution is ContestResolution.SET_ASIDE:
+            summary = (
+                f"Record {contested.id} set aside: nothing was deleted, it stays "
+                "searchable with include_contested and can be admitted later."
+            )
+        else:
+            if new_claim_key is None:
+                raise ValueError("split requires a new claim key")
+            occupants = await self.repository.slot_occupants(
+                claim_key=new_claim_key,
+                scope=contested.scope,
+                scope_agent_id=contested.scope_agent_id,
+                scope_workspace_id=contested.scope_workspace_id,
+            )
+            if occupants:
+                raise ValueError(
+                    f"claim key {new_claim_key!r} is already held by "
+                    f"{', '.join(record.id for record in occupants)}; "
+                    "choose a free key rather than creating a second collision"
+                )
+            summary = (
+                f"Record {contested.id} re-filed under slot {new_claim_key} "
+                "and admitted there."
+            )
+
+        admits = resolution in {ContestResolution.ADMIT, ContestResolution.SPLIT}
+        now = datetime.now(timezone.utc)
+        receipt = WriteReceipt(
+            receipt_id=str(uuid4()),
+            created_at=now,
+            record_id=contested.id,
+            claim_key=new_claim_key or contested.claim_key,
+            agent_id=resolved_by,
+            workspace_id=self.scope_context.workspace_id,
+            kind=contested.kind,
+            scope=contested.scope,
+            content_sha256=content_digest(contested.content),
+            incumbent_ids=list(entry.incumbent_ids),
+            disposition=(
+                WriteDisposition.ADMITTED if admits else WriteDisposition.CONTESTED
+            ),
+            trigger=entry.trigger,
+            trigger_detail={
+                "resolution": resolution.value,
+                "contest_id": contest_id,
+                "successor_id": successor_id,
+            },
+            contest_id=contest_id,
+            asserted_at=contested.provenance.asserted_at,
+            derived_from=list(contested.provenance.derived_from),
+            ruleset_digest=self.ruleset.digest,
+            occurrence_count=entry.occurrence_count,
+            engine_version=ENGINE_VERSION,
+        )
+        resolved = await self.repository.resolve_contest(
+            contest_id,
+            resolution=resolution,
+            resolved_by=resolved_by,
+            note=note,
+            receipt=receipt,
+            admit_record=admits,
+            new_claim_key=new_claim_key,
+        )
+        return ContestResolutionResult(
+            entry=resolved, successor_id=successor_id, summary=summary
+        )
+
+    async def recent_write_receipts(self, *, limit: int = 20) -> list[WriteReceipt]:
+        """Expose the append-only decision log without a model-facing tool."""
+
+        return await self.repository.recent_write_receipts(limit=limit)
 
     async def chain_timeline(
         self, record_id: str, *, as_of: datetime | None = None
