@@ -8,7 +8,7 @@ I verified every load-bearing claim against the tree and ran a simulator that re
 
 # AOMS WRITE-SIDE CORRECTNESS — DECISION DOCUMENT
 
-**Decider's note on evidence.** Every code claim below was re-verified in the `v2` worktree. Every MCB number was produced by local scratch simulators that reproduce the committed baseline to four decimals (DA 50.00/75.00/25.00, UOR 15.62/29.41/0.00, VSR 50.00/100.00/0.00, FRR 0.00, 24/48 passed, 18 structural errors) before projecting anything. The scratch simulators were not committed.
+**Decider's note on evidence.** Every code claim below was re-verified in `/home/dhawal/cortex-mem/aoms-v2` (branch `v2`). Every MCB number was produced by a simulator that reproduces the committed baseline to four decimals (DA 50.00/75.00/25.00, UOR 15.62/29.41/0.00, VSR 50.00/100.00/0.00, FRR 0.00, 24/48 passed, 18 structural errors) before projecting anything. Simulator: `/tmp/claude-1000/-home-dhawal-openclaw-memory-aoms/81be89b3-e64a-40a1-8971-972623f40d5b/scratchpad/sim.py`, `sim2.py`, `sim3.py`.
 
 ---
 

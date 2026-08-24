@@ -388,14 +388,18 @@ def test_cli_recall_remember_round_trip_and_idempotency(tmp_path: Path) -> None:
         environ_overrides=binding,
         check=True,
     )
-    updated = run_cli(
+    with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
+        record_json_before = connection.execute(
+            "SELECT record_json FROM memories"
+        ).fetchone()[0]
+    retried = run_cli(
         "remember",
         "--content",
-        "Decision: deploy marmalade through the green channel.",
+        "Decision: deploy marmalade through the amber channel.",
         "--kind",
         "decision",
         "--tags",
-        "release",
+        "release,marmalade",
         "--idempotency-key",
         "release-channel",
         data_dir=data_dir,
@@ -417,15 +421,16 @@ def test_cli_recall_remember_round_trip_and_idempotency(tmp_path: Path) -> None:
 
     payload = json.loads(recalled.stdout)
     assert created.stdout.startswith("Created memory cli-")
-    assert updated.stdout.startswith("Updated memory cli-")
-    assert "green channel" in payload["context"]
-    assert "amber channel" not in payload["context"]
+    assert retried.stdout.startswith("Updated memory cli-")
+    assert "amber channel" in payload["context"]
     assert payload["sources"][0]["kind"] == "decision"
     with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
         row = connection.execute(
-            "SELECT scope_workspace_id, created_by_agent_id, COUNT(*) FROM memories"
+            "SELECT scope_workspace_id, created_by_agent_id, COUNT(*), record_json "
+            "FROM memories"
         ).fetchone()
-    assert row == ("cli-test-workspace", "cli-test-agent", 1)
+    assert row[:3] == ("cli-test-workspace", "cli-test-agent", 1)
+    assert row[3] == record_json_before
 
 
 def test_cli_empty_recall_is_actionable(tmp_path: Path) -> None:

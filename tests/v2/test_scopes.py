@@ -125,7 +125,7 @@ async def test_scope_read_visibility_matrix(
         (Scope.USER_GLOBAL, AGENT_C, True),
     ],
 )
-async def test_scope_update_visibility_matrix(
+async def test_scope_existing_id_access_and_guard_matrix(
     tmp_path: Path,
     scope: Scope,
     writer: ScopeContext,
@@ -150,9 +150,20 @@ async def test_scope_update_visibility_matrix(
     )
 
     if allowed:
-        updated = await application(repository, writer).remember(request)
-        assert updated.created is False
-        assert updated.record.created_by_agent_id == writer.agent_id
+        with pytest.raises(
+            ValueError,
+            match=(
+                r"in-place content change; append a successor with `supersedes` "
+                r"instead"
+            ),
+        ):
+            await application(repository, writer).remember(request)
+        retried = await application(repository, writer).remember(
+            request.model_copy(update={"content": "original matrix update"})
+        )
+        assert retried.created is False
+        assert retried.record.created_by_agent_id == AGENT_A.agent_id
+        assert retried.record.content == "original matrix update"
     else:
         with pytest.raises(PermissionError, match="inaccessible scope"):
             await application(repository, writer).remember(request)

@@ -19,8 +19,9 @@ CONTEXT = ScopeContext(agent_id="test-agent", workspace_id="test-workspace")
 
 @pytest.mark.asyncio
 async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "aoms.sqlite3")
     app = AOMSApplication(
-        SQLiteMemoryRepository(tmp_path / "aoms.sqlite3"),
+        repository,
         scope_context=CONTEXT,
         embedding_provider=NullProvider(),
     )
@@ -33,16 +34,24 @@ async def test_remember_and_search_share_repository(tmp_path: Path) -> None:
     )
 
     created = await app.remember(request)
-    updated = await app.remember(
-        request.model_copy(update={"content": "Marmalade was updated"})
-    )
+    stored_before = await repository.get("stable-id")
+    with pytest.raises(
+        ValueError,
+        match=r"in-place content change; append a successor with `supersedes` instead",
+    ):
+        await app.remember(
+            request.model_copy(update={"content": "Marmalade was updated"})
+        )
+    retried = await app.remember(request)
+    stored_after = await repository.get("stable-id")
     results = await app.search(SearchRequest(query="marmalade"))
 
     assert created.created is True
-    assert updated.created is False
-    assert updated.record.created_at == created.record.created_at
+    assert retried.created is False
+    assert retried.record == created.record
+    assert stored_before == stored_after == created.record
     assert results.total == 1
-    assert results.items[0].record.content == "Marmalade was updated"
+    assert results.items[0].record.content == request.content
 
 
 @pytest.mark.asyncio
