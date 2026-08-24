@@ -58,6 +58,8 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
     assert "Local-first shared memory for MCP agent fleets." in help_result.stdout
     for command in (
         "init",
+        "setup",
+        "tour",
         "recall",
         "remember",
         "doctor",
@@ -77,12 +79,9 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
 
     assert (data_dir / "aoms.sqlite3").is_file()
     assert "SQLite store ready (schema 5)" in result.stdout
-    assert "claude mcp add aoms -- uvx cortex-mem mcp" in result.stdout
-    assert (
-        "openclaw config set mcp.servers.aoms "
-        '\'{"command":"uvx","args":["cortex-mem","mcp"]}\' --strict-json'
-        in result.stdout
-    )
+    assert "cortex-mem setup claude" in result.stdout
+    assert "cortex-mem setup codex" in result.stdout
+    assert "cortex-mem setup openclaw" in result.stdout
 
 
 def test_cli_import_export_restore_smoke(tmp_path: Path) -> None:
@@ -107,8 +106,8 @@ def test_cli_import_export_restore_smoke(tmp_path: Path) -> None:
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM memories "
-                "WHERE scope_workspace_id = 'default' "
-                "AND created_by_agent_id = 'default'"
+                "WHERE scope_workspace_id = ? AND created_by_agent_id = 'cli'",
+                (str(ROOT.resolve()),),
             ).fetchone()[0]
             == 5
         )
@@ -426,3 +425,51 @@ def test_cli_recall_remember_round_trip_and_idempotency(tmp_path: Path) -> None:
             "SELECT scope_workspace_id, created_by_agent_id, COUNT(*) FROM memories"
         ).fetchone()
     assert row == ("cli-test-workspace", "cli-test-agent", 1)
+
+
+def test_cli_empty_recall_is_actionable(tmp_path: Path) -> None:
+    data_dir = tmp_path / "empty"
+    run_cli("init", data_dir=data_dir, check=True)
+
+    recalled = run_cli(
+        "recall", "--task", "first empty recall", data_dir=data_dir, check=True
+    )
+
+    assert recalled.stdout.strip() == (
+        "Store is empty for your scopes. Next: cortex-mem remember / import / tour."
+    )
+
+
+def test_tour_is_disposable_and_never_touches_canonical_store(tmp_path: Path) -> None:
+    data_dir = tmp_path / "canonical"
+    run_cli("init", data_dir=data_dir, check=True)
+    run_cli(
+        "remember",
+        "--content",
+        "Canonical sentinel must remain untouched.",
+        data_dir=data_dir,
+        check=True,
+    )
+    with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
+        before = connection.execute(
+            "SELECT COUNT(*), MIN(record_json) FROM memories"
+        ).fetchone()
+        receipts_before = connection.execute(
+            "SELECT COUNT(*) FROM recall_receipts"
+        ).fetchone()[0]
+
+    toured = run_cli("tour", data_dir=data_dir, check=True)
+
+    assert "DISPOSABLE DEMO store:" in toured.stdout
+    assert "Seeded 3 demo memories" in toured.stdout
+    assert "scope_filtered=1 superseded=1" in toured.stdout
+    assert "Auto-cleaned disposable demo store:" in toured.stdout
+    with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
+        after = connection.execute(
+            "SELECT COUNT(*), MIN(record_json) FROM memories"
+        ).fetchone()
+        receipts_after = connection.execute(
+            "SELECT COUNT(*) FROM recall_receipts"
+        ).fetchone()[0]
+    assert after == before
+    assert receipts_after == receipts_before

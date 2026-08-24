@@ -9,7 +9,10 @@ import importlib.util
 import inspect
 import json
 import os
+import shlex
+import shutil
 import sqlite3
+import subprocess
 import sys
 import tempfile
 from collections.abc import Callable
@@ -21,10 +24,18 @@ from typing import Any
 import click
 
 from aoms.application import AOMSApplication
+from aoms.activation import (
+    detect_invocation_source,
+    host_registration_command,
+    materialize_host_recipe,
+    run_activation_check,
+    run_host_registration,
+)
 from aoms.backfill import BackfillProgress, backfill_embeddings
 from aoms.auth import TokenScope, TokenStore
 from aoms.contracts import (
     MemoryKind,
+    MemoryRecord,
     Provenance,
     RecallRequest,
     RememberRequest,
@@ -35,6 +46,7 @@ from aoms.embeddings import (
     DEFAULT_FASTEMBED_MODEL,
     DEFAULT_OLLAMA_MODEL,
     EmbeddingProfile,
+    NullProvider,
     provider_from_config,
 )
 from aoms.importer import ImportReport, JSONLImporter
@@ -76,8 +88,10 @@ def _repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
 
 def _scope_context() -> ScopeContext:
     return ScopeContext(
-        agent_id=os.environ.get("AOMS_AGENT_ID", "").strip() or "default",
-        workspace_id=os.environ.get("AOMS_WORKSPACE", "").strip() or "default",
+        agent_id=os.environ.get("AOMS_AGENT_ID", "").strip() or "cli",
+        workspace_id=(
+            os.environ.get("AOMS_WORKSPACE", "").strip() or str(Path.cwd().resolve())
+        ),
     )
 
 
@@ -93,24 +107,16 @@ def _application(settings: AOMSSettings) -> AOMSApplication:
 
 def _idempotent_record_id(key: str, scope_context: ScopeContext) -> str:
     namespace = (
-        f"cortex-mem-cli\0{scope_context.agent_id}\0"
-        f"{scope_context.workspace_id}\0{key}"
+        f"cortex-mem-cli\0{scope_context.agent_id}\0{scope_context.workspace_id}\0{key}"
     )
     return "cli-" + hashlib.sha256(namespace.encode("utf-8")).hexdigest()
 
 
 def _normalized_tags(values: tuple[str, ...]) -> list[str]:
-    return [
-        tag.strip()
-        for value in values
-        for tag in value.split(",")
-        if tag.strip()
-    ]
+    return [tag.strip() for value in values for tag in value.split(",") if tag.strip()]
 
 
-async def _remember_once(
-    application: AOMSApplication, request: RememberRequest
-) -> Any:
+async def _remember_once(application: AOMSApplication, request: RememberRequest) -> Any:
     result = await application.remember(request)
     # A one-shot process must not abandon application-owned embedding work when
     # asyncio.run closes its loop. Provider failures remain durably queued.
@@ -139,8 +145,9 @@ def _embedding_environment(settings: AOMSSettings) -> dict[str, str]:
 
 def _print_host_setup() -> None:
     click.echo("\nConnect a client:")
-    click.echo(f"  Claude Code: {CLAUDE_SETUP}")
-    click.echo(f"  OpenClaw:    {OPENCLAW_SETUP}")
+    click.echo("  Run: cortex-mem setup claude")
+    click.echo("  Or:  cortex-mem setup codex")
+    click.echo("  Or:  cortex-mem setup openclaw")
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -200,6 +207,178 @@ def init_command(data_dir: Path | None) -> None:
     _print_host_setup()
 
 
+@main.command("setup")
+@click.argument(
+    "host", type=click.Choice(("claude", "codex", "openclaw"), case_sensitive=False)
+)
+@click.option(
+    "--workspace",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    help="Workspace identity to bind (default: current directory).",
+)
+@_data_dir_option
+def setup_command(host: str, workspace: Path | None, data_dir: Path | None) -> None:
+    """Register, bind, recipe-install, and live-check one supported host."""
+
+    normalized_host = host.casefold()
+    bound_workspace = (workspace or Path.cwd()).expanduser().resolve()
+    agent_id = normalized_host
+    settings = _settings(data_dir)
+    source = detect_invocation_source()
+    try:
+        asyncio.run(_repository(settings).initialize())
+        recipe = materialize_host_recipe(
+            normalized_host,
+            settings.data_dir / "recipes",
+            source=source,
+            agent_id=agent_id,
+            workspace=bound_workspace,
+            data_dir=settings.data_dir,
+        )
+    except (OSError, RuntimeError, sqlite3.Error) as exc:
+        raise click.ClickException(f"could not prepare setup: {exc}") from exc
+
+    click.echo(
+        f"bound as agent={agent_id} workspace={bound_workspace.name} "
+        f"({bound_workspace})"
+    )
+    click.echo(f"Source: {source.description}")
+    click.echo(f"Packaged {normalized_host} recipe installed at: {recipe}")
+    registration = host_registration_command(
+        normalized_host,
+        source,
+        agent_id=agent_id,
+        workspace=bound_workspace,
+        data_dir=settings.data_dir,
+    )
+    click.echo(f"Registration: {shlex.join(registration)}")
+    try:
+        completed = run_host_registration(registration)
+    except FileNotFoundError as exc:
+        raise click.ClickException(
+            f"{registration[0]} is not installed; registration was not executed"
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise click.ClickException(f"host registration failed: {detail}") from exc
+    if completed.stdout.strip():
+        click.echo(completed.stdout.strip())
+    click.echo("Registered. Starting live MCP handshake and scoped recall ...")
+    try:
+        activation = asyncio.run(
+            run_activation_check(
+                source,
+                agent_id=agent_id,
+                workspace=bound_workspace,
+                data_dir=settings.data_dir,
+                embedding_environment=_embedding_environment(settings),
+            )
+        )
+    except Exception as exc:
+        raise click.ClickException(
+            f"registration succeeded but activation check failed: {exc}"
+        ) from exc
+    click.echo(
+        f"Activated {activation.server_name} {activation.server_version}: "
+        f"handshake=ok recall_sources={activation.source_count} "
+        f"receipt={activation.receipt_id}"
+    )
+    if activation.empty_visible_store:
+        click.echo(
+            "Store is empty for your scopes. Next: save one durable decision with "
+            "cortex-mem remember, use an importer if available, or run cortex-mem tour."
+        )
+    else:
+        click.echo(
+            "Next: start the host and ask it to recall this workspace's decisions."
+        )
+
+
+async def _run_tour(store: Path) -> tuple[Any, Any]:
+    context = ScopeContext(agent_id="tour-agent", workspace_id="tour-workspace")
+    repository = SQLiteMemoryRepository(store / "aoms.sqlite3")
+    now = datetime.now(timezone.utc)
+    old = MemoryRecord(
+        id="tour-aurora-west",
+        kind=MemoryKind.DECISION,
+        content="Aurora deploy region was west.",
+        tags=["tour", "aurora"],
+        scope=Scope.WORKSPACE,
+        scope_workspace_id=context.workspace_id,
+        created_by_agent_id=context.agent_id,
+        provenance=Provenance(source="disposable-tour"),
+        created_at=now,
+        updated_at=now,
+    )
+    current = old.model_copy(
+        update={
+            "id": "tour-aurora-east",
+            "content": "Aurora deploy region is east after the latency review.",
+            "supersedes": old.id,
+        }
+    )
+    foreign = MemoryRecord(
+        id="tour-private-canary",
+        kind=MemoryKind.FACT,
+        content="Aurora private canary must never cross the agent scope.",
+        tags=["tour", "aurora"],
+        scope=Scope.AGENT_PRIVATE,
+        scope_agent_id="another-tour-agent",
+        created_by_agent_id="another-tour-agent",
+        provenance=Provenance(source="disposable-tour"),
+        created_at=now,
+        updated_at=now,
+    )
+    await repository.store_many([old, current, foreign])
+    application = AOMSApplication(
+        repository,
+        scope_context=context,
+        embedding_provider=NullProvider(),
+        background_embeddings=False,
+    )
+    result = await application.recall(
+        RecallRequest(
+            task="What is the current Aurora deploy region?", token_budget=400
+        )
+    )
+    receipt = (await application.recent_recall_receipts(limit=1))[0]
+    return result, receipt
+
+
+@main.command("tour")
+@click.option(
+    "--cleanup/--keep",
+    default=True,
+    show_default=True,
+    help="Auto-delete the disposable demo store, or keep it for inspection.",
+)
+def tour_command(cleanup: bool) -> None:
+    """Run a three-memory scope and supersession demo in an isolated store."""
+
+    demo_store = Path(tempfile.mkdtemp(prefix="cortex-mem-tour-"))
+    click.echo(f"DISPOSABLE DEMO store: {demo_store}")
+    click.echo("The canonical AOMS store will not be opened or changed.")
+    try:
+        result, receipt = asyncio.run(_run_tour(demo_store))
+        click.echo(
+            "Seeded 3 demo memories: predecessor, current decision, private canary."
+        )
+        click.echo(result.context)
+        click.echo(
+            f"Receipt {receipt.receipt_id}: selected={len(receipt.selected)} "
+            f"scope_filtered={receipt.scope_filtered_count} "
+            f"superseded={len(receipt.superseded_suppressed)}"
+        )
+    except Exception as exc:
+        raise click.ClickException(f"tour failed: {exc}") from exc
+    finally:
+        if cleanup:
+            shutil.rmtree(demo_store, ignore_errors=True)
+            click.echo(f"Auto-cleaned disposable demo store: {demo_store}")
+        else:
+            click.echo(f"Kept disposable demo store: {demo_store}")
+
+
 @main.command("recall")
 @click.option("--task", required=True, help="Describe the current task in plain language.")
 @click.option(
@@ -235,7 +414,15 @@ def recall_command(
     if output_format.casefold() == "json":
         click.echo(result.model_dump_json(indent=2))
     else:
-        click.echo(result.context)
+        if result.context:
+            click.echo(result.context)
+        elif result.diagnostics.get("empty_visible_store"):
+            click.echo(
+                "Store is empty for your scopes. "
+                "Next: cortex-mem remember / import / tour."
+            )
+        else:
+            click.echo("No relevant memory fit the requested recall.")
 
 
 @main.command("remember")

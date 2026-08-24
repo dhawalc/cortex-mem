@@ -555,9 +555,17 @@ class RecallEngine:
             if now.tzinfo is None
             else now.astimezone(timezone.utc)
         )
+        visible_count = await self.repository.visible_memory_count(
+            kinds=request.kinds,
+            scopes=request.scopes,
+            scope_context=self.scope_context,
+        )
         query_vector = None
         vector_error = None
-        if self.embedding_provider.profile is not None:
+        # An empty visible store cannot produce a semantic hit. This check is
+        # deliberately before provider initialization so first recall does not
+        # download or load a model merely to return an empty receipt.
+        if visible_count and self.embedding_provider.profile is not None:
             try:
                 query_vector = await self.embedding_provider.embed_query(request.task)
             except Exception as exc:  # noqa: BLE001 - semantic search is best-effort
@@ -677,6 +685,8 @@ class RecallEngine:
                     else None
                 ),
                 "vector_error": vector_error,
+                "visible_memory_count": visible_count,
+                "empty_visible_store": visible_count == 0,
                 "scoring_formula": (
                     "0.40*fts + 0.35*vector + 0.15*2^(-age_days/30) "
                     "+ 0.10*scope_specificity; unavailable weights renormalized"

@@ -354,6 +354,39 @@ class SQLiteMemoryRepository:
             ).fetchone()
         return self._record_from_row(row) if row else None
 
+    async def visible_memory_count(
+        self,
+        *,
+        kinds: Sequence[MemoryKind] | None = None,
+        scopes: Sequence[Scope] | None = None,
+        scope_context: ScopeContext | None = None,
+    ) -> int:
+        """Count records visible to a bound identity without reading content."""
+
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._visible_memory_count_sync, kinds, scopes, scope_context
+        )
+
+    def _visible_memory_count_sync(
+        self,
+        kinds: Sequence[MemoryKind] | None,
+        scopes: Sequence[Scope] | None,
+        scope_context: ScopeContext | None,
+    ) -> int:
+        clauses, parameters = self._filters(
+            kinds=kinds,
+            scopes=scopes,
+            table_alias="",
+            scope_context=scope_context,
+        )
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as connection:
+            row = connection.execute(
+                f"SELECT COUNT(*) AS count FROM memories{where}", parameters
+            ).fetchone()
+        return int(row["count"])
+
     async def list(
         self,
         *,

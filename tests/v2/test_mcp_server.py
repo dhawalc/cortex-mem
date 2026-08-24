@@ -623,6 +623,6 @@ def test_non_loopback_startup_requires_active_token_and_tls(tmp_path: Path) -> N
 
 def test_process_scope_defaults_are_single_user_and_non_null() -> None:
     assert mcp_adapter._scope_context_from_environ({}) == ScopeContext(
-        agent_id="default",
-        workspace_id="default",
+        agent_id="mcp",
+        workspace_id=str(Path.cwd().resolve()),
     )

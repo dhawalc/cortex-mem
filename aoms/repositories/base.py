@@ -129,6 +129,14 @@ class MemoryRepository(Protocol):
 
     async def get(self, record_id: str) -> MemoryRecord | None: ...
 
+    async def visible_memory_count(
+        self,
+        *,
+        kinds: Sequence[MemoryKind] | None = None,
+        scopes: Sequence[Scope] | None = None,
+        scope_context: ScopeContext | None = None,
+    ) -> int: ...
+
     async def search_by_keyword(
         self, request: SearchRequest, *, scope_context: ScopeContext | None = None
     ) -> SearchResult: ...

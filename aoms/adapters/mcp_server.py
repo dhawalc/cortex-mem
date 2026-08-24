@@ -46,8 +46,7 @@ from aoms.version import __version__ as AOMS_VERSION
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AGENT_ID = "default"
-DEFAULT_WORKSPACE_ID = "default"
+DEFAULT_AGENT_ID = "mcp"
 
 RECALL_DESCRIPTION = (
     "Call recall before starting or resuming substantive work when prior decisions, "
@@ -154,14 +153,14 @@ class MCPRuntime:
 
 
 def _scope_context_from_environ(environ: Mapping[str, str]) -> ScopeContext:
-    """Bind identity once, with single-user defaults for unset values."""
+    """Bind identity once, deriving explicit process values when unset."""
 
-    def configured(name: str, default: str) -> str:
-        return environ.get(name, "").strip() or default
+    configured_agent = environ.get("AOMS_AGENT_ID", "").strip()
+    configured_workspace = environ.get("AOMS_WORKSPACE", "").strip()
 
     return ScopeContext(
-        agent_id=configured("AOMS_AGENT_ID", DEFAULT_AGENT_ID),
-        workspace_id=configured("AOMS_WORKSPACE", DEFAULT_WORKSPACE_ID),
+        agent_id=configured_agent or DEFAULT_AGENT_ID,
+        workspace_id=configured_workspace or str(Path.cwd().resolve()),
     )
 
 
@@ -233,7 +232,12 @@ def _recall_text(request: RecallRequest, result: RecallResult) -> str:
         f"{result.token_count}/{request.token_budget} tokens, {status}."
     )
     if not result.context:
-        return summary + " No relevant memory was found."
+        if not result.diagnostics.get("empty_visible_store"):
+            return summary + " No relevant memory fit the requested recall."
+        return (
+            summary + " Store is empty for your scopes. Next: cortex-mem remember / "
+            "import / tour."
+        )
     return summary + "\n\n" + result.context
 
 

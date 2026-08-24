@@ -15,7 +15,7 @@ from aoms.contracts import (
     Scope,
     ScopeContext,
 )
-from aoms.embeddings import NullProvider
+from aoms.embeddings import EmbeddingProfile, NullProvider
 from aoms.recall import (
     BudgetPacker,
     RecallEngine,
@@ -27,6 +27,20 @@ from aoms.repositories import RecallCandidate, SQLiteMemoryRepository
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 CONTEXT = ScopeContext(agent_id="test-agent", workspace_id="test-workspace")
+
+
+class FailingIfEmbeddedProvider:
+    profile = EmbeddingProfile("test", "must-not-load", 3)
+
+    def __init__(self) -> None:
+        self.query_calls = 0
+
+    async def embed_documents(self, texts):
+        raise AssertionError("empty recall must not embed documents")
+
+    async def embed_query(self, text):
+        self.query_calls += 1
+        raise AssertionError("empty recall must not embed the query")
 
 
 def make_record(
@@ -60,6 +74,31 @@ def ranked(record: MemoryRecord, *, fts_score: float = 1.0):
     return RecallRanker().rank(
         [RecallCandidate(record, fts_score, ("fts",))], request, now=NOW
     )[0]
+
+
+@pytest.mark.asyncio
+async def test_empty_visible_store_skips_embedding_and_keeps_receipt(
+    tmp_path: Path,
+) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "empty.sqlite3")
+    provider = FailingIfEmbeddedProvider()
+    application = AOMSApplication(
+        repository,
+        scope_context=CONTEXT,
+        embedding_provider=provider,
+        background_embeddings=False,
+    )
+
+    result = await application.recall(
+        RecallRequest(task="nothing can match", token_budget=200)
+    )
+    receipts = await application.recent_recall_receipts(limit=1)
+
+    assert provider.query_calls == 0
+    assert result.sources == []
+    assert result.diagnostics["empty_visible_store"] is True
+    assert result.diagnostics["visible_memory_count"] == 0
+    assert receipts[0].receipt_id == result.diagnostics["receipt_id"]
 
 
 def test_ranking_is_deterministic_and_exposes_calibrated_breakdown() -> None:

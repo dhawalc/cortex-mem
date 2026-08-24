@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from aoms.contracts import RecallRequest, ScopeContext
+from aoms.contracts import MemoryKind, RecallRequest, Scope, ScopeContext
 from aoms.embeddings import (
     EmbeddingProfile,
     EmbeddingProvider,
@@ -112,6 +112,19 @@ class ConfiguredRepository:
     def __init__(self, repository: SQLiteMemoryRepository, config: EngineConfig):
         self.repository = repository
         self.config = config
+
+    async def visible_memory_count(
+        self,
+        *,
+        kinds: Sequence[MemoryKind] | None = None,
+        scopes: Sequence[Scope] | None = None,
+        scope_context: ScopeContext | None = None,
+    ) -> int:
+        return await self.repository.visible_memory_count(
+            kinds=kinds,
+            scopes=scopes if self.config.enforce_scope else None,
+            scope_context=scope_context if self.config.enforce_scope else None,
+        )
 
     async def retrieve_recall_candidates(
         self,
