@@ -13,7 +13,7 @@
       "stage-3 recall artifact missing: stage-3/recall.json",
       "acceptance tests failed: AssertionError"
     ],
-    "grade": "PROOF",
+    "grade": "REHEARSAL",
     "passed": false,
     "scenario_id": "durable-webhook-relay-7319"
   },

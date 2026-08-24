@@ -132,22 +132,35 @@ def _load_recall_artifact(path: Path) -> tuple[RecallReceipt, str, str]:
 
 
 def _evidence_grade(root: Path) -> str:
-    """Cap runs with a weakened adapter isolation mode at rehearsal grade."""
+    """Award proof grade only when bare auth and host sandboxing are evidenced."""
 
+    has_bare_claude = False
+    has_sandboxed_codex = False
     for record_path in sorted((root / "stages").glob("stage-*/record.json")):
         try:
             record = json.loads(record_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
         process = record.get("process", {})
+        adapter = process.get("adapter")
         evidence = process.get("adapter_evidence", {})
         auth = evidence.get("auth", {}) if isinstance(evidence, dict) else {}
         if isinstance(auth, dict) and auth.get("mode") == "oauth":
             return "REHEARSAL"
+        if adapter == "claude" and isinstance(auth, dict):
+            has_bare_claude = has_bare_claude or (
+                auth.get("mode") == "bare"
+                and auth.get("user_level_config_excluded") is True
+            )
         sandbox = evidence.get("sandbox", {}) if isinstance(evidence, dict) else {}
         if isinstance(sandbox, dict) and sandbox.get("mode") == "danger-full-access":
             return "REHEARSAL"
-    return "PROOF"
+        if adapter == "codex" and isinstance(sandbox, dict):
+            has_sandboxed_codex = has_sandboxed_codex or (
+                sandbox.get("mode") == "workspace-write"
+                and sandbox.get("host_sandbox_enabled") is True
+            )
+    return "PROOF" if has_bare_claude and has_sandboxed_codex else "REHEARSAL"
 
 
 def verify_run(

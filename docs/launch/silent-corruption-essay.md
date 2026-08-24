@@ -1,6 +1,6 @@
-<!-- DRAFT FOR DHAWAL'S REVIEW. This is written in Dhawal's first-person voice; Dhawal must edit and approve it before anything is published. -->
-
 # My agents' memory was silently corrupted for months — here's what we rebuilt
+
+*Published 2026-08-24.*
 
 ## The audit was supposed to be about a deprecated plugin
 
@@ -117,7 +117,7 @@ That failure was encouraging in a narrow sense: the harness found a real retriev
 
 AOMS is now a local-first memory router for a fleet of MCP agents. It keeps one SQLite/WAL source of truth, provides local hybrid retrieval, binds reads and writes to agent/workspace scopes, packs recall to an explicit token budget, and emits provenance-rich receipts for what entered context. Stdio is the default. Streamable HTTP is optional and requires bearer identity plus TLS for non-loopback binds. Storage and retrieval stay local; no claim is made that the model clients themselves are offline.
 
-The cold-start relay is the practical proof target: Claude Code plans, Codex starts without its transcript and continues from scoped AOMS memory, and OpenClaw reviews from another cold process. The artifact records prompts, MCP traffic, recall receipts, repository diffs, deterministic tests, and hashes. The point is not that agents “never forget.” The point is that a handoff can be inspected and falsified.
+The cold-start relay is the practical proof target: Claude Code plans, Codex starts without its transcript and continues from scoped AOMS memory, and OpenClaw reviews from another cold process. The v2.0.0 release artifact is explicitly **REHEARSAL** grade: it used Claude/Codex/Claude, Claude OAuth, and Codex `danger-full-access`, and it predates the final release revision. The upgrade path to **PROOF** grade is a new run with bare provider authentication on a bwrap-capable host using Codex `workspace-write` sandboxing, plus OpenClaw credentials for the full three-client claim. The artifact records prompts, MCP traffic, recall receipts, repository diffs, deterministic tests, and hashes. The point is not that agents “never forget.” The point is that a handoff can be inspected and falsified.
 
 The old service taught me that persistence without integrity is just durable uncertainty. The rebuilt one is smaller in surface area, stricter about identity, and much more explicit about what it knows.
 

@@ -5,6 +5,13 @@
 memory feature list. The relay creates the attention; the artifact and the 1,000-token
 teardown convert attention into technical credibility.
 
+**Launch reality, 2026-08-24:** the v2.0.0 relay bundles are published as
+**REHEARSAL** grade. The live bundle is Claude/Codex/Claude, uses Claude OAuth
+and Codex `danger-full-access`, and predates the final release revision. The
+three-client text below remains the **PROOF**-grade target. Its upgrade path is
+bare provider authentication on a bwrap-capable host with Codex
+`workspace-write`, plus working OpenClaw provider credentials.
+
 ## The lead claim
 
 > Claude Code, Codex, and OpenClaw can start cold and resume one another's work — with no
@@ -28,7 +35,7 @@ memory" — unfalsifiable claims that invite benchmark wars before the product i
 First 10 seconds of the clip: three empty context windows, then agent two correctly
 stating the inherited constraints. The rest establishes how.
 
-## The proof artifact: AOMS Relay Protocol
+## The relay artifact: AOMS Relay Protocol
 
 The launch artifact is a **runnable harness**, not a video (the video is just a compressed
 execution of the public protocol):

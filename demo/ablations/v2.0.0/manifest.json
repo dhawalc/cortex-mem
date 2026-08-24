@@ -1,8 +1,8 @@
 {
   "files": {
     "README.md": {
-      "bytes": 2802,
-      "sha256": "c3f0ec748142e9a54b910e46cb8611bc7cebd3c056b2028ae8bf57d5631b326b"
+      "bytes": 2948,
+      "sha256": "b59ca7d37de80b2511912a8ff61f25da6c4d11b2dc2dac4c6bc0f3f83a57f91c"
     },
     "eval/20260824T040613052004Z-lexical-only-be6c106b-6d9241.json": {
       "bytes": 53343,
@@ -25,8 +25,8 @@
       "sha256": "681945d249b6bc8c5d1e9dd44a3e8376b2572392e343ec91a81e6936274ba186"
     },
     "relay-scripted/baseline/run-record.json": {
-      "bytes": 717,
-      "sha256": "be6630aff5fb637486adb17e4c521f0dce4776d6dfc3f62165a9e22e0118f805"
+      "bytes": 721,
+      "sha256": "8c624d38273c457e7854f08e6219bcb10af16ac8a75fb39e31bfc11438a75775"
     },
     "relay-scripted/baseline/scenario.yaml": {
       "bytes": 5006,
@@ -133,8 +133,8 @@
       "sha256": "ca8026ea857a17f53583851ca6b07feda4b6db7792ba94af638b5480f32f5ae5"
     },
     "relay-scripted/baseline/verifier/report.json": {
-      "bytes": 337,
-      "sha256": "e7617de18db17b96773e2f144165f8f3050a21a620768096e2e3c3c62eb4c7c5"
+      "bytes": 341,
+      "sha256": "4423f363e189c92a98ba167bc46666aa0b69553c51d47ded4f06618a3813c64e"
     },
     "relay-scripted/baseline/workspace/BASELINE.md": {
       "bytes": 82,
@@ -173,16 +173,16 @@
       "sha256": "ec19292d6a527e69a497d0d2fe545a3b9f3bf0b3af39da18273990d118a4fded"
     },
     "relay-scripted/bundle-record.json": {
-      "bytes": 2699,
-      "sha256": "e6b20a7c4a0506776c21ad0aaf76e1d1827d4c9b15f8bf79c63a88f3cf9df86c"
+      "bytes": 2707,
+      "sha256": "5658d3cdc07bb77fa4744affff500c76cb49b296ecb64af6f72c38684de1fb87"
     },
     "relay-scripted/comparison.json": {
-      "bytes": 2187,
-      "sha256": "0f5be4bab348e9a334ba6ec537c48881dfa87c21a9bcf199cf414ffe81680b9f"
+      "bytes": 2195,
+      "sha256": "017d6a7e1df9c0ac9bd99acd1670f44321a91909632f79490c68f671d57b1ca1"
     },
     "relay-scripted/manifest.json": {
       "bytes": 13824,
-      "sha256": "9a965cd62d831c250d347135c2b332be81a7410c77d4b398c5e5496b71ec8f29"
+      "sha256": "40f0a2e5a7a5b8d7ccb4694264f109ba0d8b1e888445e1d6df8b4c8c8bedd352"
     },
     "relay-scripted/receipts-export/manifest.json": {
       "bytes": 500,
@@ -197,8 +197,8 @@
       "sha256": "a08994f29f85ad86a6f649a510a268004e42baffae037a1f6529b342c530a7de"
     },
     "relay-scripted/run-record.json": {
-      "bytes": 1180,
-      "sha256": "1985f8131ff0c3b0c3bbafbec6c361e311962f87a0e9c48e9aa7acfd1a7b2287"
+      "bytes": 1184,
+      "sha256": "f0d591425ad0facaf31ca93ecd9e765991565219edd9488659567b537478225d"
     },
     "relay-scripted/scenario.yaml": {
       "bytes": 5006,
@@ -333,8 +333,8 @@
       "sha256": "ca8026ea857a17f53583851ca6b07feda4b6db7792ba94af638b5480f32f5ae5"
     },
     "relay-scripted/verifier/report.json": {
-      "bytes": 793,
-      "sha256": "5099cabe4815bc16d2b16863747e9e366818cee4d22f23b1923bdd3eaece838f"
+      "bytes": 797,
+      "sha256": "8045d00589ec4dafdb7ea0099f3940a47c53f7dcafeaf7f7042601b0786fdc69"
     },
     "relay-scripted/workspace/README.md": {
       "bytes": 258,
@@ -373,8 +373,8 @@
       "sha256": "ec19292d6a527e69a497d0d2fe545a3b9f3bf0b3af39da18273990d118a4fded"
     },
     "summary.json": {
-      "bytes": 3943,
-      "sha256": "7ad611f3af56ac79315c65a3ec8a79d5a281bd5d8c5f00ef9e0714efb99324f2"
+      "bytes": 3951,
+      "sha256": "54abc702fa368907c389466efcd0501b5d5d89d6296f86574c5795677f28c3e6"
     }
   },
   "format": "aoms-relay-bundle",
@@ -389,5 +389,5 @@
     "source_revision": "2d6b88c3cedca9a1842fe05de7167f051d7632c7",
     "unfiltered": true
   },
-  "sealed_at": "2026-08-24T04:08:49.824329+00:00"
+  "sealed_at": "2026-08-24T04:42:26.126559+00:00"
 }

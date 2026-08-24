@@ -6,24 +6,28 @@
 
 **Interpreter:** `/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python`
 
-**Decision:** **NO-GO — remaining gates require human action**
+**Decision:** **LAUNCH AUTHORIZED AT REHEARSAL GRADE**
+
+**Launch override, 2026-08-24:** Dhawal gave the explicit launch order with the
+live relay evidence published as **REHEARSAL**, not proof. The two remaining
+launch-plan criteria—**PROOF**-grade bare-auth/sandboxed-host evidence and an
+external clean-machine reproduction—are now explicit post-launch upgrade/watch
+items. This override does not change their status or permit stronger claims.
 
 **Gap-closing update:** The v2.0.0 launch archive now commits all five raw eval
 configurations and the complete scripted relay memory-enabled/memory-disabled
 ablation at `demo/ablations/v2.0.0`, with a compact table, machine-readable
 summary, and SHA-256 manifest. Relay prerequisites and every packaged host
-recipe now lead through pinned, bound `setup`; a v2 ClawHub listing draft is at
-`docs/launch/clawhub-skill-v2.md`. The ablation exit criterion below is now
-**PASS**. The launch remains **NO-GO** only on the four human gates listed in
-the Human gates section.
+recipe now lead through pinned, bound `setup`; the reviewed v2 ClawHub package
+is at `packaging/clawhub/aoms`. The ablation exit criterion below is **PASS**.
 
 This is a launch-gate decision, not a product-quality verdict. The local wheel,
 deterministic relay, scope and budget verifier, and canonical test suite work.
-The public launch is not ready because the live artifact is rehearsal-grade, the
-unfiltered ablation artifacts are not in the relay/release evidence, the public
-refs have not been pushed and reproduced by another person, Dhawal has not edited
-the first-person essay, and the current ClawHub listing describes the retired v1
-product.
+The release is authorized with the live artifact explicitly labeled
+rehearsal-grade. The public refs, GitHub release, and ClawHub listing still need
+to be published during this runbook execution. A different person has not yet
+reproduced the public instructions, and the bare-auth/sandboxed-host proof run
+remains a post-launch upgrade.
 
 ## Source of truth and audit boundary
 
@@ -49,8 +53,8 @@ model run, `~/.local/share/aoms`, or GitHub push was used.
 | Memory-disabled and ablation results are included unfiltered | **PASS** | `demo/ablations/v2.0.0` contains all five complete 36-case eval JSON artifacts plus the sealed 86-file scripted relay with its mirrored memory-disabled baseline. `summary.json` reports `unfiltered=true` and `status=PASS`; `manifest.json` hashes the complete inventory. Expected safety deltas remain visible: no-supersession contradiction rate `0.200`, no-scope canary leakage `0.083`/six selections, and `0.000` for governed configurations. Relay prompts are identical; memory passes 12 checks and baseline retains all three failures. | Publish this already-complete archive with the human-run release push; no further artifact generation is required for this criterion. |
 | Another person reproduces the result from public instructions | **BLOCKED**, then **NEEDS-HUMAN** | GitHub reports the repository is already `PUBLIC`, but `origin` has neither `refs/heads/v2` nor `refs/tags/v2.0.0`; public `main` remains at `47c1c8d`. The local tag exists at `7095101`, one commit behind the audited HEAD and before the truth-timeline commands now claimed by README. | First push the final release and corrected tag. Then a person other than the builder must follow the public instructions on a clean machine, record install-to-demo time, run replay and validation, and report the exact commit/tag and result. This cannot be self-certified. |
 
-**Gate count after gap closing:** 6 PASS, 2 NEEDS-HUMAN. The launch-plan rule is
-“all required,” so the decision remains **NO-GO**.
+**Gate count at authorization:** 6 PASS, 2 POST-LAUNCH. The release proceeds
+only with the rehearsal grade stated wherever relay evidence is published.
 
 ## Rehearsal-008 validation
 
@@ -136,9 +140,9 @@ false product descriptions and must be corrected before those links are posted.
 
 ## Ordered launch-day runbook
 
-**Trigger word: `LAUNCH`.** Do not advance past a failed checkbox. The trigger
-is valid only after Dhawal has completed the essay and ClawHub content review and
-the proof host/credits are available.
+**Trigger word: `LAUNCH`.** Dhawal supplied it on 2026-08-24, approved the essay,
+authorized the reviewed ClawHub content, and explicitly deferred the proof host
+and external reproduction gates to post-launch.
 
 ### A. Freeze the release candidate
 
@@ -259,17 +263,19 @@ the proof host/credits are available.
 
 ### E. Publish release evidence and ClawHub
 
-- [ ] Archive the reviewed proof and all five eval JSON files, then create the
-  GitHub release from the verified tag:
+- [ ] For this rehearsal-grade launch, archive canonical `rehearsal-008` and the
+  complete ablation directory, then create the GitHub release from the verified
+  tag. Label the relay attachment **REHEARSAL** and state the **PROOF** upgrade
+  path (bare provider auth plus a bwrap-capable sandboxed host):
 
   ```console
-  PROOF_TGZ=/tmp/aoms-relay-proof-001.tar.gz
+  REHEARSAL_TGZ=/tmp/aoms-relay-rehearsal-008.tar.gz
   EVAL_TGZ=/tmp/aoms-eval-v2.0.0.tar.gz
-  tar -C /home/dhawal/openclaw_archives -czf "$PROOF_TGZ" aoms-relay-proof-001
-  tar -C "$AUDIT_TMP" -czf "$EVAL_TGZ" aoms-eval-v2.0.0
+  tar -C /home/dhawal/openclaw_archives -czf "$REHEARSAL_TGZ" aoms-relay-rehearsal-008
+  tar -C demo/ablations -czf "$EVAL_TGZ" v2.0.0
   gh release create v2.0.0 --repo dhawalc/cortex-mem --verify-tag \
     --title "AOMS v2.0.0" --generate-notes \
-    "$PROOF_TGZ#Proof-grade relay bundle" \
+    "$REHEARSAL_TGZ#REHEARSAL-grade relay bundle" \
     "$EVAL_TGZ#Unfiltered retrieval ablations"
   ```
 
@@ -279,7 +285,7 @@ the proof host/credits are available.
   ```console
   clawhub publish packaging/clawhub/aoms --slug aoms \
     --name "AOMS — Scoped Memory for Agent Fleets" --version 2.0.0 \
-    --changelog "Scoped MCP memory, receipts, local SQLite, activation, importers, and relay proof" \
+    --changelog "Scoped MCP memory, receipts, local SQLite, activation, importers, and relay rehearsal evidence" \
     --tags latest,v2
   ```
 
@@ -296,7 +302,7 @@ the proof host/credits are available.
 ### F. Post only immutable, verified links
 
 - [ ] Repository/hero link: <https://github.com/dhawalc/cortex-mem>
-- [ ] Release, proof bundle, and ablations:
+- [ ] Release, **REHEARSAL** bundle, and ablations:
   <https://github.com/dhawalc/cortex-mem/releases/tag/v2.0.0>
 - [ ] Dhawal-approved incident essay:
   <https://github.com/dhawalc/cortex-mem/blob/v2.0.0/docs/launch/silent-corruption-essay.md>
@@ -304,9 +310,9 @@ the proof host/credits are available.
   <https://github.com/dhawalc/cortex-mem/blob/v2.0.0/demo/relay/README.md>
 - [ ] Corrected ClawHub listing:
   <https://clawhub.ai/dhawala4/skills/aoms>
-- [ ] Post in this order: GitHub release/README, technical essay, relay proof,
+- [ ] Post in this order: GitHub release/README, technical essay, relay rehearsal,
   ClawHub listing. Use the immutable tag links in X, LinkedIn, and any Show HN
-  submission; do not link local rehearsal paths or the moving branch for proof.
+  submission; do not call rehearsal evidence proof.
 
 ## Residual concerns after the blockers clear
 

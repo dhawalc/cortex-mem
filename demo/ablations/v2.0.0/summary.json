@@ -95,7 +95,7 @@
     "prompts_identical": true,
     "memory_enabled": {
       "passed": true,
-      "grade": "PROOF",
+      "grade": "REHEARSAL",
       "check_count": 12,
       "failure_count": 0,
       "stage_2_tokens": 853,
@@ -105,7 +105,7 @@
     },
     "memory_disabled": {
       "passed": false,
-      "grade": "PROOF",
+      "grade": "REHEARSAL",
       "check_count": 0,
       "failure_count": 3,
       "failures": [

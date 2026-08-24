@@ -60,11 +60,16 @@ The default MCP transport is stdio, so it opens no listening socket. Optional st
 
 Local-first does not mean every connected model runs offline. A cloud-backed MCP client may send recalled context to its model provider under that client's own privacy terms. AOMS makes storage and retrieval local; it does not conceal what a client does with tool output.
 
-## The relay proof
+## The relay rehearsal
 
 The launch demo is a cold-start relay: a planner records non-obvious constraints, an implementer starts in a fresh process without the planner's transcript, and a reviewer starts cold again with a new regression clue. Their shared input is scoped AOMS memory.
 
 The runnable protocol captures initial prompts, process freshness, MCP JSONL traffic, recall receipts, source provenance, token ceilings, repository diffs, deterministic tests, a memory-disabled baseline, and a SHA-256-sealed manifest. Deterministic scripted replay requires no model account:
+
+The v2.0.0 release bundles are **REHEARSAL** grade. A **PROOF**-grade upgrade
+requires bare provider authentication and a bwrap-capable host with Codex
+`workspace-write`; the full three-client claim also requires OpenClaw provider
+credentials.
 
 ```console
 python -m demo.relay.runner run \

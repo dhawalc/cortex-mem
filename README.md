@@ -28,7 +28,7 @@ The success output names the binding explicitly—for example, `bound as agent=c
 
 Python 3.11 or 3.12 is recommended. The default local embedding model is downloaded only when a non-empty store first needs semantic retrieval. Empty-store recall returns immediately without loading it.
 
-## The 60-second proof: remember, kill, cold-recall
+## The 60-second check: remember, kill, cold-recall
 
 Save one real decision that the next session must know. Do not seed your canonical store with demo data:
 
@@ -46,7 +46,7 @@ Now end the host session completely. Start a fresh session in the same project a
 
 > Recall the release gate for this workspace. What must pass before release?
 
-The new process has no prior transcript. Its answer should come from the workspace-scoped memory, and recall returns a receipt ID proving the exact serialization path. That cold handoff—not a health check—is the activation proof.
+The new process has no prior transcript. Its answer should come from the workspace-scoped memory, and recall returns a receipt ID documenting the exact serialization path. That cold handoff—not a health check—is the activation check.
 
 If you do not have a durable fact yet, run an isolated tour:
 
@@ -130,6 +130,14 @@ Local-first does not mean every connected model runs offline. A cloud-backed MCP
 ## Evidence, not “agents never forget”
 
 The included cold-start relay has a planner record non-obvious constraints, then launches transcript-isolated implementer and reviewer processes. Its artifact bundle captures MCP traffic, recall receipts, provenance, token ceilings, scope canaries, repository diffs, tests, a memory-disabled baseline, and a SHA-256 manifest.
+
+The v2.0.0 release bundles are explicitly **REHEARSAL** grade. The canonical
+live bundle used Claude/Codex/Claude with Claude OAuth and Codex
+`danger-full-access`; it is useful evidence, but it is not a three-client
+OpenClaw proof and did not run from the final release revision. The upgrade path
+to **PROOF** grade is a new run with bare provider authentication on a
+bwrap-capable host using Codex `workspace-write` sandboxing, plus OpenClaw
+provider credentials for the full three-client claim.
 
 Deterministic scripted replay requires no model account:
 

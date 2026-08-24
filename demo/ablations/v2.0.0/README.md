@@ -37,9 +37,11 @@ enforcement exposes six packed canary selections.
 
 `relay-scripted/comparison.json` declares the only variable as MCP memory
 availability and preserves the baseline's missing-recall and acceptance-test
-failures. The scripted verifier's `PROOF` grade describes deterministic relay
-protocol evidence only; it does not replace the launch's human-gated live
-three-client proof on a funded, bwrap-capable host.
+failures. The scripted bundle is **REHEARSAL** grade: it describes deterministic
+relay protocol evidence only and is not a live-client proof. The **PROOF**-grade
+upgrade path requires bare provider authentication and a bwrap-capable host
+using Codex `workspace-write`; the full three-client claim also requires
+working OpenClaw provider credentials.
 
 ## Reproduce and validate
 

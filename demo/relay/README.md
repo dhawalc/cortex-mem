@@ -1,5 +1,12 @@
 # AOMS Relay runner
 
+The relay bundles published with v2.0.0 are **REHEARSAL** grade. The canonical
+live bundle used Claude OAuth and Codex `danger-full-access`, and the scripted
+ablation is deterministic protocol evidence rather than a live-client proof.
+The **PROOF**-grade upgrade path requires bare provider authentication on a
+bwrap-capable host using Codex `workspace-write`; the full three-client claim
+also requires working OpenClaw provider credentials.
+
 The runner starts a new process and a new private fixture-repository copy for
 each stage. It ships in the source tree rather than as a standalone console
 command. From a fresh directory, clone the pinned release and install its

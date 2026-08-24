@@ -22,7 +22,7 @@
       "acceptance: recursive token redaction before persistence"
     ],
     "failures": [],
-    "grade": "PROOF",
+    "grade": "REHEARSAL",
     "passed": true,
     "scenario_id": "durable-webhook-relay-7319"
   },

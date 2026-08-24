@@ -1,9 +1,3 @@
-# ClawHub v2 listing
-
-**Review status:** approved for launch on 2026-08-24. The canonical publishable
-copy is `packaging/clawhub/aoms/SKILL.md`.
-
-````markdown
 ---
 name: aoms
 description: Use AOMS v2 as local-first, workspace-scoped durable memory for Claude Code, Codex, OpenClaw, and other MCP agents. Use when an agent should recall prior project decisions and constraints, save durable conclusions, inspect typed records, or prove exactly which scoped memory entered context under a token budget.
@@ -65,13 +59,3 @@ disposable tour are operator CLI actions. Do not invent MCP tools for them.
 Canonical storage and default embeddings are local. A cloud-backed client may
 still send recalled context to its model provider under that client's privacy
 terms; do not describe local-first retrieval as end-to-end model privacy.
-````
-
-## Review checks
-
-- Confirm the first paragraph and description match the desired ClawHub voice.
-- Confirm the immutable install ref remains `v2.0.0` at publication time.
-- Reject any v1 language about an HTTP daemon, JSONL tiers, reinforcement or
-  decay endpoints, ChromaDB, Docker startup, `migrate`, or boot scripts.
-- Publishing remains a human gate; do not present this draft URL as the live
-  listing.

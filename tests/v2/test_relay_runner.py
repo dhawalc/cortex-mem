@@ -73,7 +73,7 @@ def scripted_plan_transmission_bundle(tmp_path_factory: pytest.TempPathFactory):
 def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     bundle = scripted_bundle.bundle
     assert scripted_bundle.verification.passed
-    assert scripted_bundle.verification.grade == "PROOF"
+    assert scripted_bundle.verification.grade == "REHEARSAL"
     validation = validate_bundle(bundle)
     assert validation.valid, validation.failures
     assert validation.checked_files > 30
@@ -119,7 +119,7 @@ def test_scripted_relay_end_to_end_and_manifest(scripted_bundle) -> None:
     assert (bundle / "stage-3" / "recall.json").is_file()
     assert (bundle / "verifier" / "report.json").is_file()
     verifier_record = json.loads((bundle / "verifier" / "report.json").read_text())
-    assert verifier_record["grade"] == "PROOF"
+    assert verifier_record["grade"] == "REHEARSAL"
 
 
 def test_scripted_stage3_complete_handoff_survives_tight_budget(
@@ -543,6 +543,41 @@ def test_verifier_marks_unsandboxed_codex_bundle_as_rehearsal(
 
     assert report.passed
     assert report.grade == "REHEARSAL"
+
+
+def test_verifier_requires_bare_claude_and_sandboxed_codex_for_proof(
+    scripted_bundle, tmp_path: Path
+) -> None:
+    proof = tmp_path / "proof-eligible"
+    shutil.copytree(scripted_bundle.bundle, proof)
+    claude_record_path = proof / "stages" / "stage-1-planner" / "record.json"
+    claude_record = json.loads(claude_record_path.read_text())
+    claude_record["process"]["adapter"] = "claude"
+    claude_record["process"]["adapter_evidence"] = {
+        "auth": {
+            "mode": "bare",
+            "user_level_config_excluded": True,
+        },
+        "evidence_grade": "PROOF",
+    }
+    claude_record_path.write_text(json.dumps(claude_record), encoding="utf-8")
+
+    codex_record_path = proof / "stages" / "stage-2-implementer" / "record.json"
+    codex_record = json.loads(codex_record_path.read_text())
+    codex_record["process"]["adapter"] = "codex"
+    codex_record["process"]["adapter_evidence"] = {
+        "sandbox": {
+            "mode": "workspace-write",
+            "host_sandbox_enabled": True,
+        },
+        "evidence_grade": "PROOF",
+    }
+    codex_record_path.write_text(json.dumps(codex_record), encoding="utf-8")
+
+    report = verify_run(proof, scenario_path=proof / "scenario.yaml")
+
+    assert report.passed
+    assert report.grade == "PROOF"
 
 
 def test_failed_stage_publishes_sealed_bundle_and_surfaces_stdout_json(
