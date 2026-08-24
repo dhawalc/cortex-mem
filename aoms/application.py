@@ -71,6 +71,13 @@ class AOMSApplication:
             raise ValueError("memory id is already in use; no record was changed")
         if existing is not None and not self._can_access(existing):
             raise PermissionError("memory id belongs to an inaccessible scope")
+        if existing is not None:
+            if existing.content != request.content:
+                raise ValueError(
+                    "in-place content change; append a successor with `supersedes` "
+                    "instead."
+                )
+            return RememberResult(record=existing, created=False)
         now = datetime.now(timezone.utc)
         scope_agent_id = (
             self.scope_context.agent_id
