@@ -1,5 +1,24 @@
 # AOMS Build State — Orchestration Ledger
 
+## P4 — OSS launch — GITHUB SHIPPED 2026-08-24
+
+This section supersedes the pre-build phase labels retained below as historical
+planning context. GitHub launch execution completed at `2026-08-24T04:53:49Z`.
+
+| Deliverable | State |
+|---|---|
+| Repository | Public at <https://github.com/dhawalc/cortex-mem>; default branch `main`; v2 README and corrected description live. |
+| History | True `v2`-into-`main` merge preserved v1 first-parent history. Release tag `v2.0.0` points to `4226a69`; post-tag CI workflow fix is on `main`/`v2`. |
+| Product | SQLite/WAL canonical store; hard agent/workspace scopes; budgeted local hybrid recall; provenance-rich receipts; three-tool MCP; guided setup; importers; Recall Observatory; truth timelines. |
+| Evidence | Tag-built wheel, five unfiltered eval configurations, complete scripted ablation, and canonical live `rehearsal-008` attached to <https://github.com/dhawalc/cortex-mem/releases/tag/v2.0.0>. All published relay artifacts are labeled **REHEARSAL**. |
+| Verification | Local `193 passed` plus fixture `3 passed`; GitHub CI passed Python 3.11/3.12, clean-wheel acceptance, and relay fixture after one workflow-only dependency fix-forward. |
+| ClawHub | v2 package prepared at `packaging/clawhub/aoms`; publish blocked because `DhawalA4` has not accepted ClawHub's MIT-0 publishing terms. Live listing remains retired v1.1.0. |
+
+Remaining post-launch: a **PROOF**-grade bare-auth run on a bwrap-capable host
+with Codex `workspace-write` (and OpenClaw credentials for the full trio), an
+independent clean-machine reproduction watch, ClawHub terms acceptance and v2
+publication, and social posts by Dhawal.
+
 Plan: docs/PRODUCT_PLAN.md. Orchestrator: Claude (Fable) session. Builders: Codex first;
 Opus subagents when Codex weekly limit is hit (per Dhawal, 2026-08-23).
 Decisions locked by Dhawal 2026-08-23: name = AOMS, license = MIT, own eval before

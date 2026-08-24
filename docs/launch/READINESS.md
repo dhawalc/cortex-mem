@@ -1,5 +1,45 @@
 # AOMS v2 launch readiness audit
 
+## Launch execution record — 2026-08-24
+
+GitHub launch execution completed at `2026-08-24T04:53:49Z` (`2026-08-23
+21:53:49 -07:00`). ClawHub publication is prepared but blocked on Dhawal's
+account-level acceptance of ClawHub's MIT-0 publishing terms. No social posts
+were made; HN/X remain with Dhawal.
+
+| Surface | Final state | Evidence |
+|---|---|---|
+| Public repository | **SHIPPED** | <https://github.com/dhawalc/cortex-mem> is public, defaults to `main`, shows the v2 README, and uses the description “Local-first scoped memory and recall receipts for MCP agent fleets.” |
+| Branch topology | **SHIPPED** | `main` preserves v1 as first-parent history and merges `v2` as a true merge. Release merge `4226a69` has parents `0ee9816` and `581142e`; the CI fix-forward merge is `6720598`. Public `v2` is `451d1d7`. |
+| Annotated tag | **SHIPPED** | `v2.0.0` resolves to release merge `4226a69714013584f6f1e970de3774af743a4848`. |
+| GitHub release | **SHIPPED** | <https://github.com/dhawalc/cortex-mem/releases/tag/v2.0.0> includes the tag-built wheel, all unfiltered ablations, and canonical `rehearsal-008`. |
+| Relay evidence | **REHEARSAL** | Candidate `009` was absent. `rehearsal-008` validated 85 files and passed all 12 verifier checks at `grade=REHEARSAL`; it is explicitly not a final-revision or three-client OpenClaw proof. |
+| Ablations | **SHIPPED / REHEARSAL relay grade** | Five complete 36-case eval artifacts and complete scripted memory-enabled/disabled variants are attached; nested and outer manifests validate. |
+| Local gates | **PASS** | Corrected release candidate and merged `main`: `193 passed`, one known non-failing Pydantic warning; nested fixture: `3 passed`. |
+| GitHub Actions | **PASS after fix-forward 1/3** | [CI](https://github.com/dhawalc/cortex-mem/actions/runs/32691480325) passed Python 3.11, Python 3.12, and clean-wheel acceptance. [Relay fixture](https://github.com/dhawalc/cortex-mem/actions/runs/32691480293) passed. The first CI run exposed missing preserved-v1 test dependencies; commit `451d1d7` fixed only the workflow. |
+| ClawHub | **BLOCKED — TERMS** | CLI auth is valid as `DhawalA4`, but publishing v2.0.0 returns “MIT-0 license terms must be accepted.” The package is ready at `packaging/clawhub/aoms`; the live listing remains stale v1.1.0 and must not be launch collateral. |
+| Social launch | **DHAWAL** | No HN/X or other social posting was performed. |
+
+### Shipped artifacts
+
+- Wheel: <https://github.com/dhawalc/cortex-mem/releases/download/v2.0.0/cortex_mem-2.0.0-py3-none-any.whl>
+- Unfiltered ablations: <https://github.com/dhawalc/cortex-mem/releases/download/v2.0.0/aoms-v2.0.0-unfiltered-ablations.tar.gz>
+- Canonical **REHEARSAL** relay bundle: <https://github.com/dhawalc/cortex-mem/releases/download/v2.0.0/aoms-relay-rehearsal-008.tar.gz>
+- Published essay: <https://github.com/dhawalc/cortex-mem/blob/v2.0.0/docs/launch/silent-corruption-essay.md>
+
+### Remaining post-launch work
+
+1. **PROOF upgrade:** run with bare provider authentication on a
+   bwrap-capable host using Codex `workspace-write`; add working OpenClaw
+   provider credentials for the full Claude/Codex/OpenClaw claim.
+2. **External reproduction watch:** have a person other than the builder run
+   the pinned public instructions on a clean machine and retain exact tag,
+   environment, elapsed time, and verifier output.
+3. **ClawHub:** Dhawal accepts the MIT-0 publishing terms at
+   <https://clawhub.ai/skills/publish>, then reruns the prepared publish command
+   recorded below and verifies a fresh v2.0.0 install.
+4. **Social posts:** HN/X and other launch posting remain Dhawal's action.
+
 **Audit date:** 2026-08-23 (America/Los_Angeles)
 
 **Audited revision:** `v2` at `3b386778cd305e015bbed375dd7184d24325a345`
