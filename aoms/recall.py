@@ -644,6 +644,7 @@ class RecallEngine:
             ],
             supersession_resolution=self.resolve_supersession,
             superseded_suppressed=sorted(resolution.suppressed_ids),
+            context=context,
             total_tokens=token_count,
             latency_ms=latency_ms,
             engine_version=ENGINE_VERSION,

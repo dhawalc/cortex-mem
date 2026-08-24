@@ -76,6 +76,9 @@ class RecallReceipt(ContractModel):
     selected: list[SelectedMemory]
     supersession_resolution: bool = True
     superseded_suppressed: list[str] = Field(default_factory=list)
+    # Additive v1 evidence: older receipts remain readable, while new receipts
+    # retain the exact provenance-fenced artifact shown to the model.
+    context: str | None = None
     total_tokens: int = Field(ge=0)
     latency_ms: float = Field(ge=0.0)
     engine_version: str

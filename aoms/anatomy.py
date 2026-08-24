@@ -9,14 +9,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import html
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from aoms.contracts import MemoryRecord
-from aoms.receipts import CandidateScore, RecallReceipt
+from aoms.observatory.partials import (
+    candidate_rows as _candidate_rows,
+    enum_list as _enum_list,
+    escape_html as _e,
+    format_score as _fmt_score,
+    token_rows as _token_rows,
+)
+from aoms.receipts import RecallReceipt
 from aoms.repositories import MemoryRepository, SQLiteMemoryRepository
 
 
@@ -26,63 +32,6 @@ class LabeledReceipt:
 
     label: str
     receipt: RecallReceipt
-
-
-def _e(value: object) -> str:
-    return html.escape(str(value), quote=True)
-
-
-def _enum_list(values: Sequence[object] | None) -> str:
-    if values is None:
-        return "all visible"
-    return ", ".join(_e(getattr(value, "value", value)) for value in values)
-
-
-def _fmt_score(value: float) -> str:
-    return f"{value:.4f}"
-
-
-def _candidate_rows(receipt: RecallReceipt) -> str:
-    candidates: list[CandidateScore] = []
-    seen: set[str] = set()
-    for candidate in [*receipt.top_candidates, *receipt.rejected_sample]:
-        if candidate.memory_id not in seen:
-            seen.add(candidate.memory_id)
-            candidates.append(candidate)
-    if not candidates:
-        return '<tr><td colspan="8" class="muted">No visible candidates.</td></tr>'
-
-    rows: list[str] = []
-    for position, candidate in enumerate(candidates, start=1):
-        breakdown = "".join(
-            "<li><code>{}</code>: raw {} × weight {} = {}</li>".format(
-                _e(name),
-                _fmt_score(component.raw),
-                _fmt_score(component.weight),
-                _fmt_score(component.contribution),
-            )
-            for name, component in candidate.breakdown.items()
-        )
-        outcome = (
-            '<span class="pill selected">selected</span>'
-            if candidate.selected
-            else '<span class="pill rejected">rejected</span>'
-        )
-        reason = candidate.rejection_reason or "—"
-        rows.append(
-            "<tr>"
-            f"<td>{position}</td>"
-            f"<td><code>{_e(candidate.memory_id)}</code></td>"
-            f"<td>{_e(candidate.kind.value)}</td>"
-            f"<td>{_e(candidate.scope.value)}</td>"
-            f"<td>{_e(', '.join(candidate.retrieval_sources) or 'unspecified')}</td>"
-            f"<td><strong>{_fmt_score(candidate.total_score)}</strong>"
-            f"<ul class=\"breakdown\">{breakdown}</ul></td>"
-            f"<td>{outcome}</td>"
-            f"<td>{_e(reason)}</td>"
-            "</tr>"
-        )
-    return "".join(rows)
 
 
 async def _provenance_chain(
@@ -149,23 +98,6 @@ async def _selected_sections(
     return "".join(sections) or '<p class="muted">No memories were selected.</p>'
 
 
-def _token_rows(receipt: RecallReceipt) -> str:
-    rows = "".join(
-        f"<tr><td>{index}</td><td><code>{_e(item.memory_id)}</code></td>"
-        f"<td>{item.token_cost}</td><td>{'yes' if item.truncated else 'no'}</td></tr>"
-        for index, item in enumerate(receipt.selected, start=1)
-    )
-    selected_sum = sum(item.token_cost for item in receipt.selected)
-    state = "reconciled" if selected_sum == receipt.total_tokens else "mismatch"
-    return (
-        rows
-        + '<tr class="total"><td colspan="2">Sum of serialized marginal costs</td>'
-        f"<td>{selected_sum}</td><td>{state}</td></tr>"
-        + '<tr class="total"><td colspan="2">Receipt total</td>'
-        f"<td>{receipt.total_tokens}</td><td>{state}</td></tr>"
-    )
-
-
 def _comparison(receipts: Sequence[LabeledReceipt]) -> str:
     if len(receipts) < 2:
         return ""
@@ -222,6 +154,15 @@ async def generate_anatomy_html(
     scorer_names = sorted(
         {name for item in receipt.top_candidates for name in item.breakdown}
     )
+    context_html = (
+        '<section id="context"><h2>Final provenance-fenced context</h2>'
+        '<p>This is the exact serialized artifact retained with the receipt.</p>'
+        f'<pre class="query">{_e(receipt.context)}</pre></section>'
+        if receipt.context is not None
+        else '<section id="context"><h2>Final provenance-fenced context</h2>'
+        '<p class="muted">This legacy receipt predates retained context evidence. '
+        'Selected sources and exact marginal token costs remain available below.</p></section>'
+    )
     css = """
 :root { color-scheme: light dark; --bg:#f6f7f9; --panel:#fff; --text:#18202b;
   --muted:#5f6b7a; --line:#d8dee7; --accent:#3157d5; --good:#176b45;
@@ -273,6 +214,7 @@ th { color:var(--muted); } .breakdown { margin:.4rem 0 0; padding-left:1.2rem; w
 <dt>Workspace</dt><dd>{_e(receipt.workspace_id or 'not recorded')}</dd>
 <dt>Scopes</dt><dd>{_enum_list(receipt.scopes)}</dd><dt>Kinds</dt><dd>{_enum_list(receipt.kinds)}</dd>
 <dt>Token ceiling</dt><dd>{receipt.token_budget:,}</dd><dt>Scorers</dt><dd>{_e(', '.join(scorer_names) or 'none')}</dd></dl></section>
+{context_html}
 <section id="funnel"><h2>Candidate funnel</h2><div class="funnel">
 <div class="stage"><span>Retrieved</span><strong>{retrieved}</strong><small>before scope policy</small></div><div class="arrow">→</div>
 <div class="stage"><span>Scope-visible &amp; scored</span><strong>{receipt.candidate_count}</strong><small>{receipt.scope_filtered_count} filtered</small></div><div class="arrow">→</div>
