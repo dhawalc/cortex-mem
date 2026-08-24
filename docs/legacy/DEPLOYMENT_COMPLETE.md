@@ -41,9 +41,9 @@ openclaw-memory AOMS (Always-On Memory Service) is fully deployed and operationa
 
 4. **Backup & Recovery**
    - Daily cron: 4 AM
-   - VPS backup: root@178.156.239.16:/root/backups/openclaw-memory/
+   - VPS backup: backup@192.0.2.10:/root/backups/openclaw-memory/
    - First snapshot: 287KB (compressed)
-   - Backup log: `/home/dhawal/openclaw-memory/snapshots/backup.log`
+   - Backup log: `/home/example/openclaw-memory/snapshots/backup.log`
 
 5. **Documentation**
    - README.md (overview)
@@ -103,7 +103,7 @@ $ systemctl --user status openclaw-memory
 
 ```bash
 $ crontab -l | grep openclaw-memory
-0 4 * * * /home/dhawal/openclaw-memory/backup_to_vps.sh
+0 4 * * * /home/example/openclaw-memory/backup_to_vps.sh
 ```
 
 ---
@@ -119,7 +119,7 @@ $ crontab -l | grep openclaw-memory
 - ✅ memory/2026-02-*.md → episodic/experiences.jsonl (28 entries)
 - ✅ docs/*.md → modules/research/ (17 files)
 
-**Original files untouched** at `/home/dhawal/.openclaw/workspace/`
+**Original files untouched** at `/home/example/.openclaw/workspace/`
 
 ### Documents Ingested into Cortex
 
@@ -173,14 +173,14 @@ results = await aoms.smart_query("trading strategies", token_budget=2000)
 ### Backup Now
 
 ```bash
-/home/dhawal/openclaw-memory/backup_to_vps.sh
+/home/example/openclaw-memory/backup_to_vps.sh
 ```
 
 ### View Logs
 
 ```bash
 journalctl --user -u openclaw-memory -f
-tail -f /home/dhawal/openclaw-memory/snapshots/backup.log
+tail -f /home/example/openclaw-memory/snapshots/backup.log
 ```
 
 ---
@@ -211,8 +211,8 @@ If anything breaks:
 systemctl --user stop openclaw-memory
 
 # Restore from backup
-scp root@178.156.239.16:/root/backups/openclaw-memory/aoms-*.tar.gz /tmp/
-cd /home/dhawal
+scp backup@192.0.2.10:/root/backups/openclaw-memory/aoms-*.tar.gz /tmp/
+cd /home/example
 tar -xzf /tmp/aoms-*.tar.gz
 
 # Restart
@@ -226,7 +226,7 @@ systemctl --user restart openclaw-memory
 ## Files Created
 
 ```
-/home/dhawal/openclaw-memory/
+/home/example/openclaw-memory/
 ├── service/                    # FastAPI app
 ├── cortex/                     # L0/L1/L2 system
 ├── modules/                    # Memory tree
@@ -250,7 +250,7 @@ systemctl --user restart openclaw-memory
 
 **Crontab:**
 ```
-0 4 * * * /home/dhawal/openclaw-memory/backup_to_vps.sh
+0 4 * * * /home/example/openclaw-memory/backup_to_vps.sh
 ```
 
 ---
@@ -284,4 +284,4 @@ systemctl --user restart openclaw-memory
 - **Logs:** `journalctl --user -u openclaw-memory -f`
 - **Health:** `curl http://localhost:9100/health`
 - **Docs:** USAGE.md, ARCHITECTURE.md, INTEGRATION.md
-- **Backup:** `/home/dhawal/openclaw-memory/snapshots/backup.log`
+- **Backup:** `/home/example/openclaw-memory/snapshots/backup.log`

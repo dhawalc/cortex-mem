@@ -45,7 +45,7 @@ cat > ~/cortex-mem/cortex-mem/tasks/2026-02-23-fix-goal-queue/TASK.md << 'EOF'
 - No products since Feb 20
 
 ## Context
-- Daemon location: /home/dhawal/daemon/
+- Daemon location: /home/example/daemon/
 - State file: state/openclaw_coordinator.json
 - Recent changes: Model routing switched to Ollama
 
@@ -57,8 +57,8 @@ cat > ~/cortex-mem/cortex-mem/tasks/2026-02-23-fix-goal-queue/TASK.md << 'EOF'
 
 ## Resources
 - CONTEXT.md (project background)
-- /home/dhawal/daemon/daemon.py
-- /home/dhawal/daemon/goals/*.py
+- /home/example/daemon/daemon.py
+- /home/example/daemon/goals/*.py
 
 ## Notes
 - Use Ollama models (no Claude/OpenAI)
@@ -97,7 +97,7 @@ Update TASK.md:
 - daemon/goals/search_goal.py (added error handling)
 
 ## How to Test
-cd /home/dhawal/daemon
+cd /home/example/daemon
 DAEMON_DISABLE_CHROMADB=1 .venv/bin/python daemon.py
 # Check state/openclaw_coordinator.json after 5 min
 ```
@@ -112,7 +112,7 @@ cd ~/cortex-mem/cortex-mem/tasks/2026-02-23-fix-goal-queue
 cat TASK.md
 
 # Review code
-cd /home/dhawal/daemon
+cd /home/example/daemon
 git diff  # Or read modified files
 
 # Test

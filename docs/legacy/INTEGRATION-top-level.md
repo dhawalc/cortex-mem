@@ -18,7 +18,7 @@ Add to your OpenClaw agent code:
 
 ```python
 import sys
-sys.path.insert(0, "/home/dhawal/openclaw-memory")
+sys.path.insert(0, "/home/example/openclaw-memory")
 from openclaw_integration import log_achievement, log_error, log_fact, sync_to_aoms
 
 # Log achievements
@@ -151,7 +151,7 @@ journalctl --user -u openclaw-memory -f  # Follow logs
 Daily backups to VPS (planned):
 ```bash
 # Add to crontab
-0 4 * * * rsync -avz /home/dhawal/openclaw-memory/ root@178.156.239.16:/root/backups/openclaw-memory/
+0 4 * * * rsync -avz /home/example/openclaw-memory/ backup@192.0.2.10:/root/backups/openclaw-memory/
 ```
 
 ## Next Steps
@@ -165,4 +165,4 @@ Daily backups to VPS (planned):
 
 **Built:** 2026-02-23  
 **Status:** Production-ready  
-**Location:** `/home/dhawal/openclaw-memory/`
+**Location:** `/home/example/openclaw-memory/`

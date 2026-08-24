@@ -170,6 +170,10 @@ Read the supporting evidence:
 - [Anatomy of a token-budgeted handoff](aoms/anatomy.py) — the static receipt report generator.
 - [AOMS Relay Protocol](demo/relay/README.md) — the falsifiable handoff and sealed artifact schema.
 
+## Operations
+
+Never copy a live WAL database directly. The shipped [v2 backup job](packaging/ops/backup-aoms-v2.sh) uses SQLite's online backup API for daily physical generations and `cortex-mem export` for weekly portable recovery bundles, verifies both locally and after VPS transfer, and enforces bounded daily/weekly retention. See [backup operations](docs/legacy/BACKUPS.md) for deployment, restore drills, and the temporary v1/v2 parallel-backup plan.
+
 ## Develop
 
 ```console

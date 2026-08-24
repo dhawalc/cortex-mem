@@ -172,7 +172,7 @@ curl http://localhost:9100/cortex/documents | jq '.documents[] | {title, l0_toke
 
 ```python
 import sys
-sys.path.insert(0, "/home/dhawal/openclaw-memory")
+sys.path.insert(0, "/home/example/openclaw-memory")
 from openclaw_integration import log_achievement, log_error, log_fact
 
 # Log achievements
@@ -206,7 +206,7 @@ await log_fact(
 
 ```python
 import sys
-sys.path.insert(0, "/home/dhawal/openclaw-memory")
+sys.path.insert(0, "/home/example/openclaw-memory")
 from daemon_integration import AOMemoryClient, log_consciousness_cycle
 
 # Initialize client
@@ -274,10 +274,10 @@ curl -X POST http://localhost:9100/memory/weight \
 ### Manual Backup
 
 ```bash
-/home/dhawal/openclaw-memory/backup_to_vps.sh
+/home/example/openclaw-memory/backup_to_vps.sh
 ```
 
-**Backs up to:** `root@178.156.239.16:/root/backups/openclaw-memory/`
+**Backs up to:** `backup@192.0.2.10:/root/backups/openclaw-memory/`
 
 ### Cron Schedule (Recommended)
 
@@ -286,17 +286,17 @@ curl -X POST http://localhost:9100/memory/weight \
 crontab -e
 
 # Daily at 4 AM
-0 4 * * * /home/dhawal/openclaw-memory/backup_to_vps.sh
+0 4 * * * /home/example/openclaw-memory/backup_to_vps.sh
 ```
 
 ### Restore from VPS
 
 ```bash
 # Download latest snapshot
-scp root@178.156.239.16:/root/backups/openclaw-memory/aoms-*.tar.gz /tmp/
+scp backup@192.0.2.10:/root/backups/openclaw-memory/aoms-*.tar.gz /tmp/
 
 # Extract
-cd /home/dhawal
+cd /home/example
 tar -xzf /tmp/aoms-*.tar.gz
 
 # Restart service
@@ -320,7 +320,7 @@ curl http://localhost:9100/health | jq .
   "service": "openclaw-memory",
   "version": "1.1.0",
   "uptime_seconds": 3600,
-  "memory_root": "/home/dhawal/openclaw-memory",
+  "memory_root": "/home/example/openclaw-memory",
   "tiers": {
     "episodic": 50,
     "semantic": 10,
@@ -342,7 +342,7 @@ journalctl --user -u openclaw-memory -n 100 --no-pager
 ### Backup Logs
 
 ```bash
-tail -f /home/dhawal/openclaw-memory/snapshots/backup.log
+tail -f /home/example/openclaw-memory/snapshots/backup.log
 ```
 
 ---
@@ -402,14 +402,14 @@ ollama pull nomic-embed-text
 
 ```bash
 # SQLite database location
-ls -lh /home/dhawal/openclaw-memory/cortex/cortex.db
+ls -lh /home/example/openclaw-memory/cortex/cortex.db
 
 # ChromaDB location
-ls -lh /home/dhawal/openclaw-memory/cortex/chroma/
+ls -lh /home/example/openclaw-memory/cortex/chroma/
 
 # Reset (WARNING: deletes all data)
-rm -rf /home/dhawal/openclaw-memory/cortex/*.db
-rm -rf /home/dhawal/openclaw-memory/cortex/chroma/
+rm -rf /home/example/openclaw-memory/cortex/*.db
+rm -rf /home/example/openclaw-memory/cortex/chroma/
 systemctl --user restart openclaw-memory
 ```
 
