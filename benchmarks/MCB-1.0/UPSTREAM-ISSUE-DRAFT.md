@@ -100,3 +100,30 @@ and it is worth more than a favourable number.
 ### If no maintainer responds
 Freeze this as-is. Do not manufacture further self-validation; take MCB-1.0 to a different
 independent framework instead.
+
+### OUTCOME: issue 3437 auto-closed 2026-08-24 — venue was wrong
+
+github-actions[bot] closed it for missing required disclosures (repository acknowledgment
+phrase, anti-spam checkbox, third-party product disclosure + relationship, AI policy
+acknowledgment, authorship option, AI tools used).
+
+Root cause was mine and it was venue, not wording: letta-ai/letta sets
+`blank_issues_enabled: false` and ships NO issue templates — only a config.yml routing
+harness/CLI issues to letta-ai/letta-code, questions to Discord, and docs to docs.letta.com.
+I checked ISSUE_TEMPLATE, saw only config.yml, and wrongly concluded "no templates, so a
+plain issue is fine." The correct reading was "this repo does not take issues."
+
+Do NOT refile the same request into letta-ai/letta-code: that repo is for the current agent
+harness/CLI/App Server, its templates are bug_report and feature_request, and an
+adapter-semantics validation request is neither. Refiling after an auto-close would read as
+spam.
+
+CORRECT REMAINING VENUE: Discord (https://discord.gg/letta), per their own routing.
+Requires a human account.
+
+NOTE FOR ANY REFILING: Letta requires an AI disclosure naming every AI tool used. This
+request was AI-assisted — drafted by Claude (Claude Code) under Dhawal's direction. Any
+resubmission must say so plainly.
+
+STILL VALID AND UNAFFECTED: the security disclosure to support@letta.com (thread
+1a035b35b4981950) went through their documented channel and stands on its own.
