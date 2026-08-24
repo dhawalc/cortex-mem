@@ -76,13 +76,15 @@ VPS destination. Do not copy a live WAL database with `cp`, `rsync`, or `tar`.
    its date for rollback:
 
    ```console
+   python_bin="${AOMS_PYTHON:?set AOMS_PYTHON to the deployed v2 interpreter}"
+   cli_bin="${AOMS_CLI:?set AOMS_CLI to the deployed cortex-mem executable}"
    snapshot="$HOME/openclaw_archives/aoms-v2/daily/aoms-v2-$(date +%F).sqlite3.zst"
    test -s "$snapshot"
    test -s "$snapshot.sha256"
    test -s "$snapshot.metadata.json"
    (cd "$(dirname "$snapshot")" && sha256sum -c "$(basename "$snapshot").sha256")
    zstd -t "$snapshot"
-   /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python - "$snapshot.metadata.json" <<'PY'
+   "$python_bin" - "$snapshot.metadata.json" <<'PY'
    import json
    import sys
 
@@ -98,7 +100,7 @@ VPS destination. Do not copy a live WAL database with `cp`, `rsync`, or `tar`.
 
    ```console
    AOMS_EMBEDDING_PROVIDER=none \
-     /home/dhawal/cortex-mem/cortex-mem/.venv/bin/cortex-mem init \
+     "$cli_bin" init \
      --data-dir "$HOME/.local/share/aoms"
    ```
 
@@ -109,10 +111,10 @@ VPS destination. Do not copy a live WAL database with `cp`, `rsync`, or `tar`.
 
    ```console
    AOMS_EMBEDDING_PROVIDER=none \
-     /home/dhawal/cortex-mem/cortex-mem/.venv/bin/cortex-mem doctor \
+     "$cli_bin" doctor \
      --data-dir "$HOME/.local/share/aoms"
 
-   /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python - \
+   "$python_bin" - \
      "$HOME/.local/share/aoms/aoms.sqlite3" <<'PY'
    import sqlite3
    import sys
