@@ -1,0 +1,102 @@
+MCB-1.0 Letta adapter environment record
+========================================
+
+System under test
+-----------------
+Package pin ............. letta==0.16.8 (PyPI wheel)
+Generated SDK pin ....... letta-client==1.12.1
+Upstream Git tag 0.16.8 . 1131535716e8a31c9a437f8695e25ac98f203a24
+Server version reported . 0.16.8 (GET /v1/health/ -> {"version":"0.16.8","status":"ok"})
+Letta wheel SHA-256 ..... 2d200cd13212c9232650c7efa16c0a4682ce5e89af8a0e53f3fbd09fc34091d3
+SDK wheel SHA-256 ....... 6f554569a684d57e7f4e4513f8ce6792129b305df37393c650e50776f61baf99
+
+Note: the PyPI wheel metadata does not itself attest the Git commit above; the
+upstream version tag is the commit pin.
+
+Host
+----
+Host .................... Linux blacklightning 6.8.0-136-generic x86_64
+OS ...................... Ubuntu 24.04.4 LTS
+Python (Letta venv) ..... CPython 3.12.3, /tmp/letta-probe/venv
+Runner interpreter ...... /tmp/letta-probe/venv/bin/python (runner.py is stdlib only;
+                          it must run in the venv that has letta_client)
+
+Models (fully local, no hosted API called)
+------------------------------------------
+Inference backend ....... Ollama at http://127.0.0.1:11434
+LLM handle .............. ollama/qwen3:8b
+LLM digest .............. 500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41
+LLM details ............. 8.2B parameters, Q4_K_M quantisation
+Embedding handle ........ ollama/nomic-embed-text:latest
+Embedding digest ........ 0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f
+Embedding details ....... 137M parameters, F16, 768 dimensions
+Embedding endpoint ...... http://127.0.0.1:11434/v1 (OpenAI-compatible route; the
+                          stock ollama handle posts to /embeddings and gets 404)
+
+No OpenAI, Anthropic, or other hosted model API was contacted during this
+benchmark. All cloud provider environment variables are unset by run-server.sh.
+
+Letta server
+------------
+Base URL ................ http://127.0.0.1:18283 (loopback only, --no-ade --no-secure)
+LETTA_DIR ............... /tmp/letta-probe/state
+Tracing ................. LETTA_DISABLE_TRACING=true
+Database ................ PostgreSQL 16.15, isolated cluster at 127.0.0.1:15432/letta_probe
+Database files .......... /tmp/letta-probe/state/pgdata
+pgvector ................ Ubuntu package 0.6.0-1, extracted under /tmp/letta-probe,
+                          not installed into system directories
+Schema .................. 48 tables created from installed ORM metadata by
+                          /tmp/letta-probe/init-schema.py, plus the
+                          messages_sequence_id_seq default that only exists in
+                          the (absent) Alembic migration bundle
+
+Deviations from a stock `pip install letta`
+-------------------------------------------
+These were established by the environment probe under /tmp/letta-probe and are
+carried into this benchmark unchanged. They are packaging and isolation fixes;
+none of them alters memory semantics, tool behaviour, or model output.
+
+1. asyncpg==0.31.0 installed. Absent from Letta's declared requirements; the
+   server cannot import its PostgreSQL engine without it.
+2. pgvector==0.5.0 installed. Absent from Letta's declared requirements; the
+   PostgreSQL ORM import fails without it.
+3. Schema bootstrapped from ORM metadata. The wheel ships no usable migration
+   bundle. This is the largest reproducibility caveat.
+4. letta/constants.py patched so LETTA_DIR honours the environment variable
+   instead of hard-coding ~/.letta. Without this the benchmark would read and
+   write the machine owner's live Letta state.
+5. letta/config_file.py patched so conf.yaml is looked up under LETTA_DIR, for
+   the same isolation reason.
+6. letta/server/rest_api/app.py patched to check for NLTK punkt_tab locally
+   instead of calling nltk.download at startup, because network model/data
+   downloads were forbidden for this run.
+
+The exact diffs are /tmp/letta-probe/local-wheel.patch. The full 253-distribution
+pip freeze is /tmp/letta-probe/environment.txt.
+
+Agent configuration used by the adapter
+---------------------------------------
+Agent type .............. server default (memgpt_v2 prompt), one fresh agent per case
+include_base_tools ...... true
+Attached tools (primary,
+core-memory run) ........ conversation_search, memory_insert, memory_replace
+                          (Letta v2 agents exclude archival_memory_insert and
+                          archival_memory_search as DEPRECATED_LETTA_TOOLS;
+                          see letta/services/helpers/agent_manager_helper.py
+                          calculate_base_tools)
+Attached tools (secondary,
+archival run) ........... the above plus archival_memory_insert and
+                          archival_memory_search, requested explicitly via the
+                          adapter's `extra_tools` config key
+enable_sleeptime ........ false (explicit; no background memory agent)
+max_steps ............... 8
+Concurrency ............. none; cases run strictly sequentially, one agent each,
+                          because the installed SDK documents same-agent
+                          concurrency as undefined behaviour
+
+Storage isolation
+-----------------
+Every case creates its own Letta agent inside the disposable /tmp/letta-probe
+PostgreSQL cluster. The adapter refuses any base_url that is not loopback.
+No AOMS data directory, ~/.local/share/aoms, ~/.letta, or live service was read
+or written.
