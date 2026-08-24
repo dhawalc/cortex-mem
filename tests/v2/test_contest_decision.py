@@ -329,3 +329,64 @@ def test_a_legacy_shaped_record_still_loads_and_opts_out_of_the_gate():
         occupied(),
         now=NOW,
     ) == Decision(disposition=WriteDisposition.ADMITTED)
+
+
+# --- the model-facing surface stays deliberate ----------------------------
+
+
+def test_the_gate_adds_no_new_tool_and_only_the_intended_parameters():
+    """Three tools, and an explicit inventory of what the model can now send.
+
+    New capability rides entirely on additive contract fields, which become
+    optional tool parameters through the adapter's reflection over
+    `model_fields`. That is convenient enough to widen the surface by
+    accident, so the surface is pinned here rather than left to a snapshot
+    hash that a future change would simply be told to regenerate.
+    """
+
+    import inspect
+    from pathlib import Path
+
+    from aoms.adapters import mcp_server
+    from aoms.contracts import RecallRequest, SearchRequest
+
+    source = Path(inspect.getfile(mcp_server)).read_text()
+    assert source.count("server.add_tool") == 3
+
+    assert set(RememberRequest.model_fields) == {
+        "id",
+        "kind",
+        "content",
+        "tags",
+        "scope",
+        "provenance",
+        "supersedes",
+        "metadata",
+        # The gate's entire model-facing footprint on remember.
+        "claim_key",
+        "observation_id",
+    }
+    assert set(SearchRequest.model_fields) == {
+        "query",
+        "limit",
+        "offset",
+        "kinds",
+        "scopes",
+        "include_contested",
+    }
+    # Recall gains nothing a caller can set: what it withholds is not the
+    # caller's decision.
+    assert set(RecallRequest.model_fields) == {
+        "task",
+        "token_budget",
+        "scopes",
+        "kinds",
+    }
+    # And no tool exposes a disposition, a contest id, or a scope identity.
+    for model in (RememberRequest, SearchRequest, RecallRequest):
+        assert not {"disposition", "contest_id", "contested"} & set(
+            model.model_fields
+        )
+        assert not {"agent_id", "workspace_id", "scope_agent_id"} & set(
+            model.model_fields
+        )
