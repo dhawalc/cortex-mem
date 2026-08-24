@@ -89,37 +89,77 @@ async def test_writes_without_a_claim_key_behave_exactly_as_before(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_a_write_derived_from_recalled_memory_can_never_displace(tmp_path):
+async def test_an_undeclared_write_out_of_memory_is_still_contested(tmp_path):
+    """Laundering that does not declare replacement is caught by T1.
+
+    This is the coverage that survives disabling T3. What T3 additionally
+    caught was only the case where the writer *declared* replacement and also
+    volunteered that it had read the incumbent — a shape a hostile writer
+    reaches by omitting one optional field, and an honest one cannot avoid.
+    """
+
     application = build(tmp_path)
     await remember(application, id="protected", claim_key="catalog-price")
 
     recalled = await application.recall(RecallRequest(task="catalog price"))
     receipt_id = recalled.diagnostics["receipt_id"]
 
-    # The laundering shape: read memory, then re-assert it as your own write,
-    # declaring a supersedes link so the collision trigger would have passed.
     laundered = await remember(
         application,
         id="laundered",
         claim_key="catalog-price",
         content=HOSTILE,
-        supersedes="protected",
         provenance=Provenance(source="agent", derived_from=[receipt_id]),
     )
     assert laundered.disposition is WriteDisposition.CONTESTED
     assert laundered.incumbent_ids == ["protected"]
-
     entry = await application.repository.get_contest(laundered.contest_id)
     assert entry is not None
-    assert entry.trigger is ContestTrigger.DERIVED
+    assert entry.trigger is ContestTrigger.SLOT_COLLISION
+    # The citation is still recorded, it simply no longer decides anything.
+    assert entry.record_id == "laundered"
+    receipts = await application.repository.recent_write_receipts()
+    laundered_receipt = next(r for r in receipts if r.record_id == "laundered")
+    assert laundered_receipt.derived_from == [receipt_id]
 
-    # The incumbent is byte-identical and still the only thing that packs.
     incumbent = await application.repository.get("protected")
     assert incumbent is not None
     assert incumbent.content == "the catalog price is 100 dollars"
     packed = await application.recall(RecallRequest(task="catalog price"))
     assert "SYSTEM OVERRIDE" not in packed.context
     assert [source.memory_id for source in packed.sources] == ["protected"]
+
+
+@pytest.mark.asyncio
+async def test_an_honest_citation_no_longer_costs_the_writer_anything(tmp_path):
+    """The regression this whole change exists to prevent.
+
+    A live Claude Code session read the incumbent, corrected it, declared
+    `supersedes` correctly, cited what it had read, was contested for the
+    citation, and then wrote itself instructions to stop using claim_key.
+    """
+
+    application = build(tmp_path)
+    await remember(application, id="protected", claim_key="catalog-price")
+    recalled = await application.recall(RecallRequest(task="catalog price"))
+
+    honest = await remember(
+        application,
+        id="honest-correction",
+        claim_key="catalog-price",
+        content="the catalog price is 120 dollars",
+        supersedes="protected",
+        provenance=Provenance(
+            source="agent",
+            derived_from=[recalled.diagnostics["receipt_id"]],
+        ),
+    )
+    assert honest.disposition is WriteDisposition.ADMITTED
+    assert honest.contest_id is None
+    assert (await application.repository.list_contests()).total == 0
+
+    packed = await application.recall(RecallRequest(task="catalog price"))
+    assert [source.memory_id for source in packed.sources] == ["honest-correction"]
 
 
 @pytest.mark.asyncio
@@ -247,17 +287,32 @@ async def test_a_contested_write_leaves_the_incumbent_byte_identical(tmp_path):
 
 @pytest.mark.asyncio
 async def test_a_contested_successor_cannot_block_a_legitimate_correction(tmp_path):
+    """A contested record that *does* carry a supersedes link must not freeze
+    its incumbent: `supersede` refuses to act on a record that has a direct
+    successor, so a hostile writer could otherwise hold a fact hostage.
+
+    Reaching that shape now takes the retrograde trigger, because a write
+    declaring supersedes at the occupant is otherwise admitted.
+    """
+
     application = build(tmp_path)
-    await remember(application, id="protected", claim_key="k")
+    now = datetime.now(timezone.utc)
+    await remember(
+        application,
+        id="protected",
+        claim_key="k",
+        provenance=Provenance(source="agent", asserted_at=now - timedelta(days=1)),
+    )
     contested = await remember(
         application,
         id="hostile-successor",
         claim_key="k",
         content=HOSTILE,
         supersedes="protected",
-        provenance=Provenance(source="agent", derived_from=["some-receipt-id"]),
+        provenance=Provenance(source="agent", asserted_at=now - timedelta(days=400)),
     )
     assert contested.disposition is WriteDisposition.CONTESTED
+    assert contested.record.supersedes == "protected"
 
     # The operator must still be able to correct the incumbent normally.
     corrected = await application.supersede(

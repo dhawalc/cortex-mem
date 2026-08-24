@@ -22,10 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- The `remember` tool description and the `supersedes`, `claim_key`, `id` and `observation_id` parameters now carry guidance telling a caller to declare what it replaces. No parameter was added; only documentation. This is the difference between a 0% and an 82.35% false-rejection rate for an adopter, so leaving those descriptions empty was the defect.
+- The `remember` tool description and the `supersedes`, `claim_key`, `id` and `observation_id` parameters now carry guidance telling a caller to declare what it replaces. No parameter was added; only documentation. Note the measured claim: **declaring costs nothing** (0% false rejection where the caller declares, 82.35% where it does not). We do not claim the guidance is what causes declaring — an A/B against real models found Claude Code already declares correctly without it, and a smaller model did not declare in either arm. See `docs/experiments/declare-ab/`.
 - **Behavioral contract change for MCP clients.** `remember`'s semantics widen from "this was stored" to "this was stored, and here is whether it holds the slot." `RememberResult` gains `disposition`, `contest_id`, and `incumbent_ids`; a contested write reports itself in-band, the same turn, and names the record still standing. Clients that never send `claim_key` see no behavior change at all.
 - Schema `LATEST_SCHEMA_VERSION` moves 6 to 7. Migration 7 is pure DDL: it rewrites no `record_json`, deletes nothing, and backfills nothing. `memories.claim_key` is nullable with no default, so **every record written before this release is non-participating** and keeps exactly the semantics it had. Defaulting existing rows to a comparable weak value would have let the first post-upgrade write dominate everything written before the feature existed.
 - Contested records are excluded from `list`, `search`, recall candidates, visible counts, and lineage by one predicate at the shared read choke point, rather than by a filter re-implemented per query.
+
+### Removed
+
+- The `derived-from-memory` contest trigger is no longer enabled by default. It was specified as the block against laundering and it never blocked anything: `derived_from` is caller-declared and optional, so a writer intent on displacing an occupant omits it and is admitted, while a write that declares no replacement is contested regardless. Its only reachable effect was to contest writers honest enough to record where they had read something — measured live, where every contest across twelve Claude Code sessions came from this trigger and one agent responded by writing itself instructions to stop using `claim_key`. `derived_from` is still recorded on every write receipt and contest entry; only its power to block is gone, and the trigger remains implemented and configurable. `RULESET_VERSION` moves to 2, so every receipt's digest distinguishes the two behaviours. **Open problem:** a real defence needs provenance a caller cannot omit — server-stamped, session-linked — which is not in this release.
 
 ### Security
 

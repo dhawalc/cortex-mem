@@ -1,0 +1,3508 @@
+{
+  "model": "qwen3:8b",
+  "temperature": 0.7,
+  "condition": "unprompted",
+  "trials_per_arm": 20,
+  "total_model_calls": 80,
+  "wall_seconds": 809.6,
+  "results": [
+    {
+      "arm": "A-no-guidance",
+      "seed": 1000,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "tags": [
+              "infrastructure",
+              "deployment"
+            ],
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1. Previously deployed to cluster-west-2. No other changes to staging.",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "user-announcement"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "2bdb94b6-5d56-4fba-9b51-486590b8bd31"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:13:25.778355Z",
+          "updated_at": "2026-08-24T20:13:25.778355Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "2bdb94b6-5d56-4fba-9b51-486590b8bd31",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1. Previously deployed to cluster-west-2. No other changes to staging.",
+          "tags": [
+            "infrastructure",
+            "deployment"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:13:25.785904Z",
+          "updated_at": "2026-08-24T20:13:25.785904Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1000,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment-changes",
+              "source": "user-announcement"
+            },
+            "tags": [
+              "infrastructure",
+              "deployment"
+            ],
+            "claim_key": "staging-deployment-cluster"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": "staging-deployment-cluster",
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "6f94a33c-68f5-4852-87f5-68c26dc299a7"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:13:45.339557Z",
+          "updated_at": "2026-08-24T20:13:45.339557Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "6f94a33c-68f5-4852-87f5-68c26dc299a7",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+          "tags": [
+            "infrastructure",
+            "deployment"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": "deployment-changes",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:13:45.352269Z",
+          "updated_at": "2026-08-24T20:13:45.352269Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deployment-cluster",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1001,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "provenance": {
+              "source": "user-announcement"
+            },
+            "claim_key": "staging-deployment-cluster",
+            "tags": [
+              "deployment",
+              "migration"
+            ],
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other changes to staging configuration.",
+            "kind": "fact"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": "staging-deployment-cluster",
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "e830e5c2-8967-45f5-a0c9-12c854274fee"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:14:16.715756Z",
+          "updated_at": "2026-08-24T20:14:16.715756Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "e830e5c2-8967-45f5-a0c9-12c854274fee",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other changes to staging configuration.",
+          "tags": [
+            "deployment",
+            "migration"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:14:16.728578Z",
+          "updated_at": "2026-08-24T20:14:16.728578Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deployment-cluster",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1001,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "user_notification"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "3239c1f1-0b0f-413b-b6b2-53d8ad40d97f"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:14:22.345627Z",
+          "updated_at": "2026-08-24T20:14:22.345627Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "3239c1f1-0b0f-413b-b6b2-53d8ad40d97f",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user_notification",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:14:22.353010Z",
+          "updated_at": "2026-08-24T20:14:22.353010Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1002,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes.",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "User confirmation of staging migration completion"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "783fa9c0-02b1-4c90-8711-5e34f20686e2"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:14:41.560173Z",
+          "updated_at": "2026-08-24T20:14:41.560173Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "783fa9c0-02b1-4c90-8711-5e34f20686e2",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "User confirmation of staging migration completion",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:14:41.567856Z",
+          "updated_at": "2026-08-24T20:14:41.567856Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1002,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configuration has changed.",
+            "provenance": {
+              "source": "user-announcement",
+              "tier": "workspace"
+            },
+            "tags": [
+              "infrastructure",
+              "deployment"
+            ],
+            "kind": "fact"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "0564cecf-2e49-4b8b-8e80-f1a8605a97db"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:15:06.791832Z",
+          "updated_at": "2026-08-24T20:15:06.791832Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "0564cecf-2e49-4b8b-8e80-f1a8605a97db",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configuration has changed.",
+          "tags": [
+            "infrastructure",
+            "deployment"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": "workspace",
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:15:06.798978Z",
+          "updated_at": "2026-08-24T20:15:06.798978Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1003,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "claim_key": "staging-deployment-cluster",
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user message confirming migration completion"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": "staging-deployment-cluster",
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "ffabce3a-aaa2-4cea-ab2a-7872a5c257d5"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:15:21.945835Z",
+          "updated_at": "2026-08-24T20:15:21.945835Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "ffabce3a-aaa2-4cea-ab2a-7872a5c257d5",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user message confirming migration completion",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:15:21.952933Z",
+          "updated_at": "2026-08-24T20:15:21.952933Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deployment-cluster",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1003,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "asserted_at": "2023-10-05T09:30:00Z",
+              "source": "user_notification"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "2da57322-4114-4b9e-9dd7-0b11de9b2d76"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:15:36.610227Z",
+          "updated_at": "2026-08-24T20:15:36.610227Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "2da57322-4114-4b9e-9dd7-0b11de9b2d76",
+          "kind": "fact",
+          "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user_notification",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-05T09:30:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:15:36.617910Z",
+          "updated_at": "2026-08-24T20:15:36.617910Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1004,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning. No other staging configurations have changed.",
+            "provenance": {
+              "asserted_at": "2023-10-05T09:00:00Z",
+              "source": "user-announcement"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "42a733af-29b6-4a41-921c-3d3141ac0b4b"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:13.936422Z",
+          "updated_at": "2026-08-24T20:16:13.936422Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "42a733af-29b6-4a41-921c-3d3141ac0b4b",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-05T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:13.944025Z",
+          "updated_at": "2026-08-24T20:16:13.944025Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1004,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "tags": [
+              "deployment",
+              "staging"
+            ],
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user-announcement"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "f734a3ff-9031-4ba5-a0fa-3d50a73789bf"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:22.697628Z",
+          "updated_at": "2026-08-24T20:16:22.697628Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "f734a3ff-9031-4ba5-a0fa-3d50a73789bf",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes.",
+          "tags": [
+            "deployment",
+            "staging"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:22.705023Z",
+          "updated_at": "2026-08-24T20:16:22.705023Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1005,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "provenance": {
+              "record_type": "deployment-configuration",
+              "source": "user-announcement"
+            },
+            "claim_key": "staging-deployment-cluster",
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed."
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": "staging-deployment-cluster",
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "5b67bed5-78be-48db-b75f-d547fa135fab"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:38.148256Z",
+          "updated_at": "2026-08-24T20:16:38.148256Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "5b67bed5-78be-48db-b75f-d547fa135fab",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": "deployment-configuration",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:38.155468Z",
+          "updated_at": "2026-08-24T20:16:38.155468Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deployment-cluster",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1005,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging environment migration completed. Deployment target changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment_change",
+              "source": "user_notification"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "1ed31b03-4128-4f10-bf80-f2a776b1fcaa"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:54.381864Z",
+          "updated_at": "2026-08-24T20:16:54.381864Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "1ed31b03-4128-4f10-bf80-f2a776b1fcaa",
+          "kind": "fact",
+          "content": "Staging environment migration completed. Deployment target changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user_notification",
+            "tier": null,
+            "record_type": "deployment_change",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:16:54.389253Z",
+          "updated_at": "2026-08-24T20:16:54.389253Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1006,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployments now target cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "user-announcement"
+            },
+            "tags": [
+              "deployment",
+              "staging"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "c139a1ed-7cbf-43ce-84f0-8834659e4463"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:17:14.614082Z",
+          "updated_at": "2026-08-24T20:17:14.614082Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "c139a1ed-7cbf-43ce-84f0-8834659e4463",
+          "kind": "fact",
+          "content": "Staging deployments now target cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+          "tags": [
+            "deployment",
+            "staging"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:17:14.621526Z",
+          "updated_at": "2026-08-24T20:17:14.621526Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1006,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1. Previously deployed to cluster-west-2. No other changes.",
+            "kind": "fact",
+            "provenance": {
+              "record_type": "deployment-update",
+              "source": "user-session"
+            },
+            "tags": [
+              "infrastructure",
+              "deployment"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "4715477d-1e44-44fa-ad18-1dc15a1b31a6"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:17:33.572401Z",
+          "updated_at": "2026-08-24T20:17:33.572401Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "4715477d-1e44-44fa-ad18-1dc15a1b31a6",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1. Previously deployed to cluster-west-2. No other changes.",
+          "tags": [
+            "infrastructure",
+            "deployment"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-session",
+            "tier": null,
+            "record_type": "deployment-update",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:17:33.584937Z",
+          "updated_at": "2026-08-24T20:17:33.584937Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1007,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment_change",
+              "source": "User confirmation of staging migration completion"
+            },
+            "tags": [
+              "infrastructure",
+              "deployment"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "645b6a10-977a-4287-a7b4-158914335e73"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:09.999518Z",
+          "updated_at": "2026-08-24T20:18:09.999518Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "645b6a10-977a-4287-a7b4-158914335e73",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [
+            "infrastructure",
+            "deployment"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "User confirmation of staging migration completion",
+            "tier": null,
+            "record_type": "deployment_change",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:10.012576Z",
+          "updated_at": "2026-08-24T20:18:10.012576Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1007,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment-change",
+              "source": "user-announcement"
+            },
+            "tags": [
+              "deployment",
+              "staging"
+            ],
+            "kind": "fact"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "e0f51eab-0649-49c9-8f56-2a06a6a8c5fd"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:15.554991Z",
+          "updated_at": "2026-08-24T20:18:15.554991Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "e0f51eab-0649-49c9-8f56-2a06a6a8c5fd",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [
+            "deployment",
+            "staging"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": "deployment-change",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:15.562403Z",
+          "updated_at": "2026-08-24T20:18:15.562403Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1008,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user-announcement"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "771fbbe1-328d-483a-b912-bd8d5dfad0ba"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:29.951736Z",
+          "updated_at": "2026-08-24T20:18:29.951736Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "771fbbe1-328d-483a-b912-bd8d5dfad0ba",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:29.958962Z",
+          "updated_at": "2026-08-24T20:18:29.958962Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1008,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+            "kind": "fact",
+            "provenance": {
+              "source": "operations-team-announcement",
+              "tier": "production"
+            },
+            "tags": [
+              "infrastructure",
+              "deployment"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "cd477499-acc7-4bd2-b877-bf404ff168c7"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:51.126246Z",
+          "updated_at": "2026-08-24T20:18:51.126246Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "cd477499-acc7-4bd2-b877-bf404ff168c7",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+          "tags": [
+            "infrastructure",
+            "deployment"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "operations-team-announcement",
+            "tier": "production",
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:18:51.133201Z",
+          "updated_at": "2026-08-24T20:18:51.133201Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1009,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "user-announcement"
+            },
+            "tags": [
+              "deployment",
+              "migration"
+            ],
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+            "kind": "fact"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "3e3bac16-805c-4e5a-8c3a-959e286b40fd"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:11.406412Z",
+          "updated_at": "2026-08-24T20:19:11.406412Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "3e3bac16-805c-4e5a-8c3a-959e286b40fd",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+          "tags": [
+            "deployment",
+            "migration"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:11.419003Z",
+          "updated_at": "2026-08-24T20:19:11.419003Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1009,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging deployments have been updated to use cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user notification about staging migration completion"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "0ee8faf7-fd7d-4201-941c-cccce53b5664"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:15.071858Z",
+          "updated_at": "2026-08-24T20:19:15.071858Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "0ee8faf7-fd7d-4201-941c-cccce53b5664",
+          "kind": "fact",
+          "content": "Staging deployments have been updated to use cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user notification about staging migration completion",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:15.079371Z",
+          "updated_at": "2026-08-24T20:19:15.079371Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1010,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning with no other modifications to the staging environment.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user-announcement"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "0dd8d1c5-46e4-4c39-8a18-e68cdda6355f"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:24.728419Z",
+          "updated_at": "2026-08-24T20:19:24.728419Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "0dd8d1c5-46e4-4c39-8a18-e68cdda6355f",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning with no other modifications to the staging environment.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:24.735731Z",
+          "updated_at": "2026-08-24T20:19:24.735731Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1010,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "claim_key": "staging-cluster-migration",
+            "tags": [
+              "migration",
+              "staging"
+            ],
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user-announcement",
+              "tier": "workspace"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": "staging-cluster-migration",
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "395f8dc0-690b-4533-944d-64eecb4d43ce"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:37.947057Z",
+          "updated_at": "2026-08-24T20:19:37.947057Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "395f8dc0-690b-4533-944d-64eecb4d43ce",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. This change was completed this morning.",
+          "tags": [
+            "migration",
+            "staging"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": "workspace",
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:37.954467Z",
+          "updated_at": "2026-08-24T20:19:37.954467Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-cluster-migration",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1011,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user_update"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "89975c2f-8bbb-4729-b031-9e1fae4c9257"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:49.478064Z",
+          "updated_at": "2026-08-24T20:19:49.478064Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "89975c2f-8bbb-4729-b031-9e1fae4c9257",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user_update",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:19:49.494827Z",
+          "updated_at": "2026-08-24T20:19:49.494827Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1011,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment_change",
+              "source": "user-confirmed migration completion"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "06ada27b-4167-445e-9718-6d1d3f670d99"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:20:21.835501Z",
+          "updated_at": "2026-08-24T20:20:21.835501Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "06ada27b-4167-445e-9718-6d1d3f670d99",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-confirmed migration completion",
+            "tier": null,
+            "record_type": "deployment_change",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:20:21.848036Z",
+          "updated_at": "2026-08-24T20:20:21.848036Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1012,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment-update",
+              "source": "user-confirmation"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "5ac6f508-c5b5-4225-9001-83d63aa24163"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:20:52.185132Z",
+          "updated_at": "2026-08-24T20:20:52.185132Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "5ac6f508-c5b5-4225-9001-83d63aa24163",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-confirmation",
+            "tier": null,
+            "record_type": "deployment-update",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:20:52.192803Z",
+          "updated_at": "2026-08-24T20:20:52.192803Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1012,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+            "provenance": {
+              "record_type": "deployment-changes",
+              "source": "user-announcement"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "8ed477f7-3b06-4e3b-8728-0ade100f0a40"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:21:10.900260Z",
+          "updated_at": "2026-08-24T20:21:10.900260Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "8ed477f7-3b06-4e3b-8728-0ade100f0a40",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": "deployment-changes",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:21:10.907537Z",
+          "updated_at": "2026-08-24T20:21:10.907537Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1013,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging environment deployment target changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment-update",
+              "source": "operations-team-announcement"
+            },
+            "tags": [
+              "infrastructure",
+              "deployment",
+              "staging"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "ae6af558-1055-4d08-b9ad-8ba659f7393f"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:21:32.163232Z",
+          "updated_at": "2026-08-24T20:21:32.163232Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "ae6af558-1055-4d08-b9ad-8ba659f7393f",
+          "kind": "fact",
+          "content": "Staging environment deployment target changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [
+            "infrastructure",
+            "deployment",
+            "staging"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "operations-team-announcement",
+            "tier": null,
+            "record_type": "deployment-update",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:21:32.175725Z",
+          "updated_at": "2026-08-24T20:21:32.175725Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1013,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "user-announcement"
+            },
+            "tags": [
+              "deployment",
+              "staging"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "9e5ce734-adc4-4ea8-a624-f3c4fe71f851"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:21:51.515740Z",
+          "updated_at": "2026-08-24T20:21:51.515740Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "9e5ce734-adc4-4ea8-a624-f3c4fe71f851",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [
+            "deployment",
+            "staging"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:21:51.528770Z",
+          "updated_at": "2026-08-24T20:21:51.528770Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1014,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "user notification"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "bcdcdefd-27ea-478f-a382-146457efa632"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:22:24.150074Z",
+          "updated_at": "2026-08-24T20:22:24.150074Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "bcdcdefd-27ea-478f-a382-146457efa632",
+          "kind": "fact",
+          "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user notification",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:22:24.157372Z",
+          "updated_at": "2026-08-24T20:22:24.157372Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1014,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "provenance": {
+              "asserted_at": "2023-10-05T09:30:00Z",
+              "source": "user input"
+            },
+            "kind": "fact",
+            "content": "Staging now deploys to cluster-east-1. No other changes to staging."
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "717dcf54-bb30-4beb-a11b-61a373295382"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:22:49.684729Z",
+          "updated_at": "2026-08-24T20:22:49.684729Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "717dcf54-bb30-4beb-a11b-61a373295382",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1. No other changes to staging.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user input",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-05T09:30:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:22:49.697388Z",
+          "updated_at": "2026-08-24T20:22:49.697388Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1015,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+            "kind": "fact",
+            "provenance": {
+              "source": "user-announcement"
+            },
+            "claim_key": "staging-deployment-cluster"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": "staging-deployment-cluster",
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "2e2a77b5-d0c8-4ef3-b721-162c1d2897e2"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:23:07.033759Z",
+          "updated_at": "2026-08-24T20:23:07.033759Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "2e2a77b5-d0c8-4ef3-b721-162c1d2897e2",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other changes to staging.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:23:07.047522Z",
+          "updated_at": "2026-08-24T20:23:07.047522Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deployment-cluster",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1015,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment-update",
+              "source": "user-announcement"
+            },
+            "kind": "fact"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "1cade818-d9e8-4233-b3fa-c7b611aa4e7b"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:23:30.990176Z",
+          "updated_at": "2026-08-24T20:23:30.990176Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "1cade818-d9e8-4233-b3fa-c7b611aa4e7b",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-announcement",
+            "tier": null,
+            "record_type": "deployment-update",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:23:30.997568Z",
+          "updated_at": "2026-08-24T20:23:30.997568Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1016,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging no longer deploys to cluster-west-2; it now deploys to cluster-east-1. Nothing else about staging changed.",
+            "provenance": {
+              "record_type": "deployment-update",
+              "source": "user-session",
+              "tier": "critical"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "51d09b87-44e9-4192-8fdc-2e82246f4a00"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:23:58.101017Z",
+          "updated_at": "2026-08-24T20:23:58.101017Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "51d09b87-44e9-4192-8fdc-2e82246f4a00",
+          "kind": "fact",
+          "content": "Staging no longer deploys to cluster-west-2; it now deploys to cluster-east-1. Nothing else about staging changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-session",
+            "tier": "critical",
+            "record_type": "deployment-update",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:23:58.108251Z",
+          "updated_at": "2026-08-24T20:23:58.108251Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1016,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+            "provenance": {
+              "source": "user-confirmed-migration-complete",
+              "tier": "operational"
+            },
+            "claim_key": "staging-deployment-cluster",
+            "kind": "fact"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": "staging-deployment-cluster",
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "99e29e6a-7196-4f7c-87d1-19cc930764da"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:24:24.778673Z",
+          "updated_at": "2026-08-24T20:24:24.778673Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "99e29e6a-7196-4f7c-87d1-19cc930764da",
+          "kind": "fact",
+          "content": "Staging now deploys to cluster-east-1 instead of cluster-west-2. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-confirmed-migration-complete",
+            "tier": "operational",
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:24:24.791338Z",
+          "updated_at": "2026-08-24T20:24:24.791338Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deployment-cluster",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1017,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations modified.",
+            "kind": "fact",
+            "provenance": {
+              "record_type": "fact",
+              "source": "operations-team-announcement"
+            },
+            "tags": [
+              "infrastructure",
+              "deployment"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "4fdf6b67-82cc-4638-b639-f8bfd7f3554b"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:24:36.853230Z",
+          "updated_at": "2026-08-24T20:24:36.853230Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "4fdf6b67-82cc-4638-b639-f8bfd7f3554b",
+          "kind": "fact",
+          "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations modified.",
+          "tags": [
+            "infrastructure",
+            "deployment"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "operations-team-announcement",
+            "tier": null,
+            "record_type": "fact",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:24:36.861172Z",
+          "updated_at": "2026-08-24T20:24:36.861172Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1017,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "user_confirmation"
+            },
+            "tags": [
+              "deployment",
+              "staging"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "b047834b-4510-4347-9bcd-ae3b58cc2e80"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:24:58.458012Z",
+          "updated_at": "2026-08-24T20:24:58.458012Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "b047834b-4510-4347-9bcd-ae3b58cc2e80",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [
+            "deployment",
+            "staging"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user_confirmation",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:24:58.465674Z",
+          "updated_at": "2026-08-24T20:24:58.465674Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1018,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deploys to cluster-east-1",
+            "provenance": {
+              "asserted_at": "2023-10-15T09:00:00Z",
+              "source": "current session"
+            }
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "813206ca-dc93-4720-acc4-c1ba9d105170"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:25:23.608862Z",
+          "updated_at": "2026-08-24T20:25:23.608862Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "813206ca-dc93-4720-acc4-c1ba9d105170",
+          "kind": "fact",
+          "content": "Staging deploys to cluster-east-1",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "current session",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": "2023-10-15T09:00:00Z",
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:25:23.622101Z",
+          "updated_at": "2026-08-24T20:25:23.622101Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1018,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "kind": "fact",
+            "provenance": {
+              "record_type": "deployment_update",
+              "source": "user-confirmed deployment change"
+            },
+            "tags": [
+              "infrastructure",
+              "migration"
+            ]
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "33f760d6-f380-44e0-9616-a5844a1089d3"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:25:47.104531Z",
+          "updated_at": "2026-08-24T20:25:47.104531Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "33f760d6-f380-44e0-9616-a5844a1089d3",
+          "kind": "fact",
+          "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [
+            "infrastructure",
+            "migration"
+          ],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user-confirmed deployment change",
+            "tier": null,
+            "record_type": "deployment_update",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:25:47.117668Z",
+          "updated_at": "2026-08-24T20:25:47.117668Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "B-guidance",
+      "seed": 1019,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "kind": "fact",
+            "content": "Staging deployments have been migrated from cluster-west-2 to cluster-east-1. No other changes to staging configuration.",
+            "provenance": {
+              "record_type": "deployment-update",
+              "source": "user-announcement"
+            },
+            "tags": [
+              "deployment",
+              "staging",
+              "migration"
+            ],
+            "token_budget": 100
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "error": "ValidationError",
+          "detail": "1 validation error for RememberRequest\ntoken_budget\n  Extra inputs are not permitted [type=extra_forbidden, input_value=100, input_type=int]\n    For further inf"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:26:09.425587Z",
+          "updated_at": "2026-08-24T20:26:09.425587Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    },
+    {
+      "arm": "A-no-guidance",
+      "seed": 1019,
+      "model_calls": 2,
+      "tool_calls": [
+        {
+          "name": "remember",
+          "arguments": {
+            "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+            "provenance": {
+              "record_type": "deployment_update",
+              "source": "user_manual"
+            },
+            "kind": "fact"
+          }
+        }
+      ],
+      "calls": [
+        {
+          "tool": "remember",
+          "claim_key": null,
+          "supersedes": null,
+          "disposition": "admitted",
+          "record_id": "b67c17b7-69cf-475e-95e7-8b751ee6b8d4"
+        }
+      ],
+      "contested_records": 0,
+      "current": [
+        {
+          "id": "seed-staging-target",
+          "kind": "fact",
+          "content": "The staging environment deploys to Kubernetes cluster cluster-west-2.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "application",
+            "tier": null,
+            "record_type": null,
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:26:37.516330Z",
+          "updated_at": "2026-08-24T20:26:37.516330Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": "staging-deploy-target",
+          "disposition": "admitted",
+          "observation_id": null
+        },
+        {
+          "id": "b67c17b7-69cf-475e-95e7-8b751ee6b8d4",
+          "kind": "fact",
+          "content": "Staging deployment cluster changed from cluster-west-2 to cluster-east-1. No other staging configurations have changed.",
+          "tags": [],
+          "scope": "workspace",
+          "scope_agent_id": null,
+          "scope_workspace_id": "/trial",
+          "created_by_agent_id": "trial-agent",
+          "provenance": {
+            "source": "user_manual",
+            "tier": null,
+            "record_type": "deployment_update",
+            "details": {
+              "agent_id": "trial-agent"
+            },
+            "asserted_at": null,
+            "derived_from": []
+          },
+          "created_at": "2026-08-24T20:26:37.523663Z",
+          "updated_at": "2026-08-24T20:26:37.523663Z",
+          "supersedes": null,
+          "metadata": {},
+          "claim_key": null,
+          "disposition": "admitted",
+          "observation_id": null
+        }
+      ],
+      "condition": "unprompted"
+    }
+  ]
+}

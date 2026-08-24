@@ -268,12 +268,12 @@ class RememberRequest(ContractModel):
     supersedes: str | None = Field(
         default=None,
         description=(
-            "Id of the record this one replaces. Set it whenever you are "
-            "correcting or updating something already stored. If you also set "
-            "claim_key and a record already answers that proposition, this is "
-            "required: without it your write is kept in full but held as "
-            "contested, and the existing record stays current until a person "
-            "resolves it."
+            "Id of the record this one replaces. Look it up first with recall "
+            "or search, then set it whenever you are correcting or updating "
+            "something already stored. If you also set claim_key and a record "
+            "already answers that proposition, this is required: without it "
+            "your write is kept in full but held as contested, and the "
+            "existing record stays current until a person resolves it."
         ),
     )
     metadata: dict[str, Any] = Field(default_factory=dict)

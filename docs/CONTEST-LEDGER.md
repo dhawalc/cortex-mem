@@ -41,6 +41,11 @@ Read that table twice, because it is the whole design. **Where the caller
 declares its replacement, the gate costs nothing at all.** Where it does not,
 roughly four out of five valid revisions are held instead of applied.
 
+Note carefully what that table does and does not say. It says declaring is
+free. It does **not** say that our tool descriptions cause declaring — we
+tested that separately and it is not supported. See "Will your agent actually
+declare?" below.
+
 The gate reads the *shape* of a write — an occupied slot, different content,
 no declared supersession — not the quality of its evidence. It cannot tell a
 well-supported undeclared revision from an unsupported one, and it does not
@@ -67,6 +72,40 @@ If you cannot know the incumbent's id at write time, either read it first
 (`search`) or do not set `claim_key` on that write. Setting `claim_key`
 without ever declaring replacement is the configuration that produces the
 82%, and it is not a configuration we recommend to anyone.
+
+## Will your agent actually declare? Read before writing
+
+**An agent that writes blind cannot declare supersession at all**, because it
+has no incumbent id to name. Declaring requires having read first. If your
+writer does not `recall` or `search` before it writes, `claim_key` will
+contest nearly everything it does, and no amount of instruction will fix that
+— there is nothing for "the id of the record you are replacing" to refer to.
+
+We A/B tested the tool descriptions against real models
+(`docs/experiments/declare-ab/`). What we found:
+
+- **Claude Code already declares without being told.** 8/8 trials on the
+  surface that mentions nothing set the matching `claim_key` and declared
+  `supersedes` with the correct id. It reads first, so it has the id. There
+  was no gap for guidance to close.
+- **qwen3:8b never declared, in either arm.** 0/20 both. It never read before
+  writing. The guidance did move `claim_key` adoption (0/20 → 7/20,
+  p=0.008) *without* moving declaration — inducing precisely the
+  configuration this document warns against. It escaped producing contests
+  only by inventing a key that happened not to collide.
+
+So the prerequisite is a capability, not a prompt: **adopt `claim_key` only
+for writers that read before they write.**
+
+### Honest limits of that experiment
+
+n=8 and n=4 on Claude Code; the arm difference on write cleanliness was
+p=0.061, **not significant**. One task shape, one domain, one seeded fact, and
+correction-of-a-known-fact is the friendliest possible case for declaring.
+
+**Known unmeasured:** long sessions where the incumbent's id has fallen out of
+the agent's context. That is where we would expect declaration rates to drop
+most, and it is the obvious next experiment. Nobody has run it.
 
 ## What draining actually costs
 
@@ -144,6 +183,31 @@ High-breadth writers that cannot read before writing.
 **Never** set `claim_key` from untrusted content. It is a caller declaration
 like any other, and while a hostile key cannot displace anything — that is the
 entire point — it can fill your inbox.
+
+## One trigger we removed, and why
+
+An earlier build contested any write whose provenance cited `derived_from` —
+intended to stop an agent laundering crafted memory back in as its own claim.
+It is off by default now, because it never did that. `derived_from` is
+caller-declared and optional, so a writer intent on displacing an occupant
+omits it and is admitted; and a write that does *not* declare replacement is
+contested anyway. Its only reachable effect was to contest writers honest
+enough to record where they had read something.
+
+That was not hypothetical. In the live trials above, **every** contest came
+from this trigger and none from slot collision, and in one session the agent
+responded by writing itself durable instructions to stop setting `claim_key`
+on corrections. It found the escape hatch and documented it for its
+successors.
+
+`derived_from` is still recorded on every write receipt and contest entry, so
+the audit trail is unchanged; only its power to block is gone. The trigger
+remains implemented and can be enabled deliberately.
+
+**Open problem.** A real defence here needs provenance a caller cannot omit:
+the server would have to know that a write followed a recall and stamp that
+link itself, rather than trusting a self-reported field. That is a new trust
+root and a new attack surface, and it is not in this release.
 
 ## What this does not do
 

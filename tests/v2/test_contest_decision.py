@@ -15,6 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from aoms.contest import (
+    DEFERRED_TRIGGERS,
     DEFAULT_RULESET,
     Decision,
     Ruleset,
@@ -164,17 +165,58 @@ def test_t2_does_not_fire_on_equal_timestamps():
     assert decision.disposition is WriteDisposition.ADMITTED
 
 
-def test_t3_blocks_laundering_even_when_supersession_is_declared():
-    # The laundering shape: read memory, then re-assert it as your own write
-    # while declaring a supersedes link so T1 would have let it through.
-    decision = decide(
+def test_t3_is_not_enabled_by_default_because_it_only_penalises_candour():
+    """The trigger meant to block laundering blocks nothing.
+
+    `derived_from` is caller-declared and optional, so a writer intent on
+    displacing an occupant omits it. Enabling this trigger changes exactly one
+    outcome: it contests a writer honest enough to record where it read
+    something. Measured live in docs/experiments/declare-ab, where every
+    contest across twelve Claude Code sessions came from this trigger and the
+    agent eventually wrote itself instructions for routing around the gate.
+    """
+
+    assert ContestTrigger.DERIVED not in DEFAULT_RULESET.enabled_triggers
+    assert ContestTrigger.DERIVED in DEFERRED_TRIGGERS
+
+    honest = intent(supersedes="incumbent-1", derived_from=("receipt-abc",))
+    hostile = intent(supersedes="incumbent-1")
+    assert decide(honest, occupied(), now=NOW).disposition is (
+        WriteDisposition.ADMITTED
+    )
+    assert decide(hostile, occupied(), now=NOW).disposition is (
+        WriteDisposition.ADMITTED
+    )
+
+
+def test_t3_when_deliberately_enabled_still_cannot_constrain_a_hostile_writer():
+    """Pinned, so re-enabling it is a decision rather than an oversight."""
+
+    with_t3 = Ruleset(
+        enabled_triggers=DEFAULT_RULESET.enabled_triggers | {ContestTrigger.DERIVED}
+    )
+    honest = decide(
         intent(supersedes="incumbent-1", derived_from=("receipt-abc",)),
         occupied(),
         now=NOW,
+        ruleset=with_t3,
     )
-    assert decision.disposition is WriteDisposition.CONTESTED
-    assert decision.trigger is ContestTrigger.DERIVED
-    assert decision.detail == {"derived_from_count": 1}
+    hostile = decide(
+        intent(supersedes="incumbent-1"), occupied(), now=NOW, ruleset=with_t3
+    )
+    assert honest.disposition is WriteDisposition.CONTESTED
+    assert honest.trigger is ContestTrigger.DERIVED
+    # One omitted field, and the identical displacement sails through.
+    assert hostile.disposition is WriteDisposition.ADMITTED
+
+
+def test_an_undeclared_write_is_contested_whether_or_not_it_cites_sources():
+    """T1 covers the undeclared case regardless, which is why T3 added nothing."""
+
+    for cited in ((), ("receipt-abc",)):
+        decision = decide(intent(derived_from=cited), occupied(), now=NOW)
+        assert decision.disposition is WriteDisposition.CONTESTED
+        assert decision.trigger is ContestTrigger.SLOT_COLLISION
 
 
 def test_t3_does_not_fire_on_a_virgin_slot():

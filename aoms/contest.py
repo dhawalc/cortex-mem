@@ -31,8 +31,9 @@ from aoms.contracts import (
 )
 
 # Bumped when the meaning of a trigger changes, so a stored digest can never
-# silently describe different behaviour than the one that produced it.
-RULESET_VERSION = 1
+# silently describe different behaviour than the one that produced it. Version 2
+# drops DERIVED from the default set; see DEFERRED_TRIGGERS below.
+RULESET_VERSION = 2
 
 # T4 is a seam, not a rule. No classifier ships in v1, and nothing but a named
 # human resolution ever changes a durable disposition.
@@ -40,9 +41,43 @@ V1_TRIGGERS: frozenset[ContestTrigger] = frozenset(
     {
         ContestTrigger.SLOT_COLLISION,
         ContestTrigger.RETROGRADE,
-        ContestTrigger.DERIVED,
     }
 )
+
+# DERIVED stays implemented and configurable, and is deliberately absent from
+# the default set above.
+#
+# It was specified as the mechanism that blocks the laundering attack, on the
+# understanding that `derived_from` marked content that had come out of memory.
+# It does not block it. `derived_from` is a caller-declared optional field, so
+# a writer intent on displacing an occupant simply omits it:
+#
+#     declares supersedes + cites derived_from  ->  contested
+#     declares supersedes, omits derived_from   ->  admitted
+#
+# And when supersedes is not declared, T1 contests regardless. So the only
+# reachable effect of this trigger is to contest a writer honest enough to
+# record where it read something.
+#
+# That is measured, not theoretical. In a live A/B (docs/experiments/declare-ab)
+# every contest observed across twelve Claude Code sessions came from this
+# trigger and none from slot collision. The agent read the incumbent, corrected
+# it, declared `supersedes` correctly, cited the record it had read, and was
+# contested for the citation. It then wrote itself durable memory instructing
+# future sessions to stop setting `claim_key` on corrections. A trigger that
+# penalises candour and stops no adversary is worse than no trigger: it trains
+# agents out of citing sources, and out of using the feature at all.
+#
+# `derived_from` is still recorded on every write receipt and contest entry, so
+# nothing leaves the audit trail. Only the power to block is gone.
+#
+# OPEN PROBLEM, deliberately unsolved here. A real laundering defence needs
+# provenance a caller cannot omit: the server would have to know that a write
+# followed a recall and stamp that link itself, rather than trusting a
+# self-reported field. That is session-linked provenance — a new trust root and
+# a new attack surface — and it is out of scope for this release. Written down
+# so it is not rediscovered from scratch.
+DEFERRED_TRIGGERS: frozenset[ContestTrigger] = frozenset({ContestTrigger.DERIVED})
 
 
 def content_digest(content: object) -> str:
@@ -256,6 +291,7 @@ def is_expired_held(opened_at: datetime, *, now: datetime, ruleset: Ruleset) -> 
 
 __all__ = [
     "DEFAULT_RULESET",
+    "DEFERRED_TRIGGERS",
     "RULESET_VERSION",
     "V1_TRIGGERS",
     "Decision",
