@@ -1082,6 +1082,11 @@ def mcp_command(context: click.Context) -> None:
         raise click.exceptions.Exit(result)
 
 
+from aoms.observatory.cli import observe_command as _observe_command  # noqa: E402
+
+main.add_command(_observe_command)
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()
 
