@@ -48,6 +48,9 @@ MANIFEST
 # Private memory corpus and retired v1 repository copies
 /modules/
 /cortex/
+/cortex_mem/
+/service/
+/schemas/
 /tasks/
 /backup_to_vps.sh
 /install.sh
@@ -59,3 +62,7 @@ MANIFEST
 /migrate_workspace.py
 /openclaw_integration.py
 /scripts/export_daemon_memory.py
+/tests/test_api.py
+/tests/test_cortex.py
+/tests/test_integration.py
+/tests/test_progressive_loading.py

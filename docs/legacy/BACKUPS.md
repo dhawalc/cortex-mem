@@ -10,7 +10,7 @@ This deployment has two live storage generations during the v1-to-v2 transition.
 | 04:30 daily | `~/.openclaw/workspace/scripts/backup-aoms-versioned.sh` | Legacy v1 `cortex-mem/modules/memory` | Dated v1 archives: seven local generations and three VPS generations. |
 | 04:45 daily | `~/.openclaw/workspace/scripts/backup-aoms-v2.sh` | Canonical v2 `~/.local/share/aoms/aoms.sqlite3`, including SQLite tables, FTS, sqlite-vec vectors, the embedding queue, auth state, and recall receipts | SQLite online snapshot every day; weekly physical snapshot plus portable `cortex-mem export`; verified local and VPS generations. |
 
-The v2 job is shipped as [`packaging/ops/backup-aoms-v2.sh`](../../packaging/ops/backup-aoms-v2.sh). Its default deployment paths can be overridden with the `AOMS_*` environment variables at the top of the script.
+The v2 job is shipped as [`packaging/ops/backup-aoms-v2.sh`](../../packaging/ops/backup-aoms-v2.sh). Local paths have portable defaults, but deployments must set `AOMS_BACKUP_VPS`; `AOMS_BACKUP_VPS_DIR` defaults to `/srv/backups/aoms-v2`. Production-specific remote values belong in the private scheduler environment, not in the shipping script.
 
 ## v2 safety and retention
 
@@ -26,7 +26,11 @@ Retention is:
 
 The job is guarded by `flock`, lowers its process priority, writes partial artifacts before atomic rename, refuses to overwrite an incomplete same-day generation, and logs to `~/.openclaw/workspace/logs/backup-aoms-v2.log`.
 
+On this transitional host, the 04:45 crontab entry pins both the requested venv interpreter and `PYTHONPATH=/path/to/aoms-v2`. The installed 2.0.0 wheel predates an additive receipt field already present on branch `v2`; the source pin keeps export/restore behavior aligned with the live schema until the normal package deployment is refreshed. Remove that pin only after a portable restore drill passes with the installed launcher by itself.
+
 ## Recovery drills
+
+For the production recovery decision tree, verified cutover procedure, VPS machine-loss commands, and the 2026-08-24 restore evidence, use the [disaster-recovery runbook](../RECOVERY.md).
 
 Physical recovery is the fastest path and preserves the vector tables. Restore into a new directory, never over the live store:
 

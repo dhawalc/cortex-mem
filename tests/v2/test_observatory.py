@@ -28,6 +28,7 @@ from aoms.observatory.cli import observe_command
 from aoms.observatory.repository import ObservatoryRepository
 from aoms.observatory.server import (
     LOOPBACK_HOST,
+    TOKEN_QUERY_PARAMETER,
     ObservatoryApplication,
     ObservatoryHTTPServer,
 )
@@ -111,10 +112,45 @@ def test_endpoint_smoke_and_loopback_http_adapter(tmp_path: Path) -> None:
         connection = HTTPConnection(LOOPBACK_HOST, server.server_port, timeout=3)
         connection.request("GET", "/memories")
         response = connection.getresponse()
+        response.read()
+        assert response.status == 403
+
+        target = f"/memories?{TOKEN_QUERY_PARAMETER}={server.url_token}"
+        connection.request("GET", target, headers={"Host": "evil.example.com"})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == 403
+
+        connection.request(
+            "GET",
+            target,
+            headers={
+                "Origin": f"http://evil.example.com:{server.server_port}",
+            },
+        )
+        response = connection.getresponse()
+        response.read()
+        assert response.status == 403
+
+        connection.request(
+            "GET",
+            target,
+            headers={
+                "Origin": f"http://{LOOPBACK_HOST}:{server.server_port}",
+            },
+        )
+        response = connection.getresponse()
         body = response.read()
         assert response.status == 200
         assert response.getheader("Content-Security-Policy")
+        cookie = response.getheader("Set-Cookie")
+        assert cookie and "HttpOnly" in cookie and "SameSite=Strict" in cookie
         assert b"pagination fixture" in body
+
+        connection.request("GET", "/memories", headers={"Cookie": cookie})
+        response = connection.getresponse()
+        response.read()
+        assert response.status == 200
     finally:
         server.shutdown()
         server.server_close()

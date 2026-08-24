@@ -9,9 +9,13 @@ local tabs.
 from __future__ import annotations
 
 import asyncio
+import hmac
+import ipaddress
 import re
+import secrets
 import sqlite3
 from dataclasses import dataclass, field
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Mapping
@@ -33,6 +37,8 @@ from aoms.observatory.repository import InvalidCursor, ObservatoryRepository
 from aoms.repositories import SQLiteMemoryRepository
 
 LOOPBACK_HOST = "127.0.0.1"
+TOKEN_QUERY_PARAMETER = "_aoms_token"
+TOKEN_COOKIE_NAME = "AOMSObservatory"
 DEFAULT_PAGE_SIZE = 50
 DEFAULT_TIMELINE_SIZE = 80
 _SAFE_FILENAME = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -172,14 +178,74 @@ class ObservatoryRequestHandler(BaseHTTPRequestHandler):
     def application(self) -> ObservatoryApplication:
         return self.server.application  # type: ignore[attr-defined,no-any-return]
 
+    @property
+    def observatory_server(self) -> ObservatoryHTTPServer:
+        return self.server  # type: ignore[return-value]
+
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        self._respond(self.application.handle("GET", self.path), include_body=True)
+        self._dispatch("GET", include_body=True)
 
     def do_HEAD(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
-        self._respond(self.application.handle("HEAD", self.path), include_body=False)
+        self._dispatch("HEAD", include_body=False)
 
     def do_POST(self) -> None:  # noqa: N802 - explicit read-only posture
-        self._respond(self.application.handle("POST", self.path), include_body=True)
+        self._dispatch("POST", include_body=True)
+
+    def _dispatch(self, method: str, *, include_body: bool) -> None:
+        rejection = self._security_rejection()
+        if rejection is not None:
+            self._respond(rejection, include_body=include_body)
+            return
+        response = self.application.handle(method, self.path)
+        if self._query_token_is_valid():
+            headers = dict(response.headers)
+            headers["Set-Cookie"] = (
+                f"{TOKEN_COOKIE_NAME}={self.observatory_server.url_token}; "
+                "Path=/; HttpOnly; SameSite=Strict"
+            )
+            response = Response(
+                status=response.status,
+                body=response.body,
+                content_type=response.content_type,
+                headers=headers,
+            )
+        self._respond(response, include_body=include_body)
+
+    def _security_rejection(self) -> Response | None:
+        port = self.observatory_server.server_port
+        if not _valid_loopback_host(self.headers.get("Host", ""), port=port):
+            return self.application._html(403, error_page(403, "Forbidden request"))
+        origin = self.headers.get("Origin")
+        if origin is not None and not _valid_loopback_origin(origin, port=port):
+            return self.application._html(403, error_page(403, "Forbidden request"))
+        if not (self._query_token_is_valid() or self._cookie_token_is_valid()):
+            return self.application._html(403, error_page(403, "Forbidden request"))
+        return None
+
+    def _query_token_is_valid(self) -> bool:
+        values = parse_qs(urlsplit(self.path).query).get(TOKEN_QUERY_PARAMETER, [])
+        return any(
+            hmac.compare_digest(value, self.observatory_server.url_token)
+            for value in values
+        )
+
+    def _cookie_token_is_valid(self) -> bool:
+        raw_cookie = self.headers.get("Cookie", "")
+        if not raw_cookie:
+            return False
+        cookie = SimpleCookie()
+        try:
+            cookie.load(raw_cookie)
+        except CookieError:
+            return False
+        morsel = cookie.get(TOKEN_COOKIE_NAME)
+        return bool(
+            morsel
+            and hmac.compare_digest(
+                morsel.value,
+                self.observatory_server.url_token,
+            )
+        )
 
     def _respond(self, response: Response, *, include_body: bool) -> None:
         self.send_response(response.status)
@@ -200,15 +266,74 @@ class ObservatoryRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(response.body)
 
     def log_message(self, format: str, *args: object) -> None:
-        # Preserve useful local access logs without reverse DNS or request bodies.
-        super().log_message(format, *args)
+        # Preserve local access logs without writing the URL bootstrap token.
+        redacted = tuple(
+            re.sub(
+                rf"([?&]{TOKEN_QUERY_PARAMETER}=)[^& ]+",
+                r"\1[REDACTED]",
+                str(value),
+            )
+            for value in args
+        )
+        super().log_message(format, *redacted)
+
+
+def _loopback_hostname(value: str) -> bool:
+    if value.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def _valid_loopback_host(value: str, *, port: int) -> bool:
+    try:
+        parsed = urlsplit(f"//{value}")
+        request_port = parsed.port or 80
+    except ValueError:
+        return False
+    return bool(
+        parsed.hostname
+        and parsed.username is None
+        and parsed.password is None
+        and not parsed.path
+        and _loopback_hostname(parsed.hostname)
+        and request_port == port
+    )
+
+
+def _valid_loopback_origin(value: str, *, port: int) -> bool:
+    try:
+        parsed = urlsplit(value)
+        origin_port = parsed.port or (80 if parsed.scheme == "http" else 443)
+    except ValueError:
+        return False
+    return bool(
+        parsed.scheme == "http"
+        and parsed.hostname
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path in {"", "/"}
+        and not parsed.query
+        and not parsed.fragment
+        and _loopback_hostname(parsed.hostname)
+        and origin_port == port
+    )
 
 
 class ObservatoryHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], application: ObservatoryApplication):
+    def __init__(
+        self,
+        address: tuple[str, int],
+        application: ObservatoryApplication,
+        *,
+        url_token: str | None = None,
+    ):
         self.application = application
+        self.url_token = url_token or secrets.token_urlsafe(32)
         super().__init__(address, ObservatoryRequestHandler)
 
 
@@ -217,7 +342,11 @@ def serve(db_path: str | Path, *, port: int = 8765) -> None:
 
     application = ObservatoryApplication(db_path)
     with ObservatoryHTTPServer((LOOPBACK_HOST, port), application) as server:
-        print(f"Recall Observatory: http://{LOOPBACK_HOST}:{server.server_port}")
+        print(
+            "Recall Observatory: "
+            f"http://{LOOPBACK_HOST}:{server.server_port}/"
+            f"?{TOKEN_QUERY_PARAMETER}={server.url_token}"
+        )
         print(f"Read-only store: {application.db_path}")
         try:
             server.serve_forever()
@@ -227,6 +356,7 @@ def serve(db_path: str | Path, *, port: int = 8765) -> None:
 
 __all__ = [
     "LOOPBACK_HOST",
+    "TOKEN_QUERY_PARAMETER",
     "ObservatoryApplication",
     "ObservatoryHTTPServer",
     "Response",

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dhawalc/cortex-mem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dhawalc/cortex-mem/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
 
 **One local brain, hard workspace boundaries.** AOMS lets Claude Code, Codex, OpenClaw, and other MCP agents share durable memory without collapsing every client and project into one undifferentiated profile.
 
@@ -20,6 +20,11 @@ Memory systems make different tradeoffs: some center one assistant, a hosted ser
 
 ## Quick start
 
+> [!WARNING]
+> Do not install `cortex-mem` 1.0.0 from PyPI. That release is the retired v1
+> HTTP daemon, not AOMS v2. Until a reviewed v2 package is published, use the
+> pinned Git release command below.
+
 From the project you want to bind, run the pinned Git release:
 
 ```console
@@ -36,7 +41,7 @@ Use `codex` or `openclaw` instead of `claude` for another supported host. `setup
 
 The success output names the binding explicitly—for example, `bound as agent=claude workspace=myproject`. It never silently registers `default/default`.
 
-Python 3.11 or 3.12 is recommended. The default local embedding model is downloaded only when a non-empty store first needs semantic retrieval. Empty-store recall returns immediately without loading it.
+Python 3.11 through 3.13 is supported. The default local embedding model is downloaded only when a non-empty store first needs semantic retrieval. Empty-store recall returns immediately without loading it.
 
 ## The 60-second check: remember, kill, cold-recall
 
@@ -172,7 +177,7 @@ Read the supporting evidence:
 
 ## Operations
 
-Never copy a live WAL database directly. The shipped [v2 backup job](packaging/ops/backup-aoms-v2.sh) uses SQLite's online backup API for daily physical generations and `cortex-mem export` for weekly portable recovery bundles, verifies both locally and after VPS transfer, and enforces bounded daily/weekly retention. See [backup operations](docs/legacy/BACKUPS.md) for deployment, restore drills, and the temporary v1/v2 parallel-backup plan.
+Never copy a live WAL database directly. The shipped [v2 backup job](packaging/ops/backup-aoms-v2.sh) uses SQLite's online backup API for daily physical generations and `cortex-mem export` for weekly portable recovery bundles, verifies both locally and after VPS transfer, and enforces bounded daily/weekly retention. Use the [disaster-recovery runbook](docs/RECOVERY.md) for corrupted-store, machine-loss, and bad-write recovery; see [backup operations](docs/legacy/BACKUPS.md) for deployment and the temporary v1/v2 parallel-backup plan.
 
 ## Develop
 

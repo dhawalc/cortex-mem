@@ -8,6 +8,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+MAX_RECORD_ID_LENGTH = 256
+MAX_PROVENANCE_SOURCE_LENGTH = 2_048
+
 
 class ContractModel(BaseModel):
     """Strict base model so adapter mistakes fail at the system boundary."""
@@ -53,7 +56,7 @@ class ScopeContext(ContractModel):
 class Provenance(ContractModel):
     """Where a memory came from, without assuming a transport or filesystem."""
 
-    source: str = Field(min_length=1)
+    source: str = Field(min_length=1, max_length=MAX_PROVENANCE_SOURCE_LENGTH)
     tier: str | None = None
     record_type: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
@@ -68,7 +71,7 @@ def _ensure_aware(value: datetime) -> datetime:
 class MemoryRecord(ContractModel):
     """Canonical persisted representation of one AOMS memory."""
 
-    id: str = Field(min_length=1)
+    id: str = Field(min_length=1, max_length=MAX_RECORD_ID_LENGTH)
     kind: MemoryKind
     content: str | dict[str, Any] | list[Any]
     tags: list[str] = Field(default_factory=list)
@@ -107,7 +110,9 @@ class MemoryRecord(ContractModel):
 
 
 class RememberRequest(ContractModel):
-    id: str | None = Field(default=None, min_length=1)
+    id: str | None = Field(
+        default=None, min_length=1, max_length=MAX_RECORD_ID_LENGTH
+    )
     kind: MemoryKind
     content: str | dict[str, Any] | list[Any]
     tags: list[str] = Field(default_factory=list)
@@ -124,7 +129,9 @@ class RememberResult(ContractModel):
 
 class SupersedeRequest(ContractModel):
     content: str | dict[str, Any] | list[Any]
-    id: str | None = Field(default=None, min_length=1)
+    id: str | None = Field(
+        default=None, min_length=1, max_length=MAX_RECORD_ID_LENGTH
+    )
     provenance: Provenance | None = None
 
 

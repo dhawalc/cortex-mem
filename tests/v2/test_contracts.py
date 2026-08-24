@@ -14,6 +14,10 @@ from aoms.contracts import (
     RecallSource,
     Scope,
 )
+from aoms.contracts.models import (
+    MAX_PROVENANCE_SOURCE_LENGTH,
+    MAX_RECORD_ID_LENGTH,
+)
 
 
 def test_memory_record_json_round_trip() -> None:
@@ -73,3 +77,17 @@ def test_contracts_reject_free_form_kind_and_scope() -> None:
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
+
+
+def test_record_and_provenance_identifiers_have_bounded_lengths() -> None:
+    with pytest.raises(ValidationError, match="at most 256 characters"):
+        MemoryRecord(
+            id="x" * (MAX_RECORD_ID_LENGTH + 1),
+            kind=MemoryKind.FACT,
+            content="text",
+            provenance=Provenance(source="fixture"),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+    with pytest.raises(ValidationError, match="at most 2048 characters"):
+        Provenance(source="x" * (MAX_PROVENANCE_SOURCE_LENGTH + 1))

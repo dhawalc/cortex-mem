@@ -238,16 +238,16 @@ def discover_files(input_dir: Path) -> list[Path]:
 def validate_paths(input_dir: Path, output_dir: Path, allow_live_read: bool) -> tuple[Path, Path]:
     input_dir = input_dir.expanduser().resolve()
     output_dir = output_dir.expanduser().resolve()
+    if input_dir == LIVE_MEMORY_DIR and not allow_live_read:
+        raise ValueError(
+            f"refusing to read live memory directory without --allow-live-read: {LIVE_MEMORY_DIR}"
+        )
     if not input_dir.is_dir():
         raise ValueError(f"input directory does not exist or is not a directory: {input_dir}")
     if output_dir == input_dir or output_dir.is_relative_to(input_dir):
         raise ValueError("output directory must not equal or be inside the input directory")
     if output_dir == LIVE_MEMORY_DIR or output_dir.is_relative_to(LIVE_MEMORY_DIR):
         raise ValueError(f"output directory must never be inside live memory: {LIVE_MEMORY_DIR}")
-    if input_dir == LIVE_MEMORY_DIR and not allow_live_read:
-        raise ValueError(
-            f"refusing to read live memory directory without --allow-live-read: {LIVE_MEMORY_DIR}"
-        )
     return input_dir, output_dir
 
 
