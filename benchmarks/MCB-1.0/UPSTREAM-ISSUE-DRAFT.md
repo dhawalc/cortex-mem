@@ -127,3 +127,16 @@ resubmission must say so plainly.
 
 STILL VALID AND UNAFFECTED: the security disclosure to support@letta.com (thread
 1a035b35b4981950) went through their documented channel and stands on its own.
+
+### RESUBMITTED VIA THE OPEN CHANNEL — 2026-08-24
+
+The adapter-semantics request was sent to support@letta.com (Gmail thread 1a035ee43aae4b74),
+the channel Letta themselves opened for the security report. Rationale: letta-ai/letta does
+not accept issues; letta-code is the wrong product; Discord needs a human account. Asking in
+an already-open thread with a human on the other end beats forcing a closed venue, and the
+email explicitly invites them to redirect it if they prefer Discord.
+
+The email carries a truthful AI DISCLOSURE per Letta's AI policy — AI-assisted, tools named
+(Claude / Claude Code, OpenAI Codex CLI) — and states which judgements were the author's.
+Claiming human authorship was declined: their policy asks the question directly, and a false
+answer would discredit the benchmark rather than just the message.
