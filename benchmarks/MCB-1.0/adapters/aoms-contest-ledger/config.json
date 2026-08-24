@@ -1,0 +1,15 @@
+{
+  "agent_id": "mcb-aoms-reference",
+  "instruction_markers": [
+    "correction",
+    "correct ",
+    "update ",
+    "replace",
+    "retain ",
+    "keep ",
+    "expand ",
+    "confirm ",
+    "ignore prior"
+  ],
+  "workspace_id_prefix": "mcb-1.0"
+}

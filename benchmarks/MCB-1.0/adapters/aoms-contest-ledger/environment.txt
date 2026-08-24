@@ -1,0 +1,18 @@
+MCB benchmark: MCB-1.0 (frozen; cases.json and score.py unmodified)
+AOMS package version: 2.0.0
+AOMS source under test: dfc68b6 (v2, "merge: contest ledger — write-side authority gate")
+AOMS source of published baseline: 2618163a6c40fb53c72e87eba232da0ea132ee64
+Interpreter: /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python
+Import path: PYTHONPATH=/tmp/mcb-run1/src-ledger (a `git archive` of dfc68b6;
+  no git worktree was modified to perform this run)
+Python: 3.12.3
+Platform: Linux-6.8.0-136-generic-x86_64-with-glibc2.39
+SQLite: 3.45.1
+Pydantic: 2.12.5
+Embedding provider: disabled (NullProvider)
+Model calls: none
+Storage: fresh per-case SQLite databases under /tmp
+Adapter diff vs adapters/aoms/adapter.py: one functional line,
+  `claim_key=unit["topic"]`, plus a docstring and two ADAPTER_INFO label
+  strings. config.json is byte-identical (sha256
+  71354b5e6bda36a146bc07747bb71c03b6f9911693dd2c373edc3d9139e35f52).
