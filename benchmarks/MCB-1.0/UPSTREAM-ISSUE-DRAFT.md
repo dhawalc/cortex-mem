@@ -77,3 +77,26 @@ alongside it rather than replacing it.
 - If a maintainer identifies an adapter error: keep the original adapter commit, their
   correction, your correcting commit, and both runs. The correction trail is worth more
   than a favourable number.
+
+---
+
+## POSTED — evidence record
+
+- **Public issue:** https://github.com/letta-ai/letta/issues/3437
+  Posted 2026-08-24 by dhawalc. Title: "External memory-conflict benchmark: request for
+  validation of Letta adapter semantics". Contains no security detail.
+- **Security disclosure:** emailed support@letta.com 2026-08-24 per letta-ai/letta
+  SECURITY.md ("Do not open a public issue for security vulnerabilities"). Gmail thread
+  id 1a035b35b4981950. Covers MCB-U-05 only; states plainly that the transcript was
+  already public before their policy was read, and offers takedown/redaction on request.
+- **Artifact SHAs cited:** adapter 7edb3d1, results 3df82b0, spec+cases b10a3f5.
+  Frozen files unchanged: cases.json d5d9db63…, score.py 7565863b….
+
+### If a maintainer responds
+Preserve the original adapter commit, their correction, the correcting commit, and BOTH
+runs side by side. Never replace a published result — the correction trail is the evidence,
+and it is worth more than a favourable number.
+
+### If no maintainer responds
+Freeze this as-is. Do not manufacture further self-validation; take MCB-1.0 to a different
+independent framework instead.
