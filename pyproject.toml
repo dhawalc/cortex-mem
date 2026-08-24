@@ -77,8 +77,5 @@ exclude = ["tests*", "scripts*", "snapshots*", "index*"]
 ]
 
 [tool.pytest.ini_options]
-# Keep the product suite separate from the nested fixture repository's own
-# three tests. Run those from demo/relay_fixture/repository when testing the
-# deliberately incomplete starting project itself.
-testpaths = ["tests"]
-norecursedirs = ["demo/relay_fixture/repository"]
+# The root project is AOMS v2. The nested relay fixture has its own test suite.
+testpaths = ["tests/v2"]

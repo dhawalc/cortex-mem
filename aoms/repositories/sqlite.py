@@ -306,6 +306,19 @@ class SQLiteMemoryRepository:
         await asyncio.to_thread(self._store_many_sync, materialized)
         return materialized
 
+    async def store_many_new(
+        self, records: Sequence[MemoryRecord]
+    ) -> list[MemoryRecord]:
+        """Insert a batch exactly once without scanning FTS for old rows."""
+
+        self._require_writable()
+        materialized = list(records)
+        if not materialized:
+            return []
+        await self.initialize()
+        await asyncio.to_thread(self._store_many_sync, materialized, None, True)
+        return materialized
+
     def _store_many_sync(
         self,
         records: Sequence[MemoryRecord],
@@ -355,9 +368,10 @@ class SQLiteMemoryRepository:
                         serialized,
                     ),
                 )
-                connection.execute(
-                    "DELETE FROM memories_fts WHERE id = ?", (record.id,)
-                )
+                if not insert_only:
+                    connection.execute(
+                        "DELETE FROM memories_fts WHERE id = ?", (record.id,)
+                    )
                 connection.execute(
                     "INSERT INTO memories_fts(id, content, tags, kind) VALUES (?, ?, ?, ?)",
                     (record.id, content_text, " ".join(record.tags), record.kind.value),

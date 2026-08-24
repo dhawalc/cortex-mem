@@ -194,12 +194,169 @@ Stop writers so the incident boundary does not move. Record the bad operation's 
 
 ## Proven restore drill: 2026-08-24
 
-The 2026-08-24 drill used the daily physical snapshot and weekly portable export created by the same verified run:
+The following are the real transcripts from the 2026-08-24 daily physical
+snapshot and weekly portable export. Random `/tmp` prefixes are shortened to
+`<physical>` and `<logical>`. Search and recall record bodies are deliberately
+not reproduced because the recovery corpus is private; the commands parsed the
+real JSON responses and printed only operational evidence.
 
-- live read-only baseline: schema 5, 165,347 records, 14 receipts, and 165,347 current vectors;
-- physical restore: `integrity_check=ok`, schema 5, 165,347 records, 14 receipts, and 165,347/165,347 current vectors; doctor reported 0 failures and 0 warnings;
-- physical FTS: the real query `backup` returned 831 visible records; lexical recall returned a source from the restored copy;
-- portable manifest: 165,347 records and 14 receipts; both file hashes, byte counts, and line counts matched; and
-- logical restore: the completed target matched 165,347 records and 14 receipts, FTS was rebuilt, vectors and operational/authentication tables were empty, and doctor prescribed `cortex-mem backfill`.
+### Physical snapshot
 
-The physical archive SHA-256 was `7750b3b284c480cfd968b9f5e204c1da807787f8e6d29a97488707bb4ef1fa77`; the portable archive SHA-256 was `d7726032d09b8a0bfd5d8e40519c4039f141985b2e1abd9944fe717131c81d9f`.
+Archive verification and `doctor` completed successfully:
+
+```console
+$ sha256sum -c aoms-v2-2026-08-24.sqlite3.zst.sha256
+aoms-v2-2026-08-24.sqlite3.zst: OK
+$ zstd -t aoms-v2-2026-08-24.sqlite3.zst
+aoms-v2-2026-08-24.sqlite3.zst: 770330624 bytes
+$ zstd -d aoms-v2-2026-08-24.sqlite3.zst -o <physical>/data/aoms.sqlite3
+aoms-v2-2026-08-24.sqlite3.zst: 770330624 bytes
+$ cortex-mem doctor --data-dir <physical>/data
+AOMS doctor 2.0.0
+[PASS] Database integrity: SQLite integrity_check returned ok
+[PASS] Schema version: 5
+[PASS] Memory records: 165347 canonical records
+[PASS] Receipt store: available (14 receipts; retention 1000)
+[PASS] Embedding queue: 0 pending records
+[PASS] Vector coverage: 165347/165347 current records (100.0%)
+Doctor finished: 0 failure(s), 0 warning(s).
+```
+
+The comparison script opened both SQLite files with `mode=ro`, enabled
+`PRAGMA query_only`, loaded `sqlite-vec`, and asserted equality before recall
+could add a scratch receipt:
+
+```console
+$ python - live.sqlite3 <physical>/data/aoms.sqlite3 <<'PY'
+import sqlite3, sqlite_vec, sys
+
+def counts(path):
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as connection:
+        connection.enable_load_extension(True)
+        sqlite_vec.load(connection)
+        connection.enable_load_extension(False)
+        connection.execute("PRAGMA query_only=ON")
+        return {
+            "integrity": connection.execute("PRAGMA integrity_check").fetchone()[0],
+            "schema": connection.execute("SELECT MAX(version) FROM schema_version").fetchone()[0],
+            "records": connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0],
+            "receipts": connection.execute("SELECT COUNT(*) FROM recall_receipts").fetchone()[0],
+            "vectors": connection.execute("SELECT COUNT(*) FROM memory_vectors_384").fetchone()[0],
+        }
+
+live, restored = counts(sys.argv[1]), counts(sys.argv[2])
+print("live(mode=ro):", live)
+print("restored(mode=ro):", restored)
+assert restored == live
+print("MATCH: integrity, schema, records, receipts, and vectors")
+PY
+live(mode=ro): {'integrity': 'ok', 'schema': 5, 'records': 165347, 'receipts': 14, 'vectors': 165347}
+restored(mode=ro): {'integrity': 'ok', 'schema': 5, 'records': 165347, 'receipts': 14, 'vectors': 165347}
+MATCH: integrity, schema, records, receipts, and vectors
+```
+
+Real FTS and application recall against the restored database also passed:
+
+```console
+$ AOMS_EMBEDDING_PROVIDER=none cortex-mem search backup --limit 3 --format json \
+    --data-dir <physical>/data | python -c \
+    'import json,sys; d=json.load(sys.stdin); print("returned={} total={} strategy={} scope_filtered={}".format(len(d["items"]),d["total"],d["diagnostics"]["strategy"],d["diagnostics"]["scope_filtered_count"]))'
+returned=3 total=831 strategy=fts5 scope_filtered=0
+$ AOMS_EMBEDDING_PROVIDER=none AOMS_AGENT_ID=recovery-check \
+    AOMS_WORKSPACE=/path/to/cortex-mem cortex-mem recall \
+    --task 'How should backups be verified and restored?' --budget 500 \
+    --format json --data-dir <physical>/data \
+    | python -c \
+    'import json,sys; d=json.load(sys.stdin); x=d["diagnostics"]; print("receipt_id="+str(x.get("receipt_id"))); print("sources="+str(len(d["sources"]))); print("token_count="+str(d["token_count"])); print("truncated="+str(d["truncated"])); print("vector_coverage="+str(x.get("vector_coverage")))'
+receipt_id=286d85fd-3263-43bc-9993-842e8f93d860
+sources=1
+token_count=348
+truncated=True
+vector_coverage=0.0
+```
+
+`vector_coverage=0.0` in that final response means lexical-only retrieval was
+requested for the smoke test; the preceding doctor output proves that all
+stored vectors were present and current.
+
+### Portable bundle
+
+The outer artifact and both payloads matched their recorded SHA-256 values:
+
+```console
+$ sha256sum -c aoms-v2-portable-2026-08-24.tar.zst.sha256
+aoms-v2-portable-2026-08-24.tar.zst: OK
+$ zstd -t aoms-v2-portable-2026-08-24.tar.zst
+aoms-v2-portable-2026-08-24.tar.zst: 189347840 bytes
+$ sha256sum <logical>/aoms-v2-portable-2026-08-24/{records,receipts}.jsonl
+456ccb4dbb2d4c25a12a7389aeb3908fcda249e6e1e67e6b22e57e7fdd22f442  <logical>/aoms-v2-portable-2026-08-24/records.jsonl
+efe9c26180e24b1fa580bc163dc644afab0e0444c93ad3e41f397e6f8b51a224  <logical>/aoms-v2-portable-2026-08-24/receipts.jsonl
+```
+
+The manifest recorded schema 5, 189,032,959 bytes and 165,347 lines for
+`records.jsonl`, plus 310,033 bytes and 14 lines for `receipts.jsonl`. The
+physical archive SHA-256 was
+`7750b3b284c480cfd968b9f5e204c1da807787f8e6d29a97488707bb4ef1fa77`;
+the portable archive SHA-256 was
+`d7726032d09b8a0bfd5d8e40519c4039f141985b2e1abd9944fe717131c81d9f`.
+
+The empty target was initialized and the fully validated bundle restored. This
+drill also caught and fixed a scale defect in the restore implementation: the
+old path issued a full-scan FTS delete before every insert despite having
+already proved that the target was empty. Restore now uses insert-only batches,
+which also refuses duplicate IDs instead of silently upserting them.
+
+```console
+$ AOMS_EMBEDDING_PROVIDER=none cortex-mem init --data-dir <logical>/restored
+Created AOMS data directory: <logical>/restored
+SQLite store ready (schema 5): <logical>/restored/aoms.sqlite3
+Embeddings are disabled; search and recall will use lexical retrieval.
+$ AOMS_EMBEDDING_PROVIDER=none cortex-mem restore \
+    <logical>/aoms-v2-portable-2026-08-24 --batch-size 10000 \
+    --data-dir <logical>/restored
+Restored 165347 record(s) and 14 receipt(s) into <logical>/restored/aoms.sqlite3. Run `cortex-mem backfill` to rebuild vectors.
+```
+
+An independent verifier recalculated both hashes, byte counts, and line counts,
+then opened the restored database read-only and checked integrity, schema,
+canonical, receipt, and FTS counts against the manifest:
+
+```console
+$ python - <<'PY'  # manifest/payload/database verifier
+receipts.jsonl: bytes=310033 records=14 sha256=efe9c26180e24b1fa580bc163dc644afab0e0444c93ad3e41f397e6f8b51a224 MATCH
+records.jsonl: bytes=189032959 records=165347 sha256=456ccb4dbb2d4c25a12a7389aeb3908fcda249e6e1e67e6b22e57e7fdd22f442 MATCH
+database: integrity=ok schema=5 records=165347 receipts=14 fts=165347
+derived state: vector_profiles=0 embedding_pending=0 auth_tokens=0
+```
+
+As expected for a portable restore, doctor identified missing derived vectors
+and prescribed backfill. A bounded real run with the cached local FastEmbed
+model proved the remedy without a cloud model call; the second doctor showed
+exactly the 64 vectors produced by that single batch:
+
+```console
+$ cortex-mem doctor --data-dir <logical>/restored
+[PASS] Database integrity: SQLite integrity_check returned ok
+[PASS] Schema version: 5
+[PASS] Memory records: 165347 canonical records
+[PASS] Receipt store: available (14 receipts; retention 1000)
+[PASS] Embedding queue: 0 pending records
+[WARN] Vector coverage: 0/165347 current records (0.0%)
+       Action: Run: cortex-mem backfill
+Doctor finished: 0 failure(s), 1 warning(s).
+$ cortex-mem backfill --max-batches 1 --data-dir <logical>/restored
+Catching up embeddings ...
+  scanning: scanned=64 queued=64 embedded=0 failed=0 pending=64
+  embedding: scanned=64 queued=64 embedded=64 failed=0 pending=0
+  interrupted: scanned=64 queued=64 embedded=64 failed=0 pending=0
+Backfill finished: scanned=64 queued=64 embedded=64 failed=0 pending=0.
+$ cortex-mem doctor --data-dir <logical>/restored | tail -8
+[PASS] Receipt store: available (14 receipts; retention 1000)
+[PASS] Embedding queue: 0 pending records
+[WARN] Vector coverage: 64/165347 current records (0.0%)
+       Action: Run: cortex-mem backfill
+Doctor finished: 0 failure(s), 1 warning(s).
+```
+
+Finally, the rebuilt FTS path returned the same real query count as the
+physical copy: `returned=3 total=831 strategy=fts5 scope_filtered=0`.

@@ -239,10 +239,10 @@ async def restore_bundle(
     for record in _iter_records(records_path):
         batch.append(record)
         if len(batch) == batch_size:
-            await repository.store_many(batch)
+            await repository.store_many_new(batch)
             batch.clear()
     if batch:
-        await repository.store_many(batch)
+        await repository.store_many_new(batch)
 
     # Receipts are already fully validated. Insert directly so a bundle remains
     # complete even when its historical retention setting differs from this host.
