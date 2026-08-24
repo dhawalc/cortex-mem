@@ -56,7 +56,28 @@ uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 cortex-mem tour
 
 The tour creates a disposable temporary store, seeds exactly three demo memories, demonstrates private-scope filtering and supersession, prints a real receipt, and auto-cleans. It never opens the canonical store. Use `--keep` only if you want to inspect the labeled demo database afterward.
 
-If a source-aware importer is present in your installed release, `cortex-mem import --help` describes its accepted inputs. Import is never required for setup, and setup does not invent memories in your real store.
+## Bring existing memory deliberately
+
+`import-from` accepts Markdown/Obsidian notes and reviewed `claude-mem` SQLite schemas. It previews by default, requires an explicit destination scope, warns about likely secrets without printing their values, and writes only when you add `--execute`:
+
+```console
+uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 \
+  cortex-mem import-from markdown ./notes \
+  --scope workspace --workspace "$PWD" --execute
+```
+
+Run `cortex-mem import-from --help` for source-specific choices. Import is never required for setup, and setup does not invent memories in your real store.
+
+## Inspect recall locally
+
+The Recall Observatory is a read-only browser for canonical memories, scope metadata, recall receipts, candidate scores, token accounting, and retained provenance-fenced context. Start it on IPv4 loopback, then open the printed local URL:
+
+```console
+uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 \
+  cortex-mem observe
+```
+
+It does not expose a non-loopback bind option or alter the store.
 
 ## Three model-facing tools, one contract
 
