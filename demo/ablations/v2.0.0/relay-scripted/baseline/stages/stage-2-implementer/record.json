@@ -1,0 +1,56 @@
+{
+  "adapter": "scripted",
+  "git": {
+    "after_commit": "894babe31e9e979f4e438f75ddc24c966aeeb107",
+    "before_commit": "8865269a46c0abe9f1dbe51e4aca5e816b46ce8c",
+    "commits": [
+      {
+        "authored_at": "2026-08-23T21:06:17-07:00",
+        "commit": "894babe31e9e979f4e438f75ddc24c966aeeb107",
+        "subject": "relay: implement durable webhook store"
+      }
+    ],
+    "status_porcelain": []
+  },
+  "mcp_traffic": {
+    "capture": "stdio JSON-RPC proxy with configured recall-budget enforcement",
+    "path": "stages/stage-2-implementer/mcp-traffic.jsonl",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "memory_enabled": false,
+  "process": {
+    "adapter": "scripted",
+    "adapter_evidence": {},
+    "argv": [
+      "/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python",
+      "-m",
+      "demo.relay.scripted_agent",
+      "--script",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/baseline/scripted.yaml",
+      "--stage",
+      "implementer",
+      "--prompt-file",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/baseline/stages/stage-2-implementer/initial-prompt.txt",
+      "--workdir",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/baseline-workdirs/stage-2-implementer",
+      "--result",
+      "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/baseline/stages/stage-2-implementer/adapter-result.json",
+      "--session-id",
+      "f69878ea-00b6-4196-9b25-51d28c0ed846"
+    ],
+    "ended_at": "2026-08-24T04:06:17.655918+00:00",
+    "fresh_session_id": "f69878ea-00b6-4196-9b25-51d28c0ed846",
+    "pid": 1964718,
+    "returncode": 0,
+    "started_at": "2026-08-24T04:06:17.092219+00:00",
+    "wall_time_seconds": 0.5636848860885948
+  },
+  "prompt": {
+    "bytes": 680,
+    "hashed_at": "2026-08-24T04:06:17.091819+00:00",
+    "path": "stages/stage-2-implementer/initial-prompt.txt",
+    "sha256": "62e55d7dd3449eac17a78e62c661d5130246541a48fa071afed987f2688e3c02"
+  },
+  "schema_version": 1,
+  "stage": "implementer"
+}

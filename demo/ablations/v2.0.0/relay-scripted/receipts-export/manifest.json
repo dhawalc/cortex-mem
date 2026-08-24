@@ -1,0 +1,19 @@
+{
+  "aoms_version": "2.0.0",
+  "created_at": "2026-08-24T04:06:16.480909+00:00",
+  "database_schema_version": 5,
+  "files": {
+    "receipts.jsonl": {
+      "bytes": 23386,
+      "records": 3,
+      "sha256": "47e62bfb6512097106fab885ef338ace6297cb1a56a80548d30c0eb47d66f4d2"
+    },
+    "records.jsonl": {
+      "bytes": 6493,
+      "records": 9,
+      "sha256": "a08994f29f85ad86a6f649a510a268004e42baffae037a1f6529b342c530a7de"
+    }
+  },
+  "format": "aoms-portable-export",
+  "format_version": 1
+}

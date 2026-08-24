@@ -6,7 +6,16 @@
 
 **Interpreter:** `/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python`
 
-**Decision:** **NO-GO**
+**Decision:** **NO-GO — remaining gates require human action**
+
+**Gap-closing update:** The v2.0.0 launch archive now commits all five raw eval
+configurations and the complete scripted relay memory-enabled/memory-disabled
+ablation at `demo/ablations/v2.0.0`, with a compact table, machine-readable
+summary, and SHA-256 manifest. Relay prerequisites and every packaged host
+recipe now lead through pinned, bound `setup`; a v2 ClawHub listing draft is at
+`docs/launch/clawhub-skill-v2.md`. The ablation exit criterion below is now
+**PASS**. The launch remains **NO-GO** only on the four human gates listed in
+the Human gates section.
 
 This is a launch-gate decision, not a product-quality verdict. The local wheel,
 deterministic relay, scope and budget verifier, and canonical test suite work.
@@ -37,11 +46,11 @@ model run, `~/.local/share/aoms`, or GitHub push was used.
 | Serialized recall stays below the declared token ceiling | **PASS** | The sealed rehearsal independently reconciled selected token costs: stage 2 was `632 / 1000`; stage 3 was `829 / 1000`. A new deterministic replay at HEAD passed at `853 / 1000` and `910 / 1000`. | Repeat and publish the values from the final `PROOF` bundle. |
 | Out-of-scope canary facts never enter model context | **PASS** | Both rehearsal handoffs passed ID, fact-string, raw-artifact, and serialized-context canary exclusion. Scope-filter counts were 1 at stage 2 and 2 at stage 3. The HEAD deterministic replay also passed both canary checks. | Repeat in the final `PROOF` run. |
 | Deterministic repository tests pass | **PASS** | Canonical suite: `187 passed` in 85.79 s with one non-failing Pydantic forward-reference warning. Fixture repository: `3 passed` in 0.01 s. The exact documented scripted relay with `--with-baseline` passed and sealed 91 files in 7.40 s; its independent manifest validation passed. The sealed rehearsal's acceptance verifier also passed durable idempotency, stable equal-timestamp order, and recursive pre-persistence redaction. | CI must repeat this on public `main` for Python 3.11 and 3.12 plus the relay fixture job. The warning is not a gate but should be tracked. |
-| Memory-disabled and ablation results are included unfiltered | **BLOCKED** | `rehearsal-008` includes the complete memory-disabled variant and `comparison.json`. Prompt hashes are identical, `only_variable` is `MCP memory availability`, memory passes, and baseline fails. The current eval engine also ran all five network-free configurations successfully: lexical-only, vector-only, hybrid, no-supersession, and no-scope. The expected safety deltas appeared: no-supersession contradiction rate `0.200`; no-scope canary leakage `0.083`; the governed configurations were `0.000` for both. | The sealed rehearsal contains no ablation/eval/anatomy files. Generate the final five JSON results without filtering, attach their complete archive to the GitHub release, and link it beside the relay bundle. Baseline alone does not satisfy the wording of this criterion. |
+| Memory-disabled and ablation results are included unfiltered | **PASS** | `demo/ablations/v2.0.0` contains all five complete 36-case eval JSON artifacts plus the sealed 86-file scripted relay with its mirrored memory-disabled baseline. `summary.json` reports `unfiltered=true` and `status=PASS`; `manifest.json` hashes the complete inventory. Expected safety deltas remain visible: no-supersession contradiction rate `0.200`, no-scope canary leakage `0.083`/six selections, and `0.000` for governed configurations. Relay prompts are identical; memory passes 12 checks and baseline retains all three failures. | Publish this already-complete archive with the human-run release push; no further artifact generation is required for this criterion. |
 | Another person reproduces the result from public instructions | **BLOCKED**, then **NEEDS-HUMAN** | GitHub reports the repository is already `PUBLIC`, but `origin` has neither `refs/heads/v2` nor `refs/tags/v2.0.0`; public `main` remains at `47c1c8d`. The local tag exists at `7095101`, one commit behind the audited HEAD and before the truth-timeline commands now claimed by README. | First push the final release and corrected tag. Then a person other than the builder must follow the public instructions on a clean machine, record install-to-demo time, run replay and validation, and report the exact commit/tag and result. This cannot be self-certified. |
 
-**Gate count:** 5 PASS, 3 BLOCKED. The launch-plan rule is “all required,” so
-the decision is **NO-GO**.
+**Gate count after gap closing:** 6 PASS, 2 NEEDS-HUMAN. The launch-plan rule is
+“all required,” so the decision remains **NO-GO**.
 
 ## Rehearsal-008 validation
 
@@ -115,14 +124,15 @@ false product descriptions and must be corrected before those links are posted.
   “DRAFT FOR DHAWAL'S REVIEW,” is written in Dhawal's first-person voice, and
   explicitly requires his edit and approval. Remove the marker only after he
   verifies every first-person fact, number, date, and attribution.
-- **Proof gate:** obtain funded bare Claude API access and run on a Linux host
-  where Codex `workspace-write`/bwrap works. For the three-client headline,
-  include OpenClaw with its isolated state and working provider credentials.
-- **External gate:** after the public push, a different person must execute the
-  instructions on a clean machine. Record their environment, elapsed time,
-  exact tag SHA, and verifier output.
-- **ClawHub gate:** author and review a v2 `SKILL.md` package. Do not publish the
-  current v1 listing as launch collateral.
+- **Proof gate:** fund bare provider API access and run on a Linux host where
+  Codex `workspace-write`/bwrap works. For the three-client headline, include
+  OpenClaw with isolated state and working provider credentials.
+- **External gate:** push the final commit and corrected tag, then have a
+  different person execute the instructions on a clean machine. Record their
+  environment, elapsed time, exact tag SHA, and verifier output.
+- **ClawHub gate:** Dhawal reviews `docs/launch/clawhub-skill-v2.md`; then create,
+  validate, and publish the v2 package. Do not publish the current v1 listing
+  as launch collateral.
 
 ## Ordered launch-day runbook
 

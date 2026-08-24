@@ -1,0 +1,1 @@
+Plan the durable webhook relay task in this repository. Recall relevant AOMS context before consequential work, then leave durable project state for the next cold-start agent. Begin every AOMS handoff memory with a compact synopsis of all recalled runtime constraints so their identifying terms survive a 1000-token downstream packed-context limit.

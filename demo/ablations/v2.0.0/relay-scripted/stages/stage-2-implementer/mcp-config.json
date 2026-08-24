@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "aoms": {
+      "args": [
+        "/home/dhawal/cortex-mem/aoms-v2/demo/relay/mcp_proxy.py",
+        "--traffic",
+        "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/bundle/stages/stage-2-implementer/mcp-traffic.jsonl",
+        "--server-command-json",
+        "[\"/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python\", \"-m\", \"aoms.cli\", \"mcp\", \"--log-level\", \"ERROR\"]",
+        "--server-cwd",
+        "/home/dhawal/cortex-mem/aoms-v2",
+        "--recall-token-budget",
+        "1000"
+      ],
+      "command": "/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python",
+      "env": {
+        "AOMS_AGENT_ID": "relay-implementer",
+        "AOMS_DATA_DIR": "/home/dhawal/cortex-mem/aoms-v2/demo/ablations/v2.0.0/.relay-scripted.building-ylw50d5o/shared-aoms-store",
+        "AOMS_EMBEDDING_PROVIDER": "none",
+        "AOMS_LOG_LEVEL": "ERROR",
+        "AOMS_WORKSPACE": "relay-gauntlet",
+        "PATH": "/home/linuxbrew/.linuxbrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/dhawal/.local/bin:/home/dhawal/.bun/bin:/home/dhawal/bin:/home/dhawal/bin:/home/dhawal/.pulumi/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/cuda/bin:/home/dhawal/.nvm/versions/node/v22.22.2/bin:/home/dhawal/.local/bin:/home/dhawal/bin:/home/dhawal/.nvm/versions/node/v22.22.2/bin:/home/dhawal/.codex/tmp/arg0/codex-arg0rauGDH:/home/linuxbrew/.linuxbrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path:/home/dhawal/.local/bin:/home/dhawal/.bun/bin:/home/dhawal/miniconda3/bin:/home/dhawal/miniconda3/condabin:/home/dhawal/bin:/home/dhawal/bin:/home/dhawal/.local/share/pnpm:/home/dhawal/.pulumi/bin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/usr/local/cuda/bin:/home/dhawal/.nvm/versions/node/v22.22.2/bin:/home/dhawal/.cargo/bin:/home/dhawal/.local/bin:/home/dhawal/.local/bin:/home/dhawal/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin:/home/dhawal/.pulumi/bin:/home/dhawal/.pulumi/bin"
+      },
+      "type": "stdio"
+    }
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "release": "v2.0.0",
+  "status": "PASS",
+  "generated_from_source_revision": "2d6b88c3cedca9a1842fe05de7167f051d7632c7",
+  "unfiltered": true,
+  "eval": {
+    "seed": 7,
+    "record_count": 160,
+    "suite_name": "starter-retrieval-credibility",
+    "suite_hash": "362c1e1c0d9f77047f40d0b5bae4d59f39c76cfcc7d59c5fd52b17f0c85b0449",
+    "corpus_hash": "f4b087b9e4c56fa318da77ad630235a3e7383c5023b12389cb2e3150583f65d2",
+    "expected_configurations": 5,
+    "artifact_count": 5,
+    "runs": [
+      {
+        "configuration": "lexical-only",
+        "artifact": "eval/20260824T040613052004Z-lexical-only-be6c106b-6d9241.json",
+        "cases": 36,
+        "recall_at_k": 0.75,
+        "budget_recall": 0.75,
+        "non_gold_share": 0.4166666666666667,
+        "stale_rate": 0.0,
+        "contradiction_rate": 0.0,
+        "canary_leakage": 0.0,
+        "canary_count": 0,
+        "token_utilization": 0.84750656167979,
+        "latency_p95_ms": 24.180371256079525
+      },
+      {
+        "configuration": "vector-only",
+        "artifact": "eval/20260824T040614179802Z-vector-only-a1baff72-6eabd8.json",
+        "cases": 36,
+        "recall_at_k": 0.6481481481481481,
+        "budget_recall": 0.5185185185185186,
+        "non_gold_share": 0.6805555555555556,
+        "stale_rate": 0.0,
+        "contradiction_rate": 0.0,
+        "canary_leakage": 0.0,
+        "canary_count": 0,
+        "token_utilization": 0.8463254593175853,
+        "latency_p95_ms": 48.423297761473805
+      },
+      {
+        "configuration": "hybrid",
+        "artifact": "eval/20260824T040615464498Z-hybrid-a37c0ca4-1a5cde.json",
+        "cases": 36,
+        "recall_at_k": 0.75,
+        "budget_recall": 0.7407407407407408,
+        "non_gold_share": 0.4305555555555556,
+        "stale_rate": 0.0,
+        "contradiction_rate": 0.0,
+        "canary_leakage": 0.0,
+        "canary_count": 0,
+        "token_utilization": 0.8475721784776903,
+        "latency_p95_ms": 53.022887848783284
+      },
+      {
+        "configuration": "no-supersession",
+        "artifact": "eval/20260824T040616707342Z-no-supersession-ce99c0e8-abf77b.json",
+        "cases": 36,
+        "recall_at_k": 0.75,
+        "budget_recall": 0.7407407407407408,
+        "non_gold_share": 0.4305555555555556,
+        "stale_rate": 0.0,
+        "contradiction_rate": 0.2,
+        "canary_leakage": 0.0,
+        "canary_count": 0,
+        "token_utilization": 0.8452099737532809,
+        "latency_p95_ms": 51.05099698994309
+      },
+      {
+        "configuration": "no-scope",
+        "artifact": "eval/20260824T040617883056Z-no-scope-d4fec3fa-28095b.json",
+        "cases": 36,
+        "recall_at_k": 0.75,
+        "budget_recall": 0.7407407407407408,
+        "non_gold_share": 0.4305555555555556,
+        "stale_rate": 0.0,
+        "contradiction_rate": 0.0,
+        "canary_leakage": 0.08333333333333333,
+        "canary_count": 6,
+        "token_utilization": 0.8503280839895013,
+        "latency_p95_ms": 49.84460771083832
+      }
+    ]
+  },
+  "relay": {
+    "seed": 7319,
+    "scenario_id": "durable-webhook-relay-7319",
+    "agents": ["scripted", "scripted", "scripted"],
+    "bundle": "relay-scripted",
+    "nested_manifest_sha256": "9a965cd62d831c250d347135c2b332be81a7410c77d4b398c5e5496b71ec8f29",
+    "only_variable": "MCP memory availability",
+    "prompts_identical": true,
+    "memory_enabled": {
+      "passed": true,
+      "grade": "PROOF",
+      "check_count": 12,
+      "failure_count": 0,
+      "stage_2_tokens": 853,
+      "stage_2_ceiling": 1000,
+      "stage_3_tokens": 910,
+      "stage_3_ceiling": 1000
+    },
+    "memory_disabled": {
+      "passed": false,
+      "grade": "PROOF",
+      "check_count": 0,
+      "failure_count": 3,
+      "failures": [
+        "stage-2 recall artifact missing: stage-2/recall.json",
+        "stage-3 recall artifact missing: stage-3/recall.json",
+        "acceptance tests failed: AssertionError"
+      ]
+    }
+  }
+}

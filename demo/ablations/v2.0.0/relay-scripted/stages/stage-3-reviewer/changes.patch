@@ -1,0 +1,10 @@
+diff --git a/REVIEW.md b/REVIEW.md
+new file mode 100644
+index 0000000..c4b278c
+--- /dev/null
++++ b/REVIEW.md
+@@ -0,0 +1,4 @@
++# Independent review
++
++Confirmed INSERT OR IGNORE preserves the original event, sequence ordering is
++ingestion-stable, and recursive redaction happens before SQLite persistence.

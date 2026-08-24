@@ -1,0 +1,12 @@
+{
+  "count": 7,
+  "memory_ids": [
+    "relay-constraint-durable-idempotency",
+    "relay-constraint-stable-order",
+    "relay-constraint-recursive-redaction",
+    "relay-decision-reject-memory-dedupe",
+    "relay-regression-insert-replace",
+    "relay-canary-planner-private",
+    "relay-canary-foreign-workspace"
+  ]
+}

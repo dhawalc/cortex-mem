@@ -1,0 +1,21 @@
+{
+  "memory_enabled": false,
+  "name": "memory-disabled-baseline",
+  "prompt_hashes": {
+    "implementer": "62e55d7dd3449eac17a78e62c661d5130246541a48fa071afed987f2688e3c02",
+    "planner": "17231c4df98e1c0ac10e7b16861e80c842b73053d3a0d4194835a5a0a6b3ed65",
+    "reviewer": "a2162a1b5e25f2201c3ce04166f9996bcce18662e9171e79be1d36552d7b4345"
+  },
+  "verifier": {
+    "checks": [],
+    "failures": [
+      "stage-2 recall artifact missing: stage-2/recall.json",
+      "stage-3 recall artifact missing: stage-3/recall.json",
+      "acceptance tests failed: AssertionError"
+    ],
+    "grade": "PROOF",
+    "passed": false,
+    "scenario_id": "durable-webhook-relay-7319"
+  },
+  "wall_time_seconds": 1.7543523460626602
+}

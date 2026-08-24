@@ -1,0 +1,30 @@
+{
+  "memory_enabled": true,
+  "name": "memory-enabled",
+  "prompt_hashes": {
+    "implementer": "62e55d7dd3449eac17a78e62c661d5130246541a48fa071afed987f2688e3c02",
+    "planner": "17231c4df98e1c0ac10e7b16861e80c842b73053d3a0d4194835a5a0a6b3ed65",
+    "reviewer": "a2162a1b5e25f2201c3ce04166f9996bcce18662e9171e79be1d36552d7b4345"
+  },
+  "verifier": {
+    "checks": [
+      "stage-2 packed sources have valid AOMS provenance",
+      "stage-2 transmitted all injected constraints via AOMS",
+      "stage-2 excludes all scope canaries",
+      "stage-2 tokens reconcile at 853/1000",
+      "stage-3 packed sources have valid AOMS provenance",
+      "stage-3 transmitted all injected constraints via AOMS",
+      "stage-3 excludes all scope canaries",
+      "stage-3 tokens reconcile at 910/1000",
+      "stage-3 transmitted the private regression clue via AOMS",
+      "acceptance: durable idempotency",
+      "acceptance: stable equal-timestamp order",
+      "acceptance: recursive token redaction before persistence"
+    ],
+    "failures": [],
+    "grade": "PROOF",
+    "passed": true,
+    "scenario_id": "durable-webhook-relay-7319"
+  },
+  "wall_time_seconds": 4.999778724042699
+}

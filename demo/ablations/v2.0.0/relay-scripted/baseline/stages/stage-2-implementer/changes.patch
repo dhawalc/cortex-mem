@@ -1,0 +1,7 @@
+diff --git a/BASELINE.md b/BASELINE.md
+new file mode 100644
+index 0000000..1399470
+--- /dev/null
++++ b/BASELINE.md
+@@ -0,0 +1 @@
++The public tests already pass, so the baseline made no hidden-constraint changes.
