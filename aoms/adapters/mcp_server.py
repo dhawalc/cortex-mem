@@ -69,7 +69,10 @@ REMEMBER_DESCRIPTION = (
     "specific kind and visibility scope justified by the content, include provenance "
     "whenever known, and use a stable id when retrying the same logical write so "
     "retries update instead of duplicate. Record the useful conclusion in "
-    "self-contained language that will make sense without this conversation."
+    "self-contained language that will make sense without this conversation. "
+    "When you are correcting or updating something already stored, set supersedes to "
+    "the id of the record you are replacing; a correction that does not declare what "
+    "it replaces may be kept but held aside instead of becoming current."
 )
 
 SEARCH_DESCRIPTION = (

@@ -397,3 +397,156 @@ def test_inspection_commands_work_on_a_store_predating_the_ledger(store):
             "SELECT COALESCE(MAX(version), 0) FROM schema_version"
         ).fetchone()[0]
     assert version == 6
+
+
+# --- bulk decline ---------------------------------------------------------
+
+
+def seed_flood(runner, *, slots, source):
+    """One agent contesting several distinct slots, as a runaway recipe would."""
+    for index in range(slots):
+        run(
+            runner,
+            "remember",
+            "--content",
+            f"original {index}",
+            "--claim-key",
+            f"slot-{index}",
+        )
+        run(
+            runner,
+            "remember",
+            "--content",
+            f"undeclared revision {index} from {source}",
+            "--claim-key",
+            f"slot-{index}",
+        )
+
+
+def test_resolve_many_refuses_to_act_on_everything(store):
+    runner, _ = store
+    seed_flood(runner, slots=3, source="recipe")
+    result = runner.invoke(
+        main, ["contest", "resolve-many", "--set-aside", "--reason", "x"]
+    )
+    assert result.exit_code != 0
+    assert "narrow the batch" in result.output
+
+
+def test_resolve_many_sets_aside_a_filtered_batch(store):
+    runner, db_path = store
+    seed_flood(runner, slots=5, source="recipe")
+    before = json.loads(run(runner, "contest", "list", "--json"))
+    assert before["total"] == 5
+
+    output = run(
+        runner,
+        "contest",
+        "resolve-many",
+        "--set-aside",
+        "--reason",
+        "runaway recipe; re-run it with supersedes declared",
+        "--by-agent",
+        "operator-a",
+        "--yes",
+    )
+    assert "Set aside 5" in output
+    assert "5 receipt(s) written" in output
+
+    after = json.loads(run(runner, "contest", "list", "--state", "open", "--json"))
+    assert after["total"] == 0
+
+    # Nothing was deleted and nothing became current.
+    report = ask(db_path, lambda repo: repo.integrity_report())
+    assert report.contested_count == 5
+    assert report.contested_projection_drift == []
+    receipts = ask(db_path, lambda repo: repo.recent_write_receipts(limit=50))
+    resolutions = [r for r in receipts if r.trigger_detail.get("resolution")]
+    assert len(resolutions) == 5
+    assert all(r.agent_id == "operator-a" for r in resolutions)
+
+
+def test_resolve_many_only_touches_the_matching_slot(store):
+    runner, _ = store
+    seed_flood(runner, slots=4, source="recipe")
+    run(
+        runner,
+        "contest",
+        "resolve-many",
+        "--set-aside",
+        "--reason",
+        "just this one",
+        "--slot",
+        "slot-2",
+        "--yes",
+    )
+    remaining = json.loads(run(runner, "contest", "list", "--state", "open", "--json"))
+    assert remaining["total"] == 3
+    assert all(e["claim_key"] != "slot-2" for e in remaining["entries"])
+
+
+def test_resolve_many_can_target_one_provenance_source(store):
+    runner, _ = store
+    run(runner, "remember", "--content", "held fact", "--claim-key", "shared")
+    run(runner, "remember", "--content", "rival claim", "--claim-key", "shared")
+    listing = json.loads(run(runner, "contest", "list", "--json"))
+    assert listing["total"] == 1
+    # The CLI stamps provenance source "cli" on everything it writes.
+    output = run(
+        runner,
+        "contest",
+        "resolve-many",
+        "--set-aside",
+        "--reason",
+        "bulk triage by source",
+        "--from-source",
+        "cli",
+        "--yes",
+    )
+    assert "Set aside 1" in output
+    missed = run(
+        runner,
+        "contest",
+        "resolve-many",
+        "--set-aside",
+        "--reason",
+        "no such source",
+        "--from-source",
+        "does-not-exist",
+        "--yes",
+    )
+    assert "nothing was changed" in missed
+
+
+def test_there_is_no_bulk_admit(store):
+    runner, _ = store
+    seed_flood(runner, slots=2, source="recipe")
+    result = runner.invoke(
+        main,
+        ["contest", "resolve-many", "--admit", "--reason", "r", "--slot", "slot-0"],
+    )
+    assert result.exit_code != 0
+    assert "no such option" in result.output.casefold()
+
+
+def test_resolve_many_requires_a_reason(store):
+    runner, _ = store
+    seed_flood(runner, slots=2, source="recipe")
+    result = runner.invoke(
+        main, ["contest", "resolve-many", "--set-aside", "--slot", "slot-0"]
+    )
+    assert result.exit_code != 0
+
+
+def test_resolve_many_aborts_without_confirmation(store):
+    runner, _ = store
+    seed_flood(runner, slots=2, source="recipe")
+    result = runner.invoke(
+        main,
+        ["contest", "resolve-many", "--set-aside", "--reason", "r",
+         "--by-agent", "operator-a"],
+        input="n\n",
+    )
+    assert result.exit_code != 0
+    still_open = json.loads(run(runner, "contest", "list", "--state", "open", "--json"))
+    assert still_open["total"] == 2

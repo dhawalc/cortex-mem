@@ -917,6 +917,110 @@ def contest_drain_command(limit: int, data_dir: Path | None) -> None:
         click.echo(f"    cortex-mem contest show {entry.contest_id}")
 
 
+@contest_group.command("resolve-many")
+@click.option(
+    "--set-aside",
+    "set_aside",
+    is_flag=True,
+    required=True,
+    help="The only bulk verdict. Declines reversibly and deletes nothing.",
+)
+@click.option("--reason", required=True, help="Recorded on every entry resolved.")
+@click.option("--slot", "claim_key", help="Only entries on this claim key.")
+@click.option("--by-agent", "agent_id", help="Only entries opened by this agent.")
+@click.option(
+    "--from-source",
+    "source",
+    help="Only entries whose record declares this provenance source.",
+)
+@click.option(
+    "--limit", type=click.IntRange(min=1, max=500), default=100, show_default=True
+)
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+@_data_dir_option
+def contest_resolve_many_command(
+    set_aside: bool,
+    reason: str,
+    claim_key: str | None,
+    agent_id: str | None,
+    source: str | None,
+    limit: int,
+    yes: bool,
+    data_dir: Path | None,
+) -> None:
+    """Set aside a filtered batch of open entries, one receipt each.
+
+    Set-aside is deliberately the only bulk verdict. Bulk admission would let
+    one command make many contested claims current at once, which is the exact
+    shape of the thing this feature exists to prevent. Setting aside changes
+    nothing about what is currently true, deletes nothing, and is reversible
+    one entry at a time.
+    """
+
+    if not (claim_key or agent_id or source):
+        raise click.ClickException(
+            "refusing to act on every open entry: narrow the batch with "
+            "--slot, --by-agent, or --from-source"
+        )
+    settings = _settings(data_dir)
+    _require_database(settings)
+    application = _application_with_ruleset(settings)
+    resolver = _scope_context().agent_id
+
+    async def preview():
+        return await application.repository.list_contests(
+            state=ContestState.OPEN,
+            claim_key=claim_key,
+            agent_id=agent_id,
+            source=source,
+            limit=limit,
+            oldest_first=True,
+        )
+
+    page = asyncio.run(preview())
+    if not page.entries:
+        click.echo("No open entries match that filter; nothing was changed.")
+        return
+    click.echo(
+        f"About to set aside {len(page.entries)} of {page.total} matching open "
+        f"entr(ies), as {resolver}:"
+    )
+    for entry in page.entries:
+        _print_contest_row(entry, settings)
+    if page.total > len(page.entries):
+        click.echo(
+            f"  ({page.total - len(page.entries)} more match; raise --limit to "
+            "include them)"
+        )
+    click.echo(
+        "\nNothing is deleted. Every record stays searchable with "
+        "include_contested and can be admitted individually later."
+    )
+    if not yes:
+        click.confirm("Proceed?", abort=True)
+
+    async def run():
+        resolved = []
+        for entry in page.entries:
+            resolved.append(
+                await application.resolve_contest(
+                    entry.contest_id,
+                    resolution=ContestResolution.SET_ASIDE,
+                    resolved_by=resolver,
+                    note=reason,
+                )
+            )
+        return resolved
+
+    try:
+        resolved = asyncio.run(run())
+    except Exception as exc:
+        raise click.ClickException(f"resolve-many failed: {exc}") from exc
+    click.echo(
+        f"Set aside {len(resolved)} entr(ies); {len(resolved)} receipt(s) written."
+    )
+
+
 @main.command("receipts")
 @click.option("--limit", type=click.IntRange(min=1, max=1000), default=20)
 @click.option("--json", "as_json", is_flag=True)
