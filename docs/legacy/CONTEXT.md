@@ -1,3 +1,5 @@
+> Legacy: This document describes the retired v1 daemon and is retained for historical reference only.
+
 # CONTEXT.md - Project Knowledge for Cursor
 
 *Last updated: 2026-02-23*

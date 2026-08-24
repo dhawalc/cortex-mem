@@ -1,3 +1,5 @@
+> Legacy: This document describes the retired v1 daemon and is retained for historical reference only.
+
 # WORKFLOW.md - ULTRON ↔ Cursor Coordination
 
 *How we work together*

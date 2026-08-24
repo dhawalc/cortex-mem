@@ -1,3 +1,5 @@
+> Legacy: This document describes the retired v1 daemon and is retained for historical reference only.
+
 # Weighted Memory Proof-of-Concept - Cursor Build Instructions
 
 **Model:** Use Opus 4.6 or Codex Premium  

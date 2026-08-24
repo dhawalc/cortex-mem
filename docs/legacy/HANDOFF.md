@@ -1,3 +1,5 @@
+> Legacy: This document describes the retired v1 daemon and is retained for historical reference only.
+
 # 🎉 Weighted Memory PoC - Foundation Complete!
 
 **Status:** ✅ Fully functional core system built  

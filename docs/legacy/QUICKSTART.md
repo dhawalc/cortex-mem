@@ -1,3 +1,5 @@
+> Legacy: This document describes the retired v1 daemon and is retained for historical reference only.
+
 # Quick Start (5 minutes)
 
 ## 1. Start the Service

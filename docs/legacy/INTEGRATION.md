@@ -1,3 +1,5 @@
+> Legacy: This document describes the retired v1 daemon and is retained for historical reference only.
+
 # Integration Guide
 
 cortex-mem integrates with any system that can make HTTP requests. This guide covers the built-in integrations for OpenClaw and Daemon, plus how to build your own.

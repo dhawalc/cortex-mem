@@ -1,224 +1,132 @@
-<p align="center">
-  <img src="docs/social-preview.png" alt="AOMS — Always-On Memory Service" width="720">
-</p>
+# AOMS — scoped memory for your whole agent fleet
 
-<h1 align="center">AOMS — Always-On Memory Service</h1>
+**One local brain, hard workspace boundaries.** AOMS lets Claude Code, Codex, OpenClaw, and other MCP agents share durable memory without collapsing every client and project into one undifferentiated profile.
 
-<p align="center">
-  Persistent 4-tier memory for AI agents. Weighted retrieval. Vector search. Progressive disclosure.
-  <br/>
-  <strong>Your agent remembers what it learned. Across sessions. Forever.</strong>
-</p>
+Every process is bound to an agent ID and a workspace ID. A workspace memory crosses agent boundaries only inside that workspace; an agent-private memory stays with its owner; a user-global memory is deliberately fleet-wide. Identity never comes from model-controlled tool arguments, and scope policy is applied before any memory can enter context.
 
-<p align="center">
-  <a href="https://clawhub.ai/DhawalA4/aoms"><img src="https://img.shields.io/badge/ClawHub-aoms-blue" alt="ClawHub"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="MIT License"></a>
-  <a href="https://python.org"><img src="https://img.shields.io/badge/Python-3.10+-blue.svg" alt="Python 3.10+"></a>
-</p>
+AOMS stores canonical memory in one SQLite/WAL database, retrieves locally, packs the final context under an exact token ceiling, provenance-fences recalled text as untrusted data, and records a receipt showing what was selected, filtered, superseded, and serialized.
 
----
+This is infrastructure for people running several agents and sessions—not a per-assistant chat-history plugin and not the retired v1 HTTP daemon.
 
-## Why AOMS?
+## Quick start
 
-Most AI agents forget everything between sessions. The few that don't use flat files that grow forever with no ranking, no decay, no structure.
+From the project you want to bind, run the pinned Git release:
 
-AOMS models how memory actually works:
-
-- **Important things surface first** — weighted retrieval with reinforcement learning
-- **Old things naturally fade** — time-based weight decay
-- **Similar things consolidate** — automatic clustering and summarization
-- **Context stays efficient** — progressive disclosure (L0/L1/L2) gives 98% token reduction
-
-Running on a live autonomous agent stack with **63,000+ memories** and counting.
-
-## Quick Start
-
-```bash
-# Install
-git clone https://github.com/dhawalc/cortex-mem.git
-cd cortex-mem
-pip install -e .
-
-# Start
-cortex-mem start --daemon
-
-# Check health
-cortex-mem status
-
-# Search memory
-cortex-mem search "deployment"
+```console
+uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 cortex-mem setup claude
 ```
 
-Or via Docker:
+Use `codex` or `openclaw` instead of `claude` for another supported host. `setup`:
 
-```bash
-docker build -t aoms .
-docker run -p 9100:9100 -v aoms-data:/app/modules aoms
+- detects whether it is running from the pinned Git source or an installed launcher;
+- creates/checks the local store without downloading an embedding model;
+- binds `agent=<host>` and `workspace=<current directory>` (override with `--workspace`);
+- executes the source-correct MCP registration and materializes the packaged host recipe; and
+- performs a real MCP handshake and scoped recall, then prints the recall receipt ID.
+
+The success output names the binding explicitly—for example, `bound as agent=claude workspace=myproject`. It never silently registers `default/default`.
+
+Python 3.11 or 3.12 is recommended. The default local embedding model is downloaded only when a non-empty store first needs semantic retrieval. Empty-store recall returns immediately without loading it.
+
+## The 60-second proof: remember, kill, cold-recall
+
+Save one real decision that the next session must know. Do not seed your canonical store with demo data:
+
+```console
+uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 \
+  cortex-mem remember \
+  --content "Decision: release only after the amber canary passes." \
+  --kind decision --tags release,canary \
+  --idempotency-key release-amber-gate
 ```
 
-API docs at `http://localhost:9100/docs`.
+The CLI binds this write to the resolved current workspace. Because workspace is the default scope, the Claude process registered there can see it even though the writer and reader are different agents.
 
-## Memory Tiers
+Now end the host session completely. Start a fresh session in the same project and ask:
 
-| Tier | Stores | Example |
-|------|--------|---------|
-| **Episodic** | Experiences, decisions, failures | "Deployed v2 — rollback needed due to missing migration" |
-| **Semantic** | Facts, relations, knowledge graphs | "Project uses pnpm, not npm" |
-| **Procedural** | Skills, patterns, workflows | "To deploy: run migrations first, then build, then push" |
-| **Working** | Active tasks, current context | "Currently debugging auth token refresh" |
+> Recall the release gate for this workspace. What must pass before release?
 
-## Core API
+The new process has no prior transcript. Its answer should come from the workspace-scoped memory, and recall returns a receipt ID proving the exact serialization path. That cold handoff—not a health check—is the activation proof.
 
-```bash
-# Write a memory
-curl -X POST http://localhost:9100/memory/episodic \
-  -H "Content-Type: application/json" \
-  -d '{"type": "experience", "payload": {"title": "Fixed auth bug", "outcome": "Token refresh was missing retry logic"}, "weight": 1.3}'
+If you do not have a durable fact yet, run an isolated tour:
 
-# Search
-curl -X POST http://localhost:9100/memory/search \
-  -d '{"query": "auth", "limit": 5}'
-
-# Agent recall (formatted context for prompt injection)
-curl -X POST http://localhost:9100/recall \
-  -d '{"task": "deploy the API", "token_budget": 500, "format": "markdown"}'
-
-# Reinforce useful memory
-curl -X POST http://localhost:9100/memory/weight \
-  -d '{"entry_id": "abc123", "tier": "episodic", "task_score": 0.9}'
-
-# Progressive disclosure query
-curl -X POST http://localhost:9100/cortex/query \
-  -d '{"query": "deployment process", "token_budget": 1000}'
+```console
+uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 cortex-mem tour
 ```
 
-## Full API
+The tour creates a disposable temporary store, seeds exactly three demo memories, demonstrates private-scope filtering and supersession, prints a real receipt, and auto-cleans. It never opens the canonical store. Use `--keep` only if you want to inspect the labeled demo database afterward.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/memory/{tier}` | POST | Write a memory entry |
-| `/memory/search` | POST | Keyword search with weighted scoring |
-| `/memory/semantic-search` | POST | Vector search (requires Ollama) |
-| `/memory/weight` | POST | Reinforce/decay entry weight |
-| `/memory/decay` | POST | Time-based weight decay |
-| `/memory/consolidate` | POST | Merge similar old memories |
-| `/memory/deduplicate` | POST | Find and merge duplicates |
-| `/recall` | POST | Agent context recall (formatted) |
-| `/cortex/query` | POST | Smart L0/L1/L2 query |
-| `/cortex/ingest` | POST | Ingest document with tier generation |
-| `/entities/extract` | POST | Extract entities from text |
-| `/stats` | GET | Memory analytics |
-| `/health` | GET | Service health |
+If a source-aware importer is present in your installed release, `cortex-mem import --help` describes its accepted inputs. Import is never required for setup, and setup does not invent memories in your real store.
 
-## Agent Integration
+## Three model-facing tools, one contract
 
-### MCP (AOMS v2)
+| Tool | Purpose |
+|---|---|
+| `recall` | Pack relevant memory for the current task under an explicit token ceiling, with structured sources and retrieval diagnostics. |
+| `remember` | Store a fact, decision, failure, procedure, or other durable memory with provenance and an optional idempotency key. |
+| `search` | Inspect typed records and scores with filters and pagination; no context packing. |
 
-Run the FastMCP adapter over stdio with:
+Maintenance is deliberately not model-facing. Setup, import, export, restore, diagnostics, token management, embedding backfill, sweeps, and the disposable tour remain CLI operations.
 
-```bash
-python -m aoms.adapters.mcp_server
+## The scope model
+
+| Scope | Visible to |
+|---|---|
+| `agent-private` | Only the bound agent that owns the memory. |
+| `workspace` | Agents bound to the same workspace. This is the default. |
+| `user-global` | Every agent using that AOMS store. |
+
+For local processes, identity is bound in the registered MCP environment. For authenticated HTTP, the bearer token binds it server-side. The model cannot supply or switch identity through `recall`, `remember`, or `search` arguments.
+
+Receipts retain the bound agent/workspace, requested filters, content-free scope-filter count, selected and rejected candidates, supersession decisions, vector coverage, exact token total, and engine version. Scope isolation is therefore testable at the actual context boundary, not merely asserted in configuration.
+
+## Empty stores are a path, not a dead end
+
+An empty scoped recall says:
+
+```text
+Store is empty for your scopes. Next: cortex-mem remember / import / tour.
 ```
 
-The server binds identity once at process startup from `AOMS_AGENT_ID` and
-`AOMS_WORKSPACE`; identity is never accepted as a tool parameter. For a local
-single-user setup, either variable may be omitted and defaults to `default`.
-Set `AOMS_DATA_DIR` to choose the v2 SQLite fixture/data directory and
-`AOMS_EMBEDDING_PROVIDER=none` to disable embeddings.
+It still writes a zero-candidate receipt, but it checks visibility before embedding so a cold empty brain does not download a model just to return nothing. Choose one path: save one user-authored durable decision, use an available reviewed importer, or run the disposable tour.
 
-Streamable HTTP supports hashed bearer tokens whose agent/workspace identity is
-bound at creation. See [remote authentication](docs/REMOTE_AUTH.md) for token,
-TLS, Origin, request-limit, and rate-limit configuration.
+## Local-first, with precise privacy claims
 
-### OpenClaw
+AOMS keeps the canonical database, vector index, durable embedding queue, and recall receipts locally. The default embedding provider runs locally; lexical-only operation is available with `AOMS_EMBEDDING_PROVIDER=none`. The default stdio transport opens no listening socket.
 
-```bash
-clawhub install aoms
+Optional streamable HTTP binds to loopback by default. A non-loopback bind is refused unless direct TLS and an active bearer token are configured; token secrets are stored as salted `scrypt` hashes, and token identity is enforced server-side. See [remote authentication](docs/REMOTE_AUTH.md).
+
+Local-first does not mean every connected model runs offline. A cloud-backed MCP client may send recalled context to its model provider under that client's privacy terms. AOMS makes storage and retrieval local; it cannot conceal what a client does with tool output.
+
+## Evidence, not “agents never forget”
+
+The included cold-start relay has a planner record non-obvious constraints, then launches transcript-isolated implementer and reviewer processes. Its artifact bundle captures MCP traffic, recall receipts, provenance, token ceilings, scope canaries, repository diffs, tests, a memory-disabled baseline, and a SHA-256 manifest.
+
+Deterministic scripted replay requires no model account:
+
+```console
+python -m demo.relay.runner run \
+  --output /tmp/aoms-relay-7319 \
+  --agents scripted,scripted,scripted \
+  --seed 7319 --with-baseline
+python -m demo.relay.runner validate /tmp/aoms-relay-7319
 ```
 
-AOMS auto-configures when installed alongside [OpenClaw](https://openclaw.ai). The pip package includes an OpenClaw plugin that starts the service, configures the memory backend, and migrates existing workspace memory.
+Read the supporting evidence:
 
-### Any Agent (HTTP)
+- [My agents' memory was silently corrupted for months](docs/launch/silent-corruption-essay.md) — the incident, recovery, and rebuild constraints.
+- [Anatomy of a token-budgeted handoff](aoms/anatomy.py) — the static receipt report generator.
+- [AOMS Relay Protocol](demo/relay/README.md) — the falsifiable handoff and sealed artifact schema.
 
-```python
-import httpx
+## Develop
 
-# Recall relevant context at session start
-resp = httpx.post("http://localhost:9100/recall", json={
-    "task": "working on auth module",
-    "token_budget": 500,
-    "format": "markdown"
-})
-context = resp.json()["context"]
-
-# Log what you learned
-httpx.post("http://localhost:9100/memory/episodic", json={
-    "type": "experience",
-    "payload": {"title": "pnpm not npm", "outcome": "Project uses pnpm workspaces"},
-    "weight": 1.5
-})
+```console
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
+python -m pytest
 ```
 
-## Architecture
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and [SECURITY.md](SECURITY.md) for the threat model and disclosure process.
 
-```
-cortex-mem/
-├── service/             # FastAPI application
-│   ├── api.py           # All endpoints
-│   ├── storage.py       # JSONL engine + weighted scoring
-│   └── models.py        # Pydantic schemas
-├── cortex/              # Progressive disclosure engine
-│   ├── tiered_retrieval.py  # L0/L1/L2 query with auto-escalation
-│   └── tier_generator.py    # Document ingestion + summary generation
-├── cortex_mem/          # Python package + CLI
-│   ├── cli.py           # Click CLI
-│   └── openclaw_plugin.py   # Auto-integration
-├── modules/             # JSONL memory data
-│   └── memory/
-│       ├── episodic/
-│       ├── semantic/
-│       └── procedural/
-├── Dockerfile
-├── pyproject.toml
-└── run.py
-```
-
-## CLI
-
-```
-cortex-mem start [--port 9100] [--daemon]   Start service
-cortex-mem stop                              Stop service
-cortex-mem status                            Health check
-cortex-mem search QUERY [--limit 5]          Search memory
-cortex-mem migrate SOURCE                    Import workspace data
-```
-
-## Configuration
-
-```yaml
-# service/config.yaml
-service:
-  port: 9100
-  host: localhost      # 0.0.0.0 for Docker
-
-weights:
-  decay_rate: 0.995    # Daily decay multiplier
-  min_weight: 0.1
-  max_weight: 5.0
-```
-
-## Requirements
-
-- Python 3.10+
-- Optional: [Ollama](https://ollama.ai) with `nomic-embed-text` for vector search
-- Optional: [Ollama](https://ollama.ai) with any chat model for consolidation/entity extraction
-
-## Development
-
-Run the canonical main suite from the repository root with `python -m pytest`.
-It collects 134 tests. Pytest is pinned to `tests/`; the three tests inside the
-relay fixture repository belong to that fixture's own harness and are excluded.
-
-## License
-
-MIT
+MIT licensed.

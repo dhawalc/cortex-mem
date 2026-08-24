@@ -1,3 +1,5 @@
+> Legacy: This document describes the retired v1 daemon and is retained for historical reference only.
+
 # Changelog
 
 All notable changes to cortex-mem (AOMS) will be documented in this file.
