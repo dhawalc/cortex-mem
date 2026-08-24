@@ -53,7 +53,7 @@ from aoms.repositories.base import (
     VectorHit,
 )
 
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -144,6 +144,9 @@ MIGRATIONS: dict[int, str] = {
         CREATE INDEX IF NOT EXISTS idx_auth_tokens_active
             ON auth_tokens(revoked_at, expires_at);
     """,
+    # Migration 6 is implemented by ``_migrate_fts_rowids`` because the
+    # rebuild must preserve the legacy FTS payload while changing its rowids.
+    6: "",
 }
 
 
@@ -245,12 +248,125 @@ class SQLiteMemoryRepository:
             for version in sorted(MIGRATIONS):
                 if version in applied:
                     continue
-                connection.executescript(MIGRATIONS[version])
-                connection.execute(
-                    "INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES (?, ?)",
-                    (version, datetime.now(timezone.utc).isoformat()),
-                )
+                if version == 6:
+                    self._migrate_fts_rowids(connection)
+                else:
+                    connection.executescript(MIGRATIONS[version])
+                    connection.execute(
+                        "INSERT OR IGNORE INTO schema_version(version, applied_at) "
+                        "VALUES (?, ?)",
+                        (version, datetime.now(timezone.utc).isoformat()),
+                    )
             connection.commit()
+
+    @staticmethod
+    def _migrate_fts_rowids(connection: sqlite3.Connection) -> None:
+        """Atomically rebuild FTS so every entry uses its memory's rowid.
+
+        The temporary source preserves the exact text indexed by older
+        versions, including the normalization of structured content. Building
+        it before the write transaction leaves the existing FTS table usable
+        until the short atomic swap. If the process is interrupted, SQLite
+        rolls the rebuild back and initialization can safely retry it.
+        """
+
+        connection.execute("DROP TABLE IF EXISTS temp.memories_fts_v6_source")
+        connection.execute(
+            """
+            CREATE TEMP TABLE memories_fts_v6_source (
+                rowid INTEGER PRIMARY KEY,
+                id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tags TEXT NOT NULL,
+                kind TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO memories_fts_v6_source(
+                rowid, id, content, tags, kind
+            )
+            SELECT m.rowid, f.id, f.content, f.tags, f.kind
+            FROM memories_fts AS f
+            JOIN memories AS m ON m.id = f.id
+            """
+        )
+        # A damaged legacy index may be missing a canonical row. Repair it
+        # while rebuilding, without carrying forward orphan FTS entries.
+        connection.execute(
+            """
+            INSERT INTO memories_fts_v6_source(rowid, id, content, tags, kind)
+            SELECT
+                m.rowid,
+                m.id,
+                json_extract(m.record_json, '$.content'),
+                COALESCE((
+                    SELECT group_concat(value, ' ')
+                    FROM json_each(m.record_json, '$.tags')
+                ), ''),
+                m.kind
+            FROM memories AS m
+            LEFT JOIN memories_fts_v6_source AS f ON f.rowid = m.rowid
+            WHERE f.rowid IS NULL
+            """
+        )
+        connection.commit()
+
+        memory_count = int(
+            connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        )
+        staged_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM memories_fts_v6_source"
+            ).fetchone()[0]
+        )
+        misaligned_count = int(
+            connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM memories_fts_v6_source AS f
+                JOIN memories AS m ON m.rowid = f.rowid
+                WHERE m.id <> f.id
+                """
+            ).fetchone()[0]
+        )
+        if staged_count != memory_count or misaligned_count:
+            raise RuntimeError(
+                "could not build a complete rowid-aligned FTS migration source"
+            )
+
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute("DROP TABLE memories_fts")
+            connection.execute(
+                """
+                CREATE VIRTUAL TABLE memories_fts USING fts5(
+                    id UNINDEXED,
+                    content,
+                    tags,
+                    kind,
+                    tokenize = 'unicode61'
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO memories_fts(rowid, id, content, tags, kind)
+                SELECT rowid, id, content, tags, kind
+                FROM memories_fts_v6_source
+                ORDER BY rowid
+                """
+            )
+            connection.execute(
+                "INSERT OR IGNORE INTO schema_version(version, applied_at) "
+                "VALUES (?, ?)",
+                (6, datetime.now(timezone.utc).isoformat()),
+            )
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
 
     async def schema_version(self) -> int:
         await self.initialize()
@@ -341,6 +457,14 @@ class SQLiteMemoryRepository:
                         updated_at = excluded.updated_at,
                         record_json = excluded.record_json
                     """
+                existing = connection.execute(
+                    "SELECT rowid FROM memories WHERE id = ?", (record.id,)
+                ).fetchone()
+                if existing is not None:
+                    connection.execute(
+                        "DELETE FROM memories_fts WHERE rowid = ?",
+                        (existing["rowid"],),
+                    )
                 connection.execute(
                     insert_sql,
                     (
@@ -355,12 +479,19 @@ class SQLiteMemoryRepository:
                         serialized,
                     ),
                 )
+                memory_rowid = connection.execute(
+                    "SELECT rowid FROM memories WHERE id = ?", (record.id,)
+                ).fetchone()["rowid"]
                 connection.execute(
-                    "DELETE FROM memories_fts WHERE id = ?", (record.id,)
-                )
-                connection.execute(
-                    "INSERT INTO memories_fts(id, content, tags, kind) VALUES (?, ?, ?, ?)",
-                    (record.id, content_text, " ".join(record.tags), record.kind.value),
+                    "INSERT INTO memories_fts(rowid, id, content, tags, kind) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        memory_rowid,
+                        record.id,
+                        content_text,
+                        " ".join(record.tags),
+                        record.kind.value,
+                    ),
                 )
                 if embedding_profile is not None:
                     self._enqueue_record(connection, record, embedding_profile)
