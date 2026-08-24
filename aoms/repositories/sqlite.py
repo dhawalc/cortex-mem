@@ -47,9 +47,11 @@ from aoms.ownership import LEGACY_IMPORT_ACTOR, UNSCOPED_SQL, OwnershipSnapshot
 from aoms.receipts import RecallReceipt
 from aoms.repositories.base import (
     CompletedEmbedding,
+    ConditionalStoreResult,
     PendingEmbedding,
     RecallCandidate,
     RecallCandidateBatch,
+    RecordContentConflictError,
     VectorHit,
 )
 
@@ -393,6 +395,17 @@ class SQLiteMemoryRepository:
         await asyncio.to_thread(self._store_many_sync, [record], None, True)
         return record
 
+    async def store_if_content_unchanged(
+        self, record: MemoryRecord
+    ) -> ConditionalStoreResult:
+        """Atomically insert a new id or retain an equal-content existing row."""
+
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._store_if_content_unchanged_sync, record
+        )
+
     async def store_with_embedding_pending(
         self, record: MemoryRecord, profile: EmbeddingProfile
     ) -> MemoryRecord:
@@ -412,6 +425,17 @@ class SQLiteMemoryRepository:
         await self.initialize()
         await asyncio.to_thread(self._store_many_sync, [record], profile, True)
         return record
+
+    async def store_if_content_unchanged_with_embedding_pending(
+        self, record: MemoryRecord, profile: EmbeddingProfile
+    ) -> ConditionalStoreResult:
+        """Conditionally insert canonical and pending rows in one transaction."""
+
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._store_if_content_unchanged_sync, record, profile
+        )
 
     async def store_many(self, records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
         self._require_writable()
@@ -509,6 +533,79 @@ class SQLiteMemoryRepository:
                 if embedding_profile is not None:
                     self._enqueue_record(connection, record, embedding_profile)
             connection.commit()
+
+    def _store_if_content_unchanged_sync(
+        self,
+        record: MemoryRecord,
+        embedding_profile: EmbeddingProfile | None = None,
+    ) -> ConditionalStoreResult:
+        """Make the first-write decision under SQLite's serialized writer lock.
+
+        ``BEGIN IMMEDIATE`` obtains the WAL writer reservation before the
+        insert. A concurrent writer waits under ``busy_timeout``; after the
+        winner commits, ``ON CONFLICT DO NOTHING`` makes the loser inspect and
+        retain that exact row without ever issuing an update.
+        """
+
+        serialized = record.model_dump_json()
+        content_text = (
+            record.content
+            if isinstance(record.content, str)
+            else json.dumps(record.content, ensure_ascii=False, sort_keys=True)
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if embedding_profile is not None:
+                self._register_profile(connection, embedding_profile)
+            inserted = connection.execute(
+                """
+                INSERT INTO memories(
+                    id, kind, scope, scope_agent_id, scope_workspace_id,
+                    created_by_agent_id, created_at, updated_at, record_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO NOTHING
+                RETURNING rowid
+                """,
+                (
+                    record.id,
+                    record.kind.value,
+                    record.scope.value,
+                    record.scope_agent_id,
+                    record.scope_workspace_id,
+                    record.created_by_agent_id,
+                    record.created_at.isoformat(),
+                    record.updated_at.isoformat(),
+                    serialized,
+                ),
+            ).fetchone()
+            if inserted is None:
+                row = connection.execute(
+                    "SELECT record_json FROM memories WHERE id = ?", (record.id,)
+                ).fetchone()
+                if row is None:  # pragma: no cover - protected by the write lock
+                    raise RuntimeError("conflicting record disappeared during write")
+                retained = self._record_from_row(row)
+                if retained.content != record.content:
+                    raise RecordContentConflictError(retained)
+                connection.commit()
+                return ConditionalStoreResult(record=retained, created=False)
+
+            connection.execute(
+                "INSERT INTO memories_fts(rowid, id, content, tags, kind) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    inserted["rowid"],
+                    record.id,
+                    content_text,
+                    " ".join(record.tags),
+                    record.kind.value,
+                ),
+            )
+            if embedding_profile is not None:
+                self._enqueue_record(connection, record, embedding_profile)
+            connection.commit()
+            return ConditionalStoreResult(record=record, created=True)
 
     async def get(self, record_id: str) -> MemoryRecord | None:
         await self.initialize()

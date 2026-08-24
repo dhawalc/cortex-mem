@@ -18,6 +18,99 @@ Use a portable export when moving across an incompatible SQLite environment or w
 
 Choose a generation from before the first suspected corruption or bad write. Newer is not safer if it already contains the unwanted state. Preserve the failed store and every newer backup until the incident is understood; wholesale restore intentionally discards writes made after the chosen generation.
 
+## Investigate possible in-place replacement
+
+`cortex-mem doctor` reports an **In-place update signal** when any canonical
+row has `updated_at != created_at`. This is a cheap, content-free way to find
+IDs that may have been updated in place. It is not proof of corruption: a
+trusted importer can preserve distinct source timestamps, and a reviewed
+idempotent restore/upsert can legitimately update an existing deterministic
+ID. An application/model-facing provenance source, an unexpected actor, or a
+content-hash change between backup generations deserves investigation.
+
+Never query a live SQLite/WAL file for this procedure and never copy only its
+main database file. Create a transactionally consistent `/tmp` copy with
+SQLite's online backup API; the source connection performs only `backup()`:
+
+```console
+scratch=$(mktemp -d /tmp/aoms-v2-forensic.XXXXXX)
+python - "$HOME/.local/share/aoms/aoms.sqlite3" \
+  "$scratch/live-backup.sqlite3" <<'PY'
+from pathlib import Path
+import sqlite3
+import sys
+
+source_path = Path(sys.argv[1]).resolve()
+destination_path = Path(sys.argv[2]).resolve()
+source = sqlite3.connect(f"{source_path.as_uri()}?mode=ro", uri=True)
+destination = sqlite3.connect(destination_path)
+try:
+    source.backup(destination)
+finally:
+    destination.close()
+    source.close()
+PY
+```
+
+Inspect only that copy. Do not print `content` or complete `record_json`
+values. For each hit, record the ID, kind, scope, timestamps, provenance, and a
+content shape such as `string(chars=N)`, `object(keys=N)`, or `array(items=N)`:
+
+```console
+python - "$scratch/live-backup.sqlite3" <<'PY'
+import json
+import sqlite3
+import sys
+
+def shape(content):
+    if isinstance(content, str):
+        return f"string(chars={len(content)})"
+    if isinstance(content, dict):
+        return f"object(keys={len(content)})"
+    if isinstance(content, list):
+        return f"array(items={len(content)})"
+    return type(content).__name__
+
+with sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True) as connection:
+    connection.execute("PRAGMA query_only=ON")
+    rows = connection.execute(
+        "SELECT id,kind,scope,created_at,updated_at,record_json "
+        "FROM memories WHERE updated_at <> created_at ORDER BY updated_at,id"
+    )
+    for row in rows:
+        record = json.loads(row[5])
+        print(json.dumps({
+            "id": row[0], "kind": row[1], "scope": row[2],
+            "created_at": row[3], "updated_at": row[4],
+            "provenance": record.get("provenance"),
+            "content_shape": shape(record.get("content")),
+        }, sort_keys=True))
+PY
+```
+
+Verify and decompress the candidate physical snapshot into the same scratch
+directory using the physical staging procedure below. Extract a portable
+bundle there using the portable staging procedure. Compare IDs across the live
+copy, physical snapshot, and portable `records.jsonl` by hashing only the
+canonical content value—`sha256(json.dumps(content, ensure_ascii=False,
+sort_keys=True, separators=(",", ":")).encode())`—and report counts plus IDs
+whose hashes differ, not bodies. First confirm that the physical and portable
+artifacts represent independent generation times; daily and weekly files made
+from the same backup transaction are one generation, even when their filenames
+differ. With only one generation, historical replacement cannot be determined
+by hash comparison; preserve future generations so the same per-ID comparison
+becomes decisive.
+
+Classify every timestamp hit by provenance and timing. Import provenance and a
+timestamp at the import boundary support a legitimate upsert explanation.
+`source="application"` (or another client-facing source), an actor registered
+during the exposure window, and a hash transition after import support a
+model-facing write explanation. State one of: **evidence of silent replacement
+found**, **no evidence found**, or **cannot determine**, including the exact
+hit count, generation count, and exposure-window bounds. Absence of timestamp
+hits is no evidence of in-place replacement in the inspected generation,
+provided the writer preserved `created_at` as designed.
+
 ## Verify and stage a physical snapshot
 
 Set `artifact` to the selected daily or weekly physical archive. Keep the sidecars in the same directory.
