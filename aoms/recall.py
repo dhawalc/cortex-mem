@@ -374,6 +374,24 @@ def contested_notice(notice: SlotContestNotice | None) -> dict[str, object] | No
     }
 
 
+def _rendered_provenance(record: MemoryRecord) -> dict[str, object]:
+    """Dump provenance without spending context on fields nobody declared.
+
+    This dictionary goes straight into the model's prompt, so an empty new
+    field is not free: it costs tokens in every block, and on a
+    token-budgeted pack that changes which record is the last one to fit.
+    Omitting them when unset keeps a record that does not participate in the
+    gate rendering byte-for-byte as it did before the gate existed.
+    """
+
+    dumped = record.provenance.model_dump(mode="json")
+    if dumped.get("asserted_at") is None:
+        dumped.pop("asserted_at", None)
+    if not dumped.get("derived_from"):
+        dumped.pop("derived_from", None)
+    return dumped
+
+
 def _memory_payload(
     record: MemoryRecord,
     content: str,
@@ -387,7 +405,7 @@ def _memory_payload(
         "kind": record.kind.value,
         "scope": record.scope.value,
         "timestamp": record.updated_at.isoformat(),
-        "provenance": record.provenance.model_dump(mode="json"),
+        "provenance": _rendered_provenance(record),
         "truncated": truncated,
         "content": content,
     }

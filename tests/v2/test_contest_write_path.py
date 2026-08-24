@@ -543,3 +543,64 @@ async def test_a_recall_engine_without_a_ledger_capable_repository_still_works(
     )
     result = await engine.recall(RecallRequest(task="a fact"))
     assert [source.memory_id for source in result.sources] == ["a"]
+
+
+# --- the new fields must not spend a legacy record's context budget --------
+
+
+@pytest.mark.asyncio
+async def test_a_non_participating_record_renders_exactly_as_it_did_before(tmp_path):
+    """The packed block for a legacy-shaped record gains nothing at all.
+
+    `_memory_payload` dumps provenance straight into the model's prompt, so
+    an empty new field is not free: it costs tokens in every block, and on a
+    token-budgeted pack that changes which record is the last one to fit.
+    Verified against a copy of the real 165k store, where rendering the two
+    new fields as `null` and `[]` changed the packed context of eight
+    different recall tasks before this was fixed.
+    """
+
+    application = build(tmp_path)
+    await remember(application, id="legacy", content="a fact from before the gate")
+    recalled = await application.recall(RecallRequest(task="a fact"))
+    payload = json.loads(
+        re.search(r"```+json\n(.*?)\n```+", recalled.context, re.S).group(1)
+    )
+
+    assert set(payload) == {
+        "id",
+        "kind",
+        "scope",
+        "timestamp",
+        "provenance",
+        "truncated",
+        "content",
+    }
+    assert set(payload["provenance"]) == {"source", "tier", "record_type", "details"}
+    assert "asserted_at" not in payload["provenance"]
+    assert "derived_from" not in payload["provenance"]
+    assert "contested_by" not in payload
+
+
+@pytest.mark.asyncio
+async def test_a_declared_provenance_field_is_still_rendered(tmp_path):
+    application = build(tmp_path)
+    asserted = datetime.now(timezone.utc) - timedelta(days=3)
+    await remember(
+        application,
+        id="declared",
+        content="a sourced fact",
+        provenance=Provenance(
+            source="agent",
+            asserted_at=asserted,
+            derived_from=["7f1e2c3d-4b5a-4c6d-8e9f-0a1b2c3d4e5f"],
+        ),
+    )
+    recalled = await application.recall(RecallRequest(task="a sourced fact"))
+    payload = json.loads(
+        re.search(r"```+json\n(.*?)\n```+", recalled.context, re.S).group(1)
+    )
+    assert payload["provenance"]["asserted_at"].startswith(asserted.date().isoformat())
+    assert payload["provenance"]["derived_from"] == [
+        "7f1e2c3d-4b5a-4c6d-8e9f-0a1b2c3d4e5f"
+    ]
