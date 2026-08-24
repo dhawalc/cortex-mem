@@ -153,6 +153,9 @@ def main() -> None:
     """
 
 
+import aoms.importers.cli  # noqa: E402,F401
+
+
 @main.command("init")
 @_data_dir_option
 def init_command(data_dir: Path | None) -> None:
@@ -538,10 +541,16 @@ def _doctor_database(
 
         total = int(connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
         if total == 0:
+            import_action = (
+                "Run `cortex-mem import-from markdown PATH --scope workspace` to "
+                "bring existing notes, or connect a client and call remember."
+                if "import-from" in getattr(main, "commands", {})
+                else "Run `cortex-mem import PATH` or connect a client and call remember."
+            )
             report.warn(
                 "Memory records",
                 "store is healthy but empty",
-                "Run `cortex-mem import PATH` or connect a client and call remember.",
+                import_action,
             )
         else:
             report.pass_("Memory records", f"{total} canonical records")
