@@ -40,6 +40,7 @@ from aoms.contracts import (
     SearchResult,
 )
 from aoms.embeddings import provider_from_config
+from aoms.recall import memory_content_text, render_memory_block
 from aoms.repositories import SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
 from aoms.version import __version__ as AOMS_VERSION
@@ -245,7 +246,7 @@ def _remember_text(_: RememberRequest, result: RememberResult) -> str:
     action = "Created" if result.created else "Updated"
     record = result.record
     return (
-        f"{action} memory {record.id} "
+        f"{action} memory {_content_preview(record.id, limit=256)} "
         f"(kind={record.kind.value}, scope={record.scope.value})."
     )
 
@@ -271,10 +272,15 @@ def _search_text(request: SearchRequest, result: SearchResult) -> str:
     ]
     for hit in result.items:
         record = hit.record
+        content = memory_content_text(record)
+        preview = _content_preview(content)
         lines.append(
-            f"- {record.id} [{record.kind.value}; {record.scope.value}; "
-            f"score={hit.score:.6f}; source={record.provenance.source}] "
-            f"{_content_preview(record.content)}"
+            f"Match score={hit.score:.6f}\n"
+            + render_memory_block(
+                record,
+                preview,
+                truncated=preview != content,
+            )
         )
     return "\n".join(lines)
 
