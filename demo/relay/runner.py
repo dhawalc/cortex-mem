@@ -137,6 +137,9 @@ def _initialize_fixture_repository(source: Path, destination: Path) -> None:
     _run_git(destination, "init", "-q", "-b", "main")
     _run_git(destination, "config", "user.name", "AOMS Relay")
     _run_git(destination, "config", "user.email", "relay-fixture@example.invalid")
+    # Detached maintenance can race the next stage's copy of this disposable
+    # repository (notably via .git/objects/maintenance.lock on Git 2.53).
+    _run_git(destination, "config", "maintenance.auto", "false")
     _run_git(destination, "add", "-A")
     _run_git(destination, "commit", "-q", "-m", "fixture: pristine relay service")
 
