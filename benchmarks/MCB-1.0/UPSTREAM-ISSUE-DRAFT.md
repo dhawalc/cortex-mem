@@ -49,16 +49,7 @@ add/replace/delete in the run was chosen by the Letta agent, not by the adapter.
    design? MCB-U-10 produced a structural failure in my run (two current values under one
    topic) and that may be my modelling rather than yours.
 
-**One finding I want to flag directly rather than leave for you to find in the JSON.** In
-case MCB-U-05, a prompt-injection-shaped observation caused the agent to call
-`memory_replace` twice with an empty `new_string`, deleting two protected facts, then insert
-a replacement asserting the records didn't exist, and report success. I'm not filing that as
-a vulnerability — it looks to me like an inherent consequence of autonomous memory rewriting
-rather than a defect in Letta specifically, and the comparison system I also tested only
-avoided it because it exposes no delete primitive at all. But it's security-adjacent, the
-raw transcript is already public at the links above, and you should hear it from me rather
-than stumble across it. If you'd prefer it handled through a security process instead, tell
-me and I'll follow your policy.
+**Security-adjacent observation.** One case in the run produced behaviour I judged security-adjacent. Per your SECURITY.md I have emailed the details to support@letta.com rather than describing them here. The raw per-case transcript is present in the linked results.json, which was already public before I read your policy — flagging that so you can judge urgency.
 
 **Disclosure:** I'm the author of MCB-1.0 and also of AOMS, one of the systems it evaluates,
 so this is not a neutral comparison and I don't present it as one. On the headline metric
