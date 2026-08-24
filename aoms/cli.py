@@ -188,6 +188,7 @@ def main() -> None:
 
 
 import aoms.importers.cli  # noqa: E402,F401
+import aoms.ops.backup_status  # noqa: E402,F401
 
 
 @main.command("init")
