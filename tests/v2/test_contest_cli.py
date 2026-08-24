@@ -329,3 +329,71 @@ def test_write_receipts_are_listable_without_a_model_facing_tool(store):
     assert "append-only, never pruned" in output
     assert "contested" in output
     assert "admitted" in output
+
+
+def test_inspection_commands_never_migrate_or_mutate_the_store(store, monkeypatch):
+    """The command you run when you suspect trouble must not change anything.
+
+    Opening the store writable would apply pending migrations as a side
+    effect of merely looking. These commands open it read-only instead.
+    """
+
+    runner, db_path = store
+    open_contest(runner)
+
+    def fingerprint():
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
+            return (
+                connection.execute(
+                    "SELECT group_concat(version) FROM schema_version"
+                ).fetchone()[0],
+                connection.execute(
+                    "SELECT group_concat(record_json) FROM memories ORDER BY id"
+                ).fetchone()[0],
+                connection.execute(
+                    "SELECT group_concat(state || occurrence_count) FROM contest_entries"
+                ).fetchone()[0],
+                connection.execute(
+                    "SELECT COUNT(*) FROM write_receipts"
+                ).fetchone()[0],
+            )
+
+    before = fingerprint()
+    for args in (
+        ["contest", "list"],
+        ["contest", "drain"],
+        ["doctor"],
+        ["doctor", "--contests"],
+        ["receipts"],
+    ):
+        runner.invoke(main, args)
+    assert fingerprint() == before
+
+
+def test_inspection_commands_work_on_a_store_predating_the_ledger(store):
+    runner, db_path = store
+    run(runner, "remember", "--content", "a legacy write")
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("DELETE FROM schema_version WHERE version = 7")
+        for index in (
+            "idx_memories_claim_slot",
+            "idx_memories_contested",
+            "idx_memories_scope_contested",
+            "idx_memories_workspace_contested",
+            "idx_memories_agent_contested",
+        ):
+            connection.execute(f"DROP INDEX {index}")
+        connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
+        connection.execute("ALTER TABLE memories DROP COLUMN contested")
+        connection.execute("DROP TABLE contest_entries")
+        connection.execute("DROP TABLE write_receipts")
+        connection.commit()
+
+    assert "0 matching" in run(runner, "contest", "list")
+    assert "predates the contest ledger" in run(runner, "doctor", "--contests")
+    # And looking did not migrate it.
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
+        version = connection.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version"
+        ).fetchone()[0]
+    assert version == 6

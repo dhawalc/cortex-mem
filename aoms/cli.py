@@ -609,6 +609,22 @@ def supersede_command(
         click.echo(f"    {_content_display(version.record.content)}")
 
 
+def _reading_repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
+    """Open the store read-only for inspection commands.
+
+    A diagnostic must never be the thing that changes the store. Opening it
+    writable would apply pending migrations as a side effect of merely
+    looking, which is the last behaviour you want from the command you reach
+    for when you already suspect something is wrong.
+    """
+
+    return SQLiteMemoryRepository(
+        settings.db_path,
+        read_only=True,
+        receipt_retention=settings.receipt_retention,
+    )
+
+
 def _application_with_ruleset(settings: AOMSSettings) -> AOMSApplication:
     return AOMSApplication(
         _repository(settings),
@@ -677,7 +693,7 @@ def contest_list_command(
 
     settings = _settings(data_dir)
     _require_database(settings)
-    repository = _repository(settings)
+    repository = _reading_repository(settings)
 
     async def run():
         return await repository.list_contests(
@@ -723,7 +739,7 @@ def contest_show_command(contest_id: str, data_dir: Path | None) -> None:
 
     settings = _settings(data_dir)
     _require_database(settings)
-    repository = _repository(settings)
+    repository = _reading_repository(settings)
 
     async def run():
         entry = await repository.get_contest(contest_id)
@@ -885,7 +901,7 @@ def contest_drain_command(limit: int, data_dir: Path | None) -> None:
 
     settings = _settings(data_dir)
     _require_database(settings)
-    repository = _repository(settings)
+    repository = _reading_repository(settings)
 
     async def run():
         return await repository.list_contests(
@@ -909,7 +925,7 @@ def receipts_command(limit: int, as_json: bool, data_dir: Path | None) -> None:
 
     settings = _settings(data_dir)
     _require_database(settings)
-    repository = _repository(settings)
+    repository = _reading_repository(settings)
     receipts = asyncio.run(repository.recent_write_receipts(limit=limit))
     if as_json:
         click.echo(
@@ -1416,17 +1432,20 @@ def _doctor_database(
 def _doctor_contests(report: _DoctorReport, settings: AOMSSettings) -> None:
     """Surface the ledger in the same pass/warn/fail reporter as everything else."""
 
-    repository = _repository(settings)
+    repository = _reading_repository(settings)
 
     async def run():
-        integrity = await repository.integrity_report()
+        # Deliberately not `integrity_report()`: that also walks the FTS and
+        # vector projections, which is minutes of work on a large store, and
+        # doctor runs this check every time.
+        drift, contested_count, _ = await repository.contested_drift_report()
         page = await repository.list_contests(
             state=ContestState.OPEN, limit=500, oldest_first=True
         )
-        return integrity, page
+        return drift, contested_count, page
 
     try:
-        integrity, page = asyncio.run(run())
+        drift, contested_count, page = asyncio.run(run())
     except sqlite3.DatabaseError as exc:
         report.fail(
             "Contest ledger",
@@ -1435,25 +1454,19 @@ def _doctor_contests(report: _DoctorReport, settings: AOMSSettings) -> None:
         )
         return
 
-    if integrity.contested_projection_drift:
-        named = ", ".join(integrity.contested_projection_drift[:10])
-        extra = (
-            f" (+{len(integrity.contested_projection_drift) - 10} more)"
-            if len(integrity.contested_projection_drift) > 10
-            else ""
-        )
+    if drift:
+        named = ", ".join(drift[:10])
+        extra = f" (+{len(drift) - 10} more)" if len(drift) > 10 else ""
         report.fail(
             "Contested projection",
-            f"{len(integrity.contested_projection_drift)} record(s) disagree with "
-            f"the ledger: {named}{extra}",
+            f"{len(drift)} record(s) disagree with the ledger: {named}{extra}",
             "Do not write to this store. Run `cortex-mem contest list` and "
             "reconcile before any further writes.",
         )
     else:
         report.pass_(
             "Contested projection",
-            f"agrees with the ledger ({integrity.contested_count} contested "
-            f"record(s))",
+            f"agrees with the ledger ({contested_count} contested record(s))",
         )
 
     now = datetime.now(timezone.utc)

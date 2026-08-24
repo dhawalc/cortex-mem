@@ -93,6 +93,13 @@ async def test_a_store_already_at_version_six_advances_to_seven(tmp_path):
     with sqlite3.connect(path) as connection:
         connection.execute("DELETE FROM schema_version WHERE version = 7")
         connection.execute("DROP INDEX idx_memories_claim_slot")
+        for index in (
+            "idx_memories_contested",
+            "idx_memories_scope_contested",
+            "idx_memories_workspace_contested",
+            "idx_memories_agent_contested",
+        ):
+            connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
         connection.execute("ALTER TABLE memories DROP COLUMN contested")
         connection.execute("DROP TABLE contest_entries")
@@ -364,6 +371,13 @@ async def test_a_read_only_store_still_at_schema_six_opens_and_reads(tmp_path):
     with sqlite3.connect(path) as connection:
         connection.execute("DELETE FROM schema_version WHERE version = 7")
         connection.execute("DROP INDEX idx_memories_claim_slot")
+        for index in (
+            "idx_memories_contested",
+            "idx_memories_scope_contested",
+            "idx_memories_workspace_contested",
+            "idx_memories_agent_contested",
+        ):
+            connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
         connection.execute("ALTER TABLE memories DROP COLUMN contested")
         connection.commit()

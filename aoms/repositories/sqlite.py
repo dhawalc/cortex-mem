@@ -96,6 +96,23 @@ MIGRATION_7_COLUMNS: dict[str, str] = {
 MIGRATION_7_OBJECTS = """
     CREATE INDEX IF NOT EXISTS idx_memories_claim_slot
         ON memories(claim_key, scope, scope_workspace_id, scope_agent_id, contested);
+    -- Partial, so it indexes only contested rows and is empty on every store
+    -- that has never contested a write. That makes "is anything contested?"
+    -- a constant-time probe, which keeps recall from paying for the ledger on
+    -- the overwhelmingly common path where the ledger is empty.
+    CREATE INDEX IF NOT EXISTS idx_memories_contested
+        ON memories(contested) WHERE contested = 1;
+    -- The scope indexes from migration 4 answered visibility counts without
+    -- touching the table. Adding `contested` to the read predicate would have
+    -- forced a row fetch per index hit -- measured at 19ms -> 130ms for one
+    -- visible count over 165k records. These carry `contested` in the index
+    -- so the same queries stay index-only.
+    CREATE INDEX IF NOT EXISTS idx_memories_scope_contested
+        ON memories(scope, contested);
+    CREATE INDEX IF NOT EXISTS idx_memories_workspace_contested
+        ON memories(scope, scope_workspace_id, contested);
+    CREATE INDEX IF NOT EXISTS idx_memories_agent_contested
+        ON memories(scope, scope_agent_id, contested);
 
     CREATE TABLE IF NOT EXISTS contest_entries (
         contest_id TEXT PRIMARY KEY,
@@ -976,6 +993,10 @@ class SQLiteMemoryRepository:
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         direction = "ASC" if oldest_first else "DESC"
         with self._connect() as connection:
+            # A read-only open never migrates, so an inspection command may
+            # legitimately meet a store that predates the ledger.
+            if not self._table_exists(connection, "contest_entries"):
+                return ContestPage(entries=(), total=0)
             total = int(
                 connection.execute(
                     f"SELECT COUNT(*) AS count FROM contest_entries{where}",
@@ -998,6 +1019,8 @@ class SQLiteMemoryRepository:
 
     def _get_contest_sync(self, contest_id: str) -> ContestEntry | None:
         with self._connect() as connection:
+            if not self._table_exists(connection, "contest_entries"):
+                return None
             row = connection.execute(
                 "SELECT * FROM contest_entries WHERE contest_id = ?", (contest_id,)
             ).fetchone()
@@ -1197,16 +1220,27 @@ class SQLiteMemoryRepository:
     ) -> list[str]:
         if not self._contest_schema_present:
             return []
-        expression = self._recall_fts_expression(request.task)
-        clauses, parameters = self._filters(
-            kinds=request.kinds,
-            scopes=request.scopes,
-            table_alias="m.",
-            scope_context=scope_context,
-            include_contested=True,
-        )
-        clauses.append("m.contested = 1")
         with self._connect() as connection:
+            # A store with nothing contested must not pay for the ledger on
+            # every recall. The partial index makes this probe constant time,
+            # and it is the answer for every store that has never contested a
+            # write, which is all of them until someone declares a claim key.
+            if (
+                connection.execute(
+                    "SELECT 1 FROM memories WHERE contested = 1 LIMIT 1"
+                ).fetchone()
+                is None
+            ):
+                return []
+            expression = self._recall_fts_expression(request.task)
+            clauses, parameters = self._filters(
+                kinds=request.kinds,
+                scopes=request.scopes,
+                table_alias="m.",
+                scope_context=scope_context,
+                include_contested=True,
+            )
+            clauses.append("m.contested = 1")
             if expression:
                 clauses.insert(0, "memories_fts MATCH ?")
                 parameters.insert(0, expression)
@@ -2438,6 +2472,21 @@ class SQLiteMemoryRepository:
             contested_count=contested_count,
             open_contest_count=open_contests,
         )
+
+    async def contested_drift_report(self) -> tuple[list[str], int, int]:
+        """Just the ledger's drift check, without the whole integrity report.
+
+        ``integrity_report`` also walks the FTS and vector projections, which
+        is minutes of work on a large store. ``doctor`` needs the ledger
+        answer on every run, so it gets the targeted queries instead.
+        """
+
+        await self.initialize()
+        return await asyncio.to_thread(self._contested_drift_report_sync)
+
+    def _contested_drift_report_sync(self) -> tuple[list[str], int, int]:
+        with self._connect() as connection:
+            return self._contested_drift(connection)
 
     def _contested_drift(
         self, connection: sqlite3.Connection

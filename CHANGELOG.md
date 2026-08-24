@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added the **contest ledger**: an optional `claim_key` on a write declares which proposition the record answers, and a write that collides with the record already holding that slot is stored as `contested` rather than displacing it. There are exactly two dispositions, `admitted` and `contested`. Nothing is refused, deleted, truncated, or rewritten; a contested record is retained in full, stays retrievable by id and by `search(include_contested=True)`, and is one operator command from current.
+- Added three structural contest triggers, none of which reads record content: an undeclared slot collision, a retrograde `asserted_at` compared numerically against the incumbent's, and a write whose provenance declares `derived_from`. The last blocks laundering, where an agent reads crafted memory and re-asserts it as its own write.
+- Added `WriteReceipt`, an append-only decision log that is deliberately **exempt from `receipt_retention`** and is never trimmed by any background mechanism.
+- Added `contested_withheld`, `contested_incumbents`, and `ruleset_digest` to `RecallReceipt`, additively under schema version 1. Once anything can be withheld from packing, a recall receipt that does not name the configuration in force has stopped being a complete explanation of its own output.
+- Added the `cortex-mem contest` command group (`list`, `show`, `drain`, `resolve`) and `cortex-mem receipts`. Resolution is always a named human act: `--admit`, `--supersede`, `--set-aside`, `--split`. Nothing resolves on a timer.
+- Added `cortex-mem doctor --contests`, a zero-write projection of which record holds which slot, and contest checks in `cortex-mem doctor` that fail on projection drift or on entries past the review window.
+- Added the read-only Observatory contradiction inbox at `GET /contests` and `GET /contests/{id}`, with a contested counter on `/truth`. Each row offers a copy-able CLI command rather than a resolve button, so an XSS or CSRF against the Observatory cannot change memory.
+- Added `AOMS_CONTEST_SLA_DAYS` (default 14) and `AOMS_CONTEST_EXPIRY_DAYS` (default 30). Both are reporting thresholds only.
+
+### Changed
+
+- **Behavioral contract change for MCP clients.** `remember`'s semantics widen from "this was stored" to "this was stored, and here is whether it holds the slot." `RememberResult` gains `disposition`, `contest_id`, and `incumbent_ids`; a contested write reports itself in-band, the same turn, and names the record still standing. Clients that never send `claim_key` see no behavior change at all.
+- Schema `LATEST_SCHEMA_VERSION` moves 6 to 7. Migration 7 is pure DDL: it rewrites no `record_json`, deletes nothing, and backfills nothing. `memories.claim_key` is nullable with no default, so **every record written before this release is non-participating** and keeps exactly the semantics it had. Defaulting existing rows to a comparable weak value would have let the first post-upgrade write dominate everything written before the feature existed.
+- Contested records are excluded from `list`, `search`, recall candidates, visible counts, and lineage by one predicate at the shared read choke point, rather than by a filter re-implemented per query.
+
+### Security
+
+- `contest_id` is always a server-generated `uuid4` and is never derived from any caller string. `RememberRequest.id` accepts 256 arbitrary characters, so an id-derived contest identifier would have rendered attacker prose into every recalled context.
+- The contest notice attached to a surviving incumbent carries a count, up to three server UUIDs, and one timestamp: zero challenger prose, provenance, or claim-key value. The UUID shape is re-validated at render time rather than trusted.
+- `Provenance.derived_from` accepts only opaque identifier shapes and refuses prose at the boundary, because that field renders verbatim into a model's context through the recall provenance dump. An `asserted_at` in the future is refused, closing forged-freshness claims.
+
 ## [2.0.0] - 2026-08-23
 
 ### Added
