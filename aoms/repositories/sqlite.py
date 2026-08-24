@@ -30,7 +30,12 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from aoms.contest import content_digest
 from aoms.contracts import (
+    ContestEntry,
+    ContestResolution,
+    ContestState,
+    ContestTrigger,
     IntegrityReport,
     MemoryKind,
     MemoryRecord,
@@ -41,21 +46,116 @@ from aoms.contracts import (
     SearchHit,
     SearchRequest,
     SearchResult,
+    WriteDisposition,
 )
 from aoms.embeddings import EmbeddingProfile, EmbeddingVector
 from aoms.ownership import LEGACY_IMPORT_ACTOR, UNSCOPED_SQL, OwnershipSnapshot
-from aoms.receipts import RecallReceipt
+from aoms.receipts import RecallReceipt, WriteReceipt
 from aoms.repositories.base import (
     CompletedEmbedding,
     ConditionalStoreResult,
+    ContestPage,
+    LedgerWrite,
     PendingEmbedding,
     RecallCandidate,
     RecallCandidateBatch,
     RecordContentConflictError,
+    SlotContestNotice,
     VectorHit,
 )
 
-LATEST_SCHEMA_VERSION = 6
+# The recall notice names at most this many contests. It is a count plus a
+# bounded set of server UUIDs, never an unbounded list a writer could inflate.
+NOTICE_ID_LIMIT = 3
+
+
+def _parse_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+LATEST_SCHEMA_VERSION = 7
+
+# Migration 7 adds the contest ledger. The two new ``memories`` columns are
+# listed separately so the applier can skip one that already exists, making
+# the migration safe to retry after an interrupted run. ``MIGRATIONS[7]`` is
+# still the complete, literal DDL: it rewrites no ``record_json``, deletes
+# nothing, and backfills nothing.
+MIGRATION_7_COLUMNS: dict[str, str] = {
+    # NULL means "does not participate in the contest gate". Every one of the
+    # existing records loads with NULL and keeps today's semantics exactly.
+    # Defaulting them to a comparable weak value instead would make the
+    # migration itself the overwrite vector.
+    "claim_key": "ALTER TABLE memories ADD COLUMN claim_key TEXT",
+    "contested": (
+        "ALTER TABLE memories ADD COLUMN contested INTEGER NOT NULL DEFAULT 0"
+    ),
+}
+
+MIGRATION_7_OBJECTS = """
+    CREATE INDEX IF NOT EXISTS idx_memories_claim_slot
+        ON memories(claim_key, scope, scope_workspace_id, scope_agent_id, contested);
+    -- Partial, so it indexes only contested rows and is empty on every store
+    -- that has never contested a write. That makes "is anything contested?"
+    -- a constant-time probe, which keeps recall from paying for the ledger on
+    -- the overwhelmingly common path where the ledger is empty.
+    CREATE INDEX IF NOT EXISTS idx_memories_contested
+        ON memories(contested) WHERE contested = 1;
+    -- The scope indexes from migration 4 answered visibility counts without
+    -- touching the table. Adding `contested` to the read predicate would have
+    -- forced a row fetch per index hit -- measured at 19ms -> 130ms for one
+    -- visible count over 165k records. These carry `contested` in the index
+    -- so the same queries stay index-only.
+    CREATE INDEX IF NOT EXISTS idx_memories_scope_contested
+        ON memories(scope, contested);
+    CREATE INDEX IF NOT EXISTS idx_memories_workspace_contested
+        ON memories(scope, scope_workspace_id, contested);
+    CREATE INDEX IF NOT EXISTS idx_memories_agent_contested
+        ON memories(scope, scope_agent_id, contested);
+
+    CREATE TABLE IF NOT EXISTS contest_entries (
+        contest_id TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+        claim_key TEXT,
+        observation_id TEXT,
+        scope TEXT NOT NULL,
+        scope_agent_id TEXT,
+        scope_workspace_id TEXT,
+        incumbent_ids TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        trigger_detail TEXT NOT NULL,
+        occurrence_count INTEGER NOT NULL DEFAULT 1,
+        opened_at TEXT NOT NULL,
+        opened_by_agent_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        resolution TEXT,
+        resolved_at TEXT,
+        resolved_by TEXT,
+        resolution_note TEXT,
+        escalated_at TEXT,
+        UNIQUE(record_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_contest_open
+        ON contest_entries(state, opened_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_contest_slot
+        ON contest_entries(claim_key, scope, scope_workspace_id, scope_agent_id, state);
+
+    CREATE TABLE IF NOT EXISTS write_receipts (
+        receipt_id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        claim_key TEXT,
+        agent_id TEXT,
+        workspace_id TEXT,
+        disposition TEXT NOT NULL,
+        receipt_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_write_receipts_created
+        ON write_receipts(created_at DESC, receipt_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_write_receipts_claim
+        ON write_receipts(claim_key, created_at DESC);
+"""
 
 MIGRATIONS: dict[int, str] = {
     1: """
@@ -149,6 +249,7 @@ MIGRATIONS: dict[int, str] = {
     # Migration 6 is implemented by ``_migrate_fts_rowids`` because the
     # rebuild must preserve the legacy FTS payload while changing its rowids.
     6: "",
+    7: ";\n".join(MIGRATION_7_COLUMNS.values()) + ";\n" + MIGRATION_7_OBJECTS,
 }
 
 
@@ -170,6 +271,10 @@ class SQLiteMemoryRepository:
         self._initialized = False
         self._initialize_lock = asyncio.Lock()
         self._sqlite_vec_available: bool | None = None
+        # A read-only open never migrates, so a store still at schema 6 has no
+        # contested column. Such a store also has no contested record, so
+        # omitting the predicate there is both necessary and correct.
+        self._contest_schema_present = False
 
     async def initialize(self) -> None:
         if self._initialized:
@@ -217,6 +322,14 @@ class SQLiteMemoryRepository:
                 pass
             self._sqlite_vec_available = False
 
+    @staticmethod
+    def _detect_contest_schema(connection: sqlite3.Connection) -> bool:
+        columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(memories)").fetchall()
+        }
+        return "contested" in columns and "claim_key" in columns
+
     def _initialize_sync(self) -> None:
         if self.read_only:
             with self._connect() as connection:
@@ -226,6 +339,7 @@ class SQLiteMemoryRepository:
                         "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
                     ).fetchall()
                 }
+                self._contest_schema_present = self._detect_contest_schema(connection)
             required = {"memories", "memories_fts"}
             if not required.issubset(available):
                 missing = ", ".join(sorted(required - available))
@@ -252,6 +366,8 @@ class SQLiteMemoryRepository:
                     continue
                 if version == 6:
                     self._migrate_fts_rowids(connection)
+                elif version == 7:
+                    self._migrate_contest_ledger(connection)
                 else:
                     connection.executescript(MIGRATIONS[version])
                     connection.execute(
@@ -260,6 +376,30 @@ class SQLiteMemoryRepository:
                         (version, datetime.now(timezone.utc).isoformat()),
                     )
             connection.commit()
+            self._contest_schema_present = self._detect_contest_schema(connection)
+
+    @staticmethod
+    def _migrate_contest_ledger(connection: sqlite3.Connection) -> None:
+        """Apply migration 7's DDL so an interrupted run can safely retry.
+
+        ``ALTER TABLE ADD COLUMN`` is not idempotent, and ``executescript``
+        commits before the version row is written. Checking the current
+        columns first means a crash between the two leaves a store that
+        re-initializes cleanly rather than one that can never open again.
+        """
+
+        existing = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(memories)").fetchall()
+        }
+        for column, statement in MIGRATION_7_COLUMNS.items():
+            if column not in existing:
+                connection.execute(statement)
+        connection.executescript(MIGRATION_7_OBJECTS)
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES (?, ?)",
+            (7, datetime.now(timezone.utc).isoformat()),
+        )
 
     @staticmethod
     def _migrate_fts_rowids(connection: sqlite3.Connection) -> None:
@@ -387,23 +527,25 @@ class SQLiteMemoryRepository:
         await asyncio.to_thread(self._store_many_sync, [record])
         return record
 
-    async def store_new(self, record: MemoryRecord) -> MemoryRecord:
+    async def store_new(
+        self, record: MemoryRecord, *, ledger: LedgerWrite | None = None
+    ) -> MemoryRecord:
         """Insert exactly once; an existing id is never updated."""
 
         self._require_writable()
         await self.initialize()
-        await asyncio.to_thread(self._store_many_sync, [record], None, True)
+        await asyncio.to_thread(self._store_many_sync, [record], None, True, ledger)
         return record
 
     async def store_if_content_unchanged(
-        self, record: MemoryRecord
+        self, record: MemoryRecord, *, ledger: LedgerWrite | None = None
     ) -> ConditionalStoreResult:
         """Atomically insert a new id or retain an equal-content existing row."""
 
         self._require_writable()
         await self.initialize()
         return await asyncio.to_thread(
-            self._store_if_content_unchanged_sync, record
+            self._store_if_content_unchanged_sync, record, None, ledger
         )
 
     async def store_with_embedding_pending(
@@ -417,24 +559,32 @@ class SQLiteMemoryRepository:
         return record
 
     async def store_new_with_embedding_pending(
-        self, record: MemoryRecord, profile: EmbeddingProfile
+        self,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+        *,
+        ledger: LedgerWrite | None = None,
     ) -> MemoryRecord:
         """Atomically insert a new record and its embedding work, never upsert."""
 
         self._require_writable()
         await self.initialize()
-        await asyncio.to_thread(self._store_many_sync, [record], profile, True)
+        await asyncio.to_thread(self._store_many_sync, [record], profile, True, ledger)
         return record
 
     async def store_if_content_unchanged_with_embedding_pending(
-        self, record: MemoryRecord, profile: EmbeddingProfile
+        self,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+        *,
+        ledger: LedgerWrite | None = None,
     ) -> ConditionalStoreResult:
         """Conditionally insert canonical and pending rows in one transaction."""
 
         self._require_writable()
         await self.initialize()
         return await asyncio.to_thread(
-            self._store_if_content_unchanged_sync, record, profile
+            self._store_if_content_unchanged_sync, record, profile, ledger
         )
 
     async def store_many(self, records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
@@ -464,6 +614,7 @@ class SQLiteMemoryRepository:
         records: Sequence[MemoryRecord],
         embedding_profile: EmbeddingProfile | None = None,
         insert_only: bool = False,
+        ledger: LedgerWrite | None = None,
     ) -> None:
         with self._connect() as connection:
             if embedding_profile is not None:
@@ -478,9 +629,10 @@ class SQLiteMemoryRepository:
                 insert_sql = """
                     INSERT INTO memories(
                         id, kind, scope, scope_agent_id, scope_workspace_id,
-                        created_by_agent_id, created_at, updated_at, record_json
+                        created_by_agent_id, created_at, updated_at, record_json,
+                        claim_key, contested
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 if not insert_only:
                     insert_sql += """
@@ -492,7 +644,9 @@ class SQLiteMemoryRepository:
                         created_by_agent_id = excluded.created_by_agent_id,
                         created_at = excluded.created_at,
                         updated_at = excluded.updated_at,
-                        record_json = excluded.record_json
+                        record_json = excluded.record_json,
+                        claim_key = excluded.claim_key,
+                        contested = excluded.contested
                     """
                 existing = connection.execute(
                     "SELECT rowid FROM memories WHERE id = ?", (record.id,)
@@ -514,6 +668,8 @@ class SQLiteMemoryRepository:
                         record.created_at.isoformat(),
                         record.updated_at.isoformat(),
                         serialized,
+                        record.claim_key,
+                        int(record.disposition is WriteDisposition.CONTESTED),
                     ),
                 )
                 memory_rowid = connection.execute(
@@ -532,12 +688,15 @@ class SQLiteMemoryRepository:
                 )
                 if embedding_profile is not None:
                     self._enqueue_record(connection, record, embedding_profile)
+            if ledger is not None:
+                self._write_ledger_rows(connection, ledger)
             connection.commit()
 
     def _store_if_content_unchanged_sync(
         self,
         record: MemoryRecord,
         embedding_profile: EmbeddingProfile | None = None,
+        ledger: LedgerWrite | None = None,
     ) -> ConditionalStoreResult:
         """Make the first-write decision under SQLite's serialized writer lock.
 
@@ -561,9 +720,10 @@ class SQLiteMemoryRepository:
                 """
                 INSERT INTO memories(
                     id, kind, scope, scope_agent_id, scope_workspace_id,
-                    created_by_agent_id, created_at, updated_at, record_json
+                    created_by_agent_id, created_at, updated_at, record_json,
+                    claim_key, contested
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO NOTHING
                 RETURNING rowid
                 """,
@@ -577,6 +737,8 @@ class SQLiteMemoryRepository:
                     record.created_at.isoformat(),
                     record.updated_at.isoformat(),
                     serialized,
+                    record.claim_key,
+                    int(record.disposition is WriteDisposition.CONTESTED),
                 ),
             ).fetchone()
             if inserted is None:
@@ -604,8 +766,575 @@ class SQLiteMemoryRepository:
             )
             if embedding_profile is not None:
                 self._enqueue_record(connection, record, embedding_profile)
+            if ledger is not None:
+                self._write_ledger_rows(connection, ledger)
             connection.commit()
             return ConditionalStoreResult(record=record, created=True)
+
+    # --- contest ledger ---------------------------------------------------
+
+    @staticmethod
+    def _write_ledger_rows(
+        connection: sqlite3.Connection, ledger: LedgerWrite
+    ) -> None:
+        """Commit the contest entry and the write receipt with the record."""
+
+        if ledger.contest is not None:
+            entry = ledger.contest
+            connection.execute(
+                """
+                INSERT INTO contest_entries(
+                    contest_id, record_id, claim_key, observation_id,
+                    scope, scope_agent_id, scope_workspace_id, incumbent_ids,
+                    trigger, trigger_detail, occurrence_count,
+                    opened_at, opened_by_agent_id, state
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.contest_id,
+                    entry.record_id,
+                    entry.claim_key,
+                    entry.observation_id,
+                    entry.scope.value,
+                    entry.scope_agent_id,
+                    entry.scope_workspace_id,
+                    json.dumps(entry.incumbent_ids, separators=(",", ":")),
+                    entry.trigger.value,
+                    json.dumps(
+                        entry.trigger_detail, separators=(",", ":"), sort_keys=True
+                    ),
+                    entry.occurrence_count,
+                    entry.opened_at.isoformat(),
+                    entry.opened_by_agent_id,
+                    entry.state.value,
+                ),
+            )
+        elif ledger.coalesced_contest_id is not None:
+            # A loop re-asserting the same claim increments one inbox row
+            # instead of creating thousands. The records themselves are all
+            # stored; only the operator-facing entry is coalesced.
+            connection.execute(
+                "UPDATE contest_entries SET occurrence_count = occurrence_count + 1 "
+                "WHERE contest_id = ? AND state = ?",
+                (ledger.coalesced_contest_id, ContestState.OPEN.value),
+            )
+        SQLiteMemoryRepository._insert_write_receipt(connection, ledger.receipt)
+
+    @staticmethod
+    def _insert_write_receipt(
+        connection: sqlite3.Connection, receipt: WriteReceipt
+    ) -> None:
+        """Append-only. Deliberately not trimmed by ``receipt_retention``."""
+
+        connection.execute(
+            """
+            INSERT INTO write_receipts(
+                receipt_id, created_at, record_id, claim_key,
+                agent_id, workspace_id, disposition, receipt_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(receipt_id) DO NOTHING
+            """,
+            (
+                receipt.receipt_id,
+                receipt.created_at.isoformat(),
+                receipt.record_id,
+                receipt.claim_key,
+                receipt.agent_id,
+                receipt.workspace_id,
+                receipt.disposition.value,
+                receipt.model_dump_json(),
+            ),
+        )
+
+    async def slot_occupants(
+        self,
+        *,
+        claim_key: str,
+        scope: Scope,
+        scope_agent_id: str | None,
+        scope_workspace_id: str | None,
+    ) -> list[MemoryRecord]:
+        """Return the admitted records currently holding one claim slot."""
+
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._slot_occupants_sync,
+            claim_key,
+            scope,
+            scope_agent_id,
+            scope_workspace_id,
+        )
+
+    def _slot_occupants_sync(
+        self,
+        claim_key: str,
+        scope: Scope,
+        scope_agent_id: str | None,
+        scope_workspace_id: str | None,
+    ) -> list[MemoryRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT record_json FROM memories "
+                "WHERE claim_key = ? AND scope = ? AND contested = 0 "
+                "AND scope_agent_id IS ? AND scope_workspace_id IS ? "
+                "AND id NOT IN ("
+                "  SELECT json_extract(s.record_json, '$.supersedes') FROM memories AS s"
+                "  WHERE s.claim_key = ? AND s.scope = ? AND s.contested = 0"
+                "    AND s.scope_agent_id IS ? AND s.scope_workspace_id IS ?"
+                "    AND json_extract(s.record_json, '$.supersedes') IS NOT NULL"
+                ") "
+                "ORDER BY created_at ASC, id ASC",
+                (
+                    claim_key,
+                    scope.value,
+                    scope_agent_id,
+                    scope_workspace_id,
+                    claim_key,
+                    scope.value,
+                    scope_agent_id,
+                    scope_workspace_id,
+                ),
+            ).fetchall()
+        return [self._record_from_row(row) for row in rows]
+
+    async def open_contest_for_slot(
+        self,
+        *,
+        claim_key: str,
+        scope: Scope,
+        scope_agent_id: str | None,
+        scope_workspace_id: str | None,
+        opened_by_agent_id: str,
+    ) -> ContestEntry | None:
+        """Find an open entry this agent already has against the same slot."""
+
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._open_contest_for_slot_sync,
+            claim_key,
+            scope,
+            scope_agent_id,
+            scope_workspace_id,
+            opened_by_agent_id,
+        )
+
+    def _open_contest_for_slot_sync(
+        self,
+        claim_key: str,
+        scope: Scope,
+        scope_agent_id: str | None,
+        scope_workspace_id: str | None,
+        opened_by_agent_id: str,
+    ) -> ContestEntry | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM contest_entries "
+                "WHERE claim_key = ? AND scope = ? AND scope_agent_id IS ? "
+                "AND scope_workspace_id IS ? AND opened_by_agent_id = ? "
+                "AND state = ? ORDER BY opened_at ASC, contest_id ASC LIMIT 1",
+                (
+                    claim_key,
+                    scope.value,
+                    scope_agent_id,
+                    scope_workspace_id,
+                    opened_by_agent_id,
+                    ContestState.OPEN.value,
+                ),
+            ).fetchone()
+        return self._contest_from_row(row) if row is not None else None
+
+    async def list_contests(
+        self,
+        *,
+        state: ContestState | None = None,
+        claim_key: str | None = None,
+        agent_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        oldest_first: bool = True,
+    ) -> ContestPage:
+        if limit < 1 or limit > 500:
+            raise ValueError("limit must be between 1 and 500")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._list_contests_sync,
+            state,
+            claim_key,
+            agent_id,
+            limit,
+            offset,
+            oldest_first,
+        )
+
+    def _list_contests_sync(
+        self,
+        state: ContestState | None,
+        claim_key: str | None,
+        agent_id: str | None,
+        limit: int,
+        offset: int,
+        oldest_first: bool,
+    ) -> ContestPage:
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        if state is not None:
+            clauses.append("state = ?")
+            parameters.append(state.value)
+        if claim_key is not None:
+            clauses.append("claim_key = ?")
+            parameters.append(claim_key)
+        if agent_id is not None:
+            clauses.append("opened_by_agent_id = ?")
+            parameters.append(agent_id)
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        direction = "ASC" if oldest_first else "DESC"
+        with self._connect() as connection:
+            # A read-only open never migrates, so an inspection command may
+            # legitimately meet a store that predates the ledger.
+            if not self._table_exists(connection, "contest_entries"):
+                return ContestPage(entries=(), total=0)
+            total = int(
+                connection.execute(
+                    f"SELECT COUNT(*) AS count FROM contest_entries{where}",
+                    parameters,
+                ).fetchone()["count"]
+            )
+            rows = connection.execute(
+                f"SELECT * FROM contest_entries{where} "
+                f"ORDER BY opened_at {direction}, contest_id {direction} "
+                "LIMIT ? OFFSET ?",
+                [*parameters, limit, offset],
+            ).fetchall()
+        return ContestPage(
+            entries=tuple(self._contest_from_row(row) for row in rows), total=total
+        )
+
+    async def get_contest(self, contest_id: str) -> ContestEntry | None:
+        await self.initialize()
+        return await asyncio.to_thread(self._get_contest_sync, contest_id)
+
+    def _get_contest_sync(self, contest_id: str) -> ContestEntry | None:
+        with self._connect() as connection:
+            if not self._table_exists(connection, "contest_entries"):
+                return None
+            row = connection.execute(
+                "SELECT * FROM contest_entries WHERE contest_id = ?", (contest_id,)
+            ).fetchone()
+        return self._contest_from_row(row) if row is not None else None
+
+    async def resolve_contest(
+        self,
+        contest_id: str,
+        *,
+        resolution: ContestResolution,
+        resolved_by: str,
+        note: str | None,
+        receipt: WriteReceipt,
+        admit_record: bool,
+        new_claim_key: str | None = None,
+    ) -> ContestEntry:
+        """Apply one named human verdict, receipted, in a single transaction."""
+
+        self._require_writable()
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._resolve_contest_sync,
+            contest_id,
+            resolution,
+            resolved_by,
+            note,
+            receipt,
+            admit_record,
+            new_claim_key,
+        )
+
+    def _resolve_contest_sync(
+        self,
+        contest_id: str,
+        resolution: ContestResolution,
+        resolved_by: str,
+        note: str | None,
+        receipt: WriteReceipt,
+        admit_record: bool,
+        new_claim_key: str | None,
+    ) -> ContestEntry:
+        now = datetime.now(timezone.utc)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = connection.execute(
+                    "SELECT * FROM contest_entries WHERE contest_id = ?",
+                    (contest_id,),
+                ).fetchone()
+                if row is None:
+                    raise LookupError(f"contest not found: {contest_id}")
+                if str(row["state"]) != ContestState.OPEN.value:
+                    raise ValueError(
+                        f"contest {contest_id} is already resolved; "
+                        "reopen it deliberately rather than resolving twice"
+                    )
+                if admit_record or new_claim_key is not None:
+                    self._apply_resolution_to_record(
+                        connection,
+                        record_id=str(row["record_id"]),
+                        admit=admit_record,
+                        new_claim_key=new_claim_key,
+                    )
+                connection.execute(
+                    "UPDATE contest_entries SET state = ?, resolution = ?, "
+                    "resolved_at = ?, resolved_by = ?, resolution_note = ?, "
+                    "claim_key = COALESCE(?, claim_key) WHERE contest_id = ?",
+                    (
+                        ContestState.RESOLVED.value,
+                        resolution.value,
+                        now.isoformat(),
+                        resolved_by,
+                        note,
+                        new_claim_key,
+                        contest_id,
+                    ),
+                )
+                self._insert_write_receipt(connection, receipt)
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+            resolved = connection.execute(
+                "SELECT * FROM contest_entries WHERE contest_id = ?", (contest_id,)
+            ).fetchone()
+        return self._contest_from_row(resolved)
+
+    def _apply_resolution_to_record(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        record_id: str,
+        admit: bool,
+        new_claim_key: str | None,
+    ) -> None:
+        """Change disposition and slot only. Content is provably untouched.
+
+        The record is re-serialized in Python from its own parsed form so the
+        rewrite is exactly the write path's own encoding, and a digest check
+        proves no byte of content moved.
+        """
+
+        row = connection.execute(
+            "SELECT record_json FROM memories WHERE id = ?", (record_id,)
+        ).fetchone()
+        if row is None:  # pragma: no cover - protected by the foreign key
+            raise LookupError(f"contested record disappeared: {record_id}")
+        record = self._record_from_row(row)
+        before = content_digest(record.content)
+        updates: dict[str, Any] = {}
+        if admit:
+            updates["disposition"] = WriteDisposition.ADMITTED
+        if new_claim_key is not None:
+            updates["claim_key"] = new_claim_key
+        resolved = record.model_copy(update=updates)
+        if content_digest(resolved.content) != before:  # pragma: no cover - guard
+            raise RuntimeError("resolution attempted to change record content")
+        connection.execute(
+            "UPDATE memories SET record_json = ?, claim_key = ?, contested = ? "
+            "WHERE id = ?",
+            (
+                resolved.model_dump_json(),
+                resolved.claim_key,
+                int(resolved.disposition is WriteDisposition.CONTESTED),
+                record_id,
+            ),
+        )
+
+    async def slot_contest_notices(
+        self, records: Sequence[MemoryRecord]
+    ) -> dict[str, SlotContestNotice]:
+        """Count open contests standing against each record's claim slot."""
+
+        materialized = [record for record in records if record.claim_key is not None]
+        if not materialized:
+            return {}
+        await self.initialize()
+        return await asyncio.to_thread(self._slot_contest_notices_sync, materialized)
+
+    def _slot_contest_notices_sync(
+        self, records: Sequence[MemoryRecord]
+    ) -> dict[str, SlotContestNotice]:
+        notices: dict[str, SlotContestNotice] = {}
+        with self._connect() as connection:
+            if not self._table_exists(connection, "contest_entries"):
+                return {}
+            for record in records:
+                rows = connection.execute(
+                    "SELECT contest_id, occurrence_count, opened_at "
+                    "FROM contest_entries "
+                    "WHERE claim_key = ? AND scope = ? AND scope_agent_id IS ? "
+                    "AND scope_workspace_id IS ? AND state = ? "
+                    "ORDER BY opened_at ASC, contest_id ASC",
+                    (
+                        record.claim_key,
+                        record.scope.value,
+                        record.scope_agent_id,
+                        record.scope_workspace_id,
+                        ContestState.OPEN.value,
+                    ),
+                ).fetchall()
+                if not rows:
+                    continue
+                notices[record.id] = SlotContestNotice(
+                    count=sum(int(row["occurrence_count"]) for row in rows),
+                    contest_ids=tuple(
+                        str(row["contest_id"]) for row in rows[:NOTICE_ID_LIMIT]
+                    ),
+                    since=_parse_timestamp(str(rows[0]["opened_at"])),
+                )
+        return notices
+
+    async def contested_candidate_ids(
+        self,
+        request: RecallRequest,
+        *,
+        scope_context: ScopeContext | None = None,
+        limit: int = 50,
+    ) -> list[str]:
+        """Name what recall withheld, without letting it crowd out candidates.
+
+        Deliberately a separate bounded query rather than a partition of the
+        candidate query: a flood of contested rows must not be able to push
+        admitted records out of the ranked pool.
+        """
+
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._contested_candidate_ids_sync, request, scope_context, limit
+        )
+
+    def _contested_candidate_ids_sync(
+        self,
+        request: RecallRequest,
+        scope_context: ScopeContext | None,
+        limit: int,
+    ) -> list[str]:
+        if not self._contest_schema_present:
+            return []
+        with self._connect() as connection:
+            # A store with nothing contested must not pay for the ledger on
+            # every recall. The partial index makes this probe constant time,
+            # and it is the answer for every store that has never contested a
+            # write, which is all of them until someone declares a claim key.
+            if (
+                connection.execute(
+                    "SELECT 1 FROM memories WHERE contested = 1 LIMIT 1"
+                ).fetchone()
+                is None
+            ):
+                return []
+            expression = self._recall_fts_expression(request.task)
+            clauses, parameters = self._filters(
+                kinds=request.kinds,
+                scopes=request.scopes,
+                table_alias="m.",
+                scope_context=scope_context,
+                include_contested=True,
+            )
+            clauses.append("m.contested = 1")
+            if expression:
+                clauses.insert(0, "memories_fts MATCH ?")
+                parameters.insert(0, expression)
+                rows = connection.execute(
+                    "SELECT m.id FROM memories_fts "
+                    "JOIN memories AS m ON m.id = memories_fts.id "
+                    f"WHERE {' AND '.join(clauses)} "
+                    "ORDER BY m.updated_at DESC, m.id ASC LIMIT ?",
+                    [*parameters, limit],
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    f"SELECT id FROM memories WHERE {' AND '.join(clauses).replace('m.', '')} "
+                    "ORDER BY updated_at DESC, id ASC LIMIT ?",
+                    [*parameters, limit],
+                ).fetchall()
+        return [str(row["id"]) for row in rows]
+
+    async def save_write_receipt(self, receipt: WriteReceipt) -> None:
+        self._require_writable()
+        await self.initialize()
+        await asyncio.to_thread(self._save_write_receipt_sync, receipt)
+
+    def _save_write_receipt_sync(self, receipt: WriteReceipt) -> None:
+        with self._connect() as connection:
+            self._insert_write_receipt(connection, receipt)
+            connection.commit()
+
+    async def recent_write_receipts(self, *, limit: int = 20) -> list[WriteReceipt]:
+        if limit < 1 or limit > 1_000:
+            raise ValueError("limit must be between 1 and 1000")
+        await self.initialize()
+        return await asyncio.to_thread(self._recent_write_receipts_sync, limit)
+
+    def _recent_write_receipts_sync(self, limit: int) -> list[WriteReceipt]:
+        with self._connect() as connection:
+            if not self._table_exists(connection, "write_receipts"):
+                return []
+            rows = connection.execute(
+                "SELECT receipt_json FROM write_receipts "
+                "ORDER BY created_at DESC, receipt_id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [WriteReceipt.model_validate_json(row["receipt_json"]) for row in rows]
+
+    async def write_receipt_count(self) -> int:
+        await self.initialize()
+        return await asyncio.to_thread(self._write_receipt_count_sync)
+
+    def _write_receipt_count_sync(self) -> int:
+        with self._connect() as connection:
+            if not self._table_exists(connection, "write_receipts"):
+                return 0
+            return int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM write_receipts"
+                ).fetchone()["count"]
+            )
+
+    @staticmethod
+    def _contest_from_row(row: sqlite3.Row) -> ContestEntry:
+        return ContestEntry(
+            contest_id=str(row["contest_id"]),
+            record_id=str(row["record_id"]),
+            claim_key=row["claim_key"],
+            observation_id=row["observation_id"],
+            scope=Scope(str(row["scope"])),
+            scope_agent_id=row["scope_agent_id"],
+            scope_workspace_id=row["scope_workspace_id"],
+            incumbent_ids=json.loads(str(row["incumbent_ids"])),
+            trigger=ContestTrigger(str(row["trigger"])),
+            trigger_detail=json.loads(str(row["trigger_detail"])),
+            occurrence_count=int(row["occurrence_count"]),
+            opened_at=_parse_timestamp(str(row["opened_at"])),
+            opened_by_agent_id=str(row["opened_by_agent_id"]),
+            state=ContestState(str(row["state"])),
+            resolution=(
+                ContestResolution(str(row["resolution"]))
+                if row["resolution"]
+                else None
+            ),
+            resolved_at=(
+                _parse_timestamp(str(row["resolved_at"]))
+                if row["resolved_at"]
+                else None
+            ),
+            resolved_by=row["resolved_by"],
+            resolution_note=row["resolution_note"],
+            escalated_at=(
+                _parse_timestamp(str(row["escalated_at"]))
+                if row["escalated_at"]
+                else None
+            ),
+        )
 
     async def get(self, record_id: str) -> MemoryRecord | None:
         await self.initialize()
@@ -698,12 +1427,13 @@ class SQLiteMemoryRepository:
         *,
         scope_context: ScopeContext,
         as_of: datetime | None = None,
+        include_contested: bool = False,
     ) -> list[MemoryRecord]:
         """Return only scope-visible members connected by declared links."""
 
         await self.initialize()
         return await asyncio.to_thread(
-            self._lineage_sync, record_id, scope_context, as_of
+            self._lineage_sync, record_id, scope_context, as_of, include_contested
         )
 
     def _lineage_sync(
@@ -711,6 +1441,7 @@ class SQLiteMemoryRepository:
         record_id: str,
         scope_context: ScopeContext,
         as_of: datetime | None,
+        include_contested: bool = False,
     ) -> list[MemoryRecord]:
         access, access_parameters = self._scope_access_filter(
             scope_context, table_alias="m."
@@ -718,6 +1449,13 @@ class SQLiteMemoryRepository:
         recursive_access, recursive_parameters = self._scope_access_filter(
             scope_context, table_alias="linked."
         )
+        # A contested record is not part of current truth, so it must not
+        # appear as a chain member. Without this, a hostile agent could freeze
+        # an incumbent forever by writing a contested successor: `supersede`
+        # refuses to act on a record that has any direct successor.
+        if not include_contested and self._contest_schema_present:
+            access = [*access, "m.contested = 0"]
+            recursive_access = [*recursive_access, "linked.contested = 0"]
         boundary = " AND m.created_at <= ?" if as_of is not None else ""
         recursive_boundary = (
             " AND linked.created_at <= ?" if as_of is not None else ""
@@ -788,6 +1526,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=request.include_contested,
         )
         clauses.insert(0, "memories_fts MATCH ?")
         parameters.insert(0, expression)
@@ -854,6 +1593,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=request.include_contested,
         )
         anchor_clauses.insert(0, "memories_fts MATCH ?")
         anchor_parameters.insert(0, expression)
@@ -867,6 +1607,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=request.include_contested,
         )
         successor_access, successor_parameters = (
             self._scope_access_filter(scope_context, table_alias="successor.")
@@ -1711,9 +2452,11 @@ class SQLiteMemoryRepository:
                     ).fetchall()
                 )
 
+            drift, contested_count, open_contests = self._contested_drift(connection)
+
         vector_count = sum(vector_table_counts.values())
         healthy = not (
-            missing_fts or orphan_fts or orphan_vectors or unscoped
+            missing_fts or orphan_fts or orphan_vectors or unscoped or drift
         ) and memory_count == fts_count
         return IntegrityReport(
             healthy=healthy,
@@ -1725,18 +2468,109 @@ class SQLiteMemoryRepository:
             orphan_fts_memory_ids=orphan_fts,
             orphan_vector_memory_ids=sorted(orphan_vectors),
             unscoped_memory_ids=unscoped,
+            contested_projection_drift=drift,
+            contested_count=contested_count,
+            open_contest_count=open_contests,
         )
 
-    @staticmethod
+    async def contested_drift_report(self) -> tuple[list[str], int, int]:
+        """Just the ledger's drift check, without the whole integrity report.
+
+        ``integrity_report`` also walks the FTS and vector projections, which
+        is minutes of work on a large store. ``doctor`` needs the ledger
+        answer on every run, so it gets the targeted queries instead.
+        """
+
+        await self.initialize()
+        return await asyncio.to_thread(self._contested_drift_report_sync)
+
+    def _contested_drift_report_sync(self) -> tuple[list[str], int, int]:
+        with self._connect() as connection:
+            return self._contested_drift(connection)
+
+    def _contested_drift(
+        self, connection: sqlite3.Connection
+    ) -> tuple[list[str], int, int]:
+        """Prove ``memories.contested`` still agrees with the ledger.
+
+        A denormalized bit that can quietly disagree with the rows it
+        summarizes is the same failure class as an FTS index that has drifted
+        from ``memories``, and it gets the same treatment: name every id, and
+        let doctor fail.
+        """
+
+        if not self._contest_schema_present:
+            return [], 0, 0
+        drift: set[str] = set()
+        # 1. The projection must agree with the record's own disposition.
+        drift.update(
+            str(row["id"])
+            for row in connection.execute(
+                "SELECT id FROM memories WHERE contested <> ("
+                "  CASE WHEN COALESCE("
+                "    json_extract(record_json, '$.disposition'), 'admitted'"
+                "  ) = 'contested' THEN 1 ELSE 0 END)"
+            ).fetchall()
+        )
+        if self._table_exists(connection, "contest_entries"):
+            # 2. An open entry must stand against a record that is contested.
+            drift.update(
+                str(row["record_id"])
+                for row in connection.execute(
+                    "SELECT c.record_id FROM contest_entries AS c "
+                    "JOIN memories AS m ON m.id = c.record_id "
+                    "WHERE c.state = ? AND m.contested = 0",
+                    (ContestState.OPEN.value,),
+                ).fetchall()
+            )
+            # 3. Every contested record must be covered by an entry, either
+            #    its own or the coalescing entry for its slot and author.
+            drift.update(
+                str(row["id"])
+                for row in connection.execute(
+                    "SELECT m.id FROM memories AS m WHERE m.contested = 1 "
+                    "AND NOT EXISTS ("
+                    "  SELECT 1 FROM contest_entries AS c WHERE c.record_id = m.id"
+                    ") AND NOT EXISTS ("
+                    "  SELECT 1 FROM contest_entries AS c"
+                    "  WHERE c.claim_key IS m.claim_key AND c.scope = m.scope"
+                    "    AND c.scope_agent_id IS m.scope_agent_id"
+                    "    AND c.scope_workspace_id IS m.scope_workspace_id"
+                    "    AND c.opened_by_agent_id = m.created_by_agent_id"
+                    ")"
+                ).fetchall()
+            )
+            open_contests = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM contest_entries WHERE state = ?",
+                    (ContestState.OPEN.value,),
+                ).fetchone()["count"]
+            )
+        else:
+            open_contests = 0
+        contested_count = int(
+            connection.execute(
+                "SELECT COUNT(*) AS count FROM memories WHERE contested = 1"
+            ).fetchone()["count"]
+        )
+        return sorted(drift), contested_count, open_contests
+
     def _filters(
+        self,
         *,
         kinds: Sequence[MemoryKind] | None,
         scopes: Sequence[Scope] | None,
         table_alias: str,
         scope_context: ScopeContext | None = None,
+        include_contested: bool = False,
     ) -> tuple[list[str], list[Any]]:
         clauses: list[str] = []
         parameters: list[Any] = []
+        if not include_contested and self._contest_schema_present:
+            # The shared read choke point. Excluding here rather than in each
+            # query makes contested exclusion correct by construction for
+            # list, search, recall candidates and visible counts alike.
+            clauses.append(f"{table_alias}contested = 0")
         if kinds:
             placeholders = ", ".join("?" for _ in kinds)
             clauses.append(f"{table_alias}kind IN ({placeholders})")
@@ -1781,10 +2615,12 @@ class SQLiteMemoryRepository:
     ) -> int:
         if scope_context is None:
             return 0
+        include_contested = getattr(request, "include_contested", False)
         unscoped_clauses, unscoped_parameters = self._filters(
             kinds=request.kinds,
             scopes=request.scopes,
             table_alias="m.",
+            include_contested=include_contested,
         )
         unscoped_clauses.insert(0, "memories_fts MATCH ?")
         unscoped_parameters.insert(0, expression)
@@ -1802,6 +2638,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=include_contested,
         )
         scoped_clauses.insert(0, "memories_fts MATCH ?")
         scoped_parameters.insert(0, expression)

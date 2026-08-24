@@ -15,8 +15,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
 
-from aoms.contracts import MemoryKind, MemoryRecord, Scope
+from aoms.contracts import ContestEntry, MemoryKind, MemoryRecord, Scope
 from aoms.receipts import RecallReceipt
+from aoms.repositories.sqlite import SQLiteMemoryRepository
 from aoms.truth import (
     ChainHealthReport,
     ChainTimeline,
@@ -94,6 +95,7 @@ class ObservatoryRepository:
                 "read-only AOMS database is missing: " + ", ".join(sorted(missing))
             )
         self.has_receipts = "recall_receipts" in available
+        self.has_contests = "contest_entries" in available
 
     def _connect(self) -> sqlite3.Connection:
         target = f"{self.db_path.as_uri()}?mode=ro"
@@ -319,6 +321,58 @@ class ObservatoryRepository:
             MemoryRecord.model_validate_json(row["record_json"]) for row in rows
         ]
         return reconstruct_timeline(record_id, records)
+
+    def contests(self, *, limit: int = 50, offset: int = 0) -> Page[ContestEntry]:
+        """Page the contradiction inbox, oldest first, without any mutation."""
+
+        if not self.has_contests:
+            return Page(items=[], next_cursor=None)
+        if not 1 <= limit <= 100:
+            raise ValueError("limit must be between 1 and 100")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM contest_entries "
+                "ORDER BY opened_at ASC, contest_id ASC LIMIT ? OFFSET ?",
+                (limit + 1, offset),
+            ).fetchall()
+        entries = [
+            SQLiteMemoryRepository._contest_from_row(row) for row in rows[:limit]
+        ]
+        next_cursor = str(offset + limit) if len(rows) > limit else None
+        return Page(items=entries, next_cursor=next_cursor)
+
+    def contest(self, contest_id: str) -> ContestEntry | None:
+        if not self.has_contests:
+            return None
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM contest_entries WHERE contest_id = ?", (contest_id,)
+            ).fetchone()
+        return SQLiteMemoryRepository._contest_from_row(row) if row else None
+
+    def contest_counts(self) -> dict[str, int]:
+        """Counts only. The Truth page never renders challenger content."""
+
+        if not self.has_contests:
+            return {"open": 0, "resolved": 0, "contested_records": 0}
+        with self._connect() as connection:
+            by_state = {
+                str(row["state"]): int(row["count"])
+                for row in connection.execute(
+                    "SELECT state, COUNT(*) AS count FROM contest_entries "
+                    "GROUP BY state"
+                ).fetchall()
+            }
+            contested_records = int(
+                connection.execute(
+                    "SELECT COUNT(*) AS count FROM memories WHERE contested = 1"
+                ).fetchone()["count"]
+            )
+        return {
+            "open": by_state.get("open", 0),
+            "resolved": by_state.get("resolved", 0),
+            "contested_records": contested_records,
+        }
 
     def chain_health(self) -> ChainHealthReport:
         """Return deterministic findings without interpreting memory content."""
