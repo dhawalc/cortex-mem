@@ -38,8 +38,10 @@ from aoms.contracts import (
     ScopeContext,
     SearchRequest,
     SearchResult,
+    WriteDisposition,
 )
 from aoms.embeddings import provider_from_config
+from aoms.recall import memory_content_text, render_memory_block
 from aoms.repositories import SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
 from aoms.version import __version__ as AOMS_VERSION
@@ -67,7 +69,11 @@ REMEMBER_DESCRIPTION = (
     "specific kind and visibility scope justified by the content, include provenance "
     "whenever known, and use a stable id when retrying the same logical write so "
     "retries update instead of duplicate. Record the useful conclusion in "
-    "self-contained language that will make sense without this conversation."
+    "self-contained language that will make sense without this conversation. "
+    "When you are correcting or updating something already stored, first recall or "
+    "search for the record you are replacing, then set supersedes to its id; a "
+    "correction written without looking up what it replaces cannot declare it, and "
+    "may be kept but held aside instead of becoming current."
 )
 
 SEARCH_DESCRIPTION = (
@@ -242,10 +248,27 @@ def _recall_text(request: RecallRequest, result: RecallResult) -> str:
 
 
 def _remember_text(_: RememberRequest, result: RememberResult) -> str:
-    action = "Created" if result.created else "Updated"
     record = result.record
+    if result.disposition is WriteDisposition.CONTESTED:
+        # Told in-band, same turn: the agent that opened the contest learns
+        # immediately that its write did not take effect. This is the
+        # strongest force against a ledger nobody reads.
+        standing = ", ".join(
+            _content_preview(incumbent, limit=256)
+            for incumbent in result.incumbent_ids
+        )
+        return (
+            f"Stored as CONTESTED memory {_content_preview(record.id, limit=256)} "
+            f"(kind={record.kind.value}, scope={record.scope.value}). "
+            "Current memory is unchanged.\n"
+            f"Still standing: {standing or 'the existing record'}.\n"
+            "Your write is retained in full and is one operator command from "
+            "current; it does not pack into recall until a human resolves it.\n"
+            f"Resolve: cortex-mem contest show {result.contest_id}"
+        )
+    action = "Created" if result.created else "Updated"
     return (
-        f"{action} memory {record.id} "
+        f"{action} memory {_content_preview(record.id, limit=256)} "
         f"(kind={record.kind.value}, scope={record.scope.value})."
     )
 
@@ -271,10 +294,15 @@ def _search_text(request: SearchRequest, result: SearchResult) -> str:
     ]
     for hit in result.items:
         record = hit.record
+        content = memory_content_text(record)
+        preview = _content_preview(content)
         lines.append(
-            f"- {record.id} [{record.kind.value}; {record.scope.value}; "
-            f"score={hit.score:.6f}; source={record.provenance.source}] "
-            f"{_content_preview(record.content)}"
+            f"Match score={hit.score:.6f}\n"
+            + render_memory_block(
+                record,
+                preview,
+                truncated=preview != content,
+            )
         )
     return "\n".join(lines)
 

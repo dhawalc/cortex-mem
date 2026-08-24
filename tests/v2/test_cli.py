@@ -6,7 +6,7 @@ import os
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aoms.application import AOMSApplication
@@ -21,6 +21,7 @@ from aoms.contracts import (
 )
 from aoms.embeddings import NullProvider
 from aoms.repositories import SQLiteMemoryRepository
+from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_CORPUS = ROOT / "tests" / "v2" / "fixtures" / "corpus"
@@ -78,7 +79,7 @@ def test_cli_help_and_init_first_run_copy(tmp_path: Path) -> None:
     result = run_cli("init", data_dir=data_dir, check=True)
 
     assert (data_dir / "aoms.sqlite3").is_file()
-    assert "SQLite store ready (schema 5)" in result.stdout
+    assert f"SQLite store ready (schema {LATEST_SCHEMA_VERSION})" in result.stdout
     assert "cortex-mem setup claude" in result.stdout
     assert "cortex-mem setup codex" in result.stdout
     assert "cortex-mem setup openclaw" in result.stdout
@@ -169,8 +170,39 @@ def test_doctor_missing_corrupt_and_empty_store_findings(tmp_path: Path) -> None
     empty = run_cli("doctor", data_dir=empty_dir)
     assert empty.returncode == 0
     assert "[WARN] Memory records: store is healthy but empty" in empty.stdout
+    assert (
+        "[PASS] In-place update signal: 0 records have updated_at != created_at"
+        in empty.stdout
+    )
     assert "[PASS] Receipt store" in empty.stdout
     assert "Doctor finished: 0 failure(s)" in empty.stdout
+
+
+def test_doctor_warns_about_in_place_update_signal_without_content(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "updated-signal"
+    run_cli("init", data_dir=data_dir, check=True)
+    created_at = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+    record = MemoryRecord(
+        id="updated-record-id",
+        kind=MemoryKind.FACT,
+        content="private synthetic body must not appear in doctor output",
+        scope=Scope.WORKSPACE,
+        provenance=Provenance(source="trusted-importer"),
+        created_at=created_at,
+        updated_at=created_at + timedelta(minutes=5),
+    )
+    asyncio.run(SQLiteMemoryRepository(data_dir / "aoms.sqlite3").store(record))
+
+    result = run_cli("doctor", data_dir=data_dir, check=True)
+
+    assert (
+        "[WARN] In-place update signal: 1 record(s) have updated_at != created_at: "
+        "updated-record-id" in result.stdout
+    )
+    assert "trusted importer or idempotent restore/upsert" in result.stdout
+    assert "private synthetic body" not in result.stdout
 
 
 def _seed_ownership_fixture(data_dir: Path) -> None:
@@ -387,14 +419,18 @@ def test_cli_recall_remember_round_trip_and_idempotency(tmp_path: Path) -> None:
         environ_overrides=binding,
         check=True,
     )
-    updated = run_cli(
+    with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
+        record_json_before = connection.execute(
+            "SELECT record_json FROM memories"
+        ).fetchone()[0]
+    retried = run_cli(
         "remember",
         "--content",
-        "Decision: deploy marmalade through the green channel.",
+        "Decision: deploy marmalade through the amber channel.",
         "--kind",
         "decision",
         "--tags",
-        "release",
+        "release,marmalade",
         "--idempotency-key",
         "release-channel",
         data_dir=data_dir,
@@ -416,15 +452,16 @@ def test_cli_recall_remember_round_trip_and_idempotency(tmp_path: Path) -> None:
 
     payload = json.loads(recalled.stdout)
     assert created.stdout.startswith("Created memory cli-")
-    assert updated.stdout.startswith("Updated memory cli-")
-    assert "green channel" in payload["context"]
-    assert "amber channel" not in payload["context"]
+    assert retried.stdout.startswith("Updated memory cli-")
+    assert "amber channel" in payload["context"]
     assert payload["sources"][0]["kind"] == "decision"
     with sqlite3.connect(data_dir / "aoms.sqlite3") as connection:
         row = connection.execute(
-            "SELECT scope_workspace_id, created_by_agent_id, COUNT(*) FROM memories"
+            "SELECT scope_workspace_id, created_by_agent_id, COUNT(*), record_json "
+            "FROM memories"
         ).fetchone()
-    assert row == ("cli-test-workspace", "cli-test-agent", 1)
+    assert row[:3] == ("cli-test-workspace", "cli-test-agent", 1)
+    assert row[3] == record_json_before
 
 
 def test_cli_empty_recall_is_actionable(tmp_path: Path) -> None:

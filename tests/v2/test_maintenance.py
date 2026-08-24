@@ -122,7 +122,11 @@ async def test_integrity_report_compares_counts_and_detects_orphans(
         connection.execute(
             "DELETE FROM memories WHERE id = ?", ("will-be-orphaned",)
         )
-        connection.execute("DELETE FROM memories_fts WHERE id = ?", ("healthy",))
+        connection.execute(
+            "DELETE FROM memories_fts WHERE rowid = "
+            "(SELECT rowid FROM memories WHERE id = ?)",
+            ("healthy",),
+        )
         connection.commit()
 
     broken = await app.check_integrity()

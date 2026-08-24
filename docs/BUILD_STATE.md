@@ -83,3 +83,51 @@ Multi-client concurrency proof; host recipes; retrieval eval harness.
 
 ## Builder log
 - 2026-08-23 ~01:00 Codex task A (P0 stats + embed-on-write) dispatched — PENDING
+
+## POST-LAUNCH DAY — 2026-08-24 (final state: v2 @ e79bd74, 326 tests)
+
+Launched, then spent the day finding what launch had shipped.
+
+SECURITY
+- Public repo was serving the author's real memory corpus (modules/memory/procedural/
+  skills.jsonl, 1.44MB, VPS IP x8) + modules/identity/*. Removed from HEAD, verified 404
+  (a9da4ee/50c5b57). Still in git history — purge script at packaging/ops/history-purge.sh,
+  mirror backup at ~/openclaw_archives/cortex-mem-mirror-pre-purge-20260824-120421.git.
+- Observatory had no Host/Origin validation while SECURITY.md claimed it did; MCP search
+  interpolated ids/provenance unfenced; requires-python lied (3.10 cannot import the CLI).
+  All fixed (c120c36).
+- VPS: unauthenticated root LLM proxy on 0.0.0.0:8000 for 19.5 days, no firewall, password
+  auth on, no fail2ban, ~10k failed logins/42h, 60 pending updates, 202d uptime. Hardened
+  and verified externally: proxy loopback-only, ufw default-deny, fail2ban active, password
+  auth off, patched, rebooted. SSH key NOT rotated (never leaked — only the IP).
+
+CORRECTNESS
+- remember(id=<existing>) silently replaced retained content, no lineage — model-facing.
+  Guard + atomic conditional write (02ab917, 86d210b). Forensic sweep of the live store:
+  NO evidence of silent replacement (all updated_at!=created_at rows are legacy-import).
+- O(N^2) FTS write path: 12.985 -> 3,914.8 rec/s (301x). Migration 6 applied to the live
+  store deliberately after backup: 5.2s, counts/integrity/query results identical.
+- Contest Ledger (write-side AUTHORITY gate, not an evidence gate) + T3 removal. See
+  docs/CONTEST-LEDGER.md and the ERRATUM atop docs/design/WRITE-CORRECTNESS-DECISION.md.
+
+MEASUREMENT (benchmarks/MCB-1.0, branch mcb-1.0, NOT YET PUSHED)
+- MCB-1.0 authored + frozen BEFORE running it against AOMS. Six verbatim result artifacts.
+- AOMS baseline 50% DA. Letta (independent, local Ollama) 75%. Letta archival target 27%
+  (demonstrates why core memory was the right target). AOMS+ledger 62.5%, structural
+  errors 18->0, but false rejection 0->41.2% and the improvement is NOT detection: all 18
+  changed cases changed identically.
+- Neither system has a write-side EVIDENCE gate. That claim survives all of today's work.
+
+THE LESSON WORTH KEEPING
+Five runs against the frozen benchmark showed zero delta from the T3 defect; twelve live
+agent sessions found it immediately. A benchmark only measures what its interchange format
+can express. One agent, contested twice for honestly citing its source, wrote itself a
+durable memory explaining how to bypass the gate.
+
+OPEN / OWNER-ONLY
+- push mcb-1.0; merge v2 -> main; ClawHub MIT-0 terms; git history purge decision.
+- Host recipes still not installed (cortex-mem setup claude|codex|openclaw) — automatic
+  recall is packaged but not switched on.
+- Legacy v1 (aoms.service :9100 + its cron jobs) still running in parallel as fallback.
+- Unmeasured: whether declaration rates hold in long sessions where the incumbent id has
+  fallen out of context. Next experiment.

@@ -1,0 +1,24 @@
+[extend]
+useDefault = true
+
+[[rules]]
+id = "private-infrastructure-identifiers"
+description = "Private infrastructure identifiers must never be committed"
+regex = '''(?:178[.]156[.]239[.]16|100[.]120[.]89[.]37|r[o]ot@|dh[a]wal/)'''
+
+[[rules.allowlists]]
+description = "Preserve the design panel's required verbatim provenance paths"
+paths = ['''^docs/design/WRITE-CORRECTNESS-DECISION[.]md$''']
+
+[[rules.allowlists]]
+description = "Preserve the same provenance when CI scans added lines via stdin"
+regexTarget = "line"
+regexes = [
+  '''Decider.s note on evidence.*scratchpad/sim[.]py''',
+]
+
+[[rules]]
+id = "private-memory-corpus"
+description = "The local modules corpus must never be committed"
+path = '''(?:^|/)modules/'''
+regex = '''.+'''

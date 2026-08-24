@@ -11,8 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from aoms.contracts import MemoryRecord
-from aoms.receipts import RecallReceipt
+from aoms.contracts import ContestEntry, MemoryRecord
+from aoms.receipts import RecallReceipt, WriteReceipt
 from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION, SQLiteMemoryRepository
 from aoms.version import __version__
 
@@ -20,6 +20,10 @@ EXPORT_FORMAT = "aoms-portable-export"
 EXPORT_FORMAT_VERSION = 1
 RECORDS_FILE = "records.jsonl"
 RECEIPTS_FILE = "receipts.jsonl"
+# Added after the contest ledger. A bundle written before it simply omits
+# these, so older exports keep restoring unchanged.
+CONTESTS_FILE = "contests.jsonl"
+WRITE_RECEIPTS_FILE = "write_receipts.jsonl"
 MANIFEST_FILE = "manifest.json"
 
 
@@ -32,12 +36,16 @@ class ExportResult:
     destination: Path
     records: int
     receipts: int
+    contests: int = 0
+    write_receipts: int = 0
 
 
 @dataclass(frozen=True, slots=True)
 class RestoreResult:
     records: int
     receipts: int
+    contests: int = 0
+    write_receipts: int = 0
 
 
 def _sha256(path: Path) -> str:
@@ -83,6 +91,8 @@ async def export_bundle(
 
     records_path = destination / RECORDS_FILE
     receipts_path = destination / RECEIPTS_FILE
+    contests_path = destination / CONTESTS_FILE
+    write_receipts_path = destination / WRITE_RECEIPTS_FILE
     with sqlite3.connect(repository.db_path) as connection:
         connection.row_factory = sqlite3.Row
         connection.execute("BEGIN")
@@ -105,6 +115,32 @@ async def export_bundle(
                 )
             ),
         )
+        # The ledger is evidence. A backup that drops it would discard the
+        # only durable record of a contested write, which is precisely the
+        # silent evidence loss this feature exists to prevent.
+        contest_count = _write_jsonl(
+            contests_path,
+            (
+                SQLiteMemoryRepository._contest_from_row(row).model_dump_json()
+                for row in _rows(
+                    connection,
+                    "contest_entries",
+                    "SELECT * FROM contest_entries ORDER BY opened_at, contest_id",
+                )
+            ),
+        )
+        write_receipt_count = _write_jsonl(
+            write_receipts_path,
+            (
+                str(row["receipt_json"])
+                for row in _rows(
+                    connection,
+                    "write_receipts",
+                    "SELECT receipt_json FROM write_receipts "
+                    "ORDER BY created_at, receipt_id",
+                )
+            ),
+        )
         schema_row = connection.execute(
             "SELECT COALESCE(MAX(version), 0) FROM schema_version"
         ).fetchone()
@@ -117,12 +153,35 @@ async def export_bundle(
         "files": {
             RECORDS_FILE: _file_entry(records_path, record_count),
             RECEIPTS_FILE: _file_entry(receipts_path, receipt_count),
+            CONTESTS_FILE: _file_entry(contests_path, contest_count),
+            WRITE_RECEIPTS_FILE: _file_entry(
+                write_receipts_path, write_receipt_count
+            ),
         },
     }
     (destination / MANIFEST_FILE).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    return ExportResult(destination, record_count, receipt_count)
+    return ExportResult(
+        destination,
+        record_count,
+        receipt_count,
+        contest_count,
+        write_receipt_count,
+    )
+
+
+def _rows(
+    connection: sqlite3.Connection, table: str, sql: str
+) -> Iterator[sqlite3.Row]:
+    """Read a table that a bundle from before the ledger will not have."""
+
+    present = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
+    ).fetchone()
+    if present is None:
+        return iter(())
+    return iter(connection.execute(sql).fetchall())
 
 
 def _load_manifest(source: Path) -> dict[str, Any]:
@@ -163,7 +222,10 @@ def _validate_file(source: Path, name: str, expected: Any) -> Path:
     return path
 
 
-def _validate_jsonl(path: Path, model: type[MemoryRecord | RecallReceipt]) -> int:
+def _validate_jsonl(
+    path: Path,
+    model: type[MemoryRecord | RecallReceipt | ContestEntry | WriteReceipt],
+) -> int:
     count = 0
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, 1):
@@ -181,6 +243,14 @@ def _validate_jsonl(path: Path, model: type[MemoryRecord | RecallReceipt]) -> in
     return count
 
 
+def _optional_file(source: Path, name: str, files: dict[str, Any]) -> Path | None:
+    """Validate a bundle section that predates the ledger may not carry."""
+
+    if name not in files:
+        return None
+    return _validate_file(source, name, files.get(name))
+
+
 def _iter_records(path: Path) -> Iterator[MemoryRecord]:
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -191,6 +261,18 @@ def _iter_receipts(path: Path) -> Iterator[RecallReceipt]:
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
             yield RecallReceipt.model_validate_json(line)
+
+
+def _iter_contests(path: Path) -> Iterator[ContestEntry]:
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            yield ContestEntry.model_validate_json(line)
+
+
+def _iter_write_receipts(path: Path) -> Iterator[WriteReceipt]:
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            yield WriteReceipt.model_validate_json(line)
 
 
 async def restore_bundle(
@@ -210,8 +292,28 @@ async def restore_bundle(
     files = manifest["files"]
     records_path = _validate_file(source, RECORDS_FILE, files.get(RECORDS_FILE))
     receipts_path = _validate_file(source, RECEIPTS_FILE, files.get(RECEIPTS_FILE))
+    contests_path = _optional_file(source, CONTESTS_FILE, files)
+    write_receipts_path = _optional_file(source, WRITE_RECEIPTS_FILE, files)
     record_count = _validate_jsonl(records_path, MemoryRecord)
     receipt_count = _validate_jsonl(receipts_path, RecallReceipt)
+    contest_count = (
+        _validate_jsonl(contests_path, ContestEntry)
+        if contests_path is not None
+        else 0
+    )
+    write_receipt_count = (
+        _validate_jsonl(write_receipts_path, WriteReceipt)
+        if write_receipts_path is not None
+        else 0
+    )
+    if contests_path is not None and contest_count != files[CONTESTS_FILE].get(
+        "records"
+    ):
+        raise PortableExportError(f"record count mismatch for {CONTESTS_FILE}")
+    if write_receipts_path is not None and write_receipt_count != files[
+        WRITE_RECEIPTS_FILE
+    ].get("records"):
+        raise PortableExportError(f"record count mismatch for {WRITE_RECEIPTS_FILE}")
     if record_count != files[RECORDS_FILE].get("records"):
         raise PortableExportError(f"record count mismatch for {RECORDS_FILE}")
     if receipt_count != files[RECEIPTS_FILE].get("records"):
@@ -239,10 +341,10 @@ async def restore_bundle(
     for record in _iter_records(records_path):
         batch.append(record)
         if len(batch) == batch_size:
-            await repository.store_many(batch)
+            await repository.store_many_new(batch)
             batch.clear()
     if batch:
-        await repository.store_many(batch)
+        await repository.store_many_new(batch)
 
     # Receipts are already fully validated. Insert directly so a bundle remains
     # complete even when its historical retention setting differs from this host.
@@ -262,14 +364,78 @@ async def restore_bundle(
                 for receipt in _iter_receipts(receipts_path)
             ),
         )
+        if contests_path is not None:
+            connection.executemany(
+                "INSERT INTO contest_entries("
+                "contest_id, record_id, claim_key, observation_id, scope, "
+                "scope_agent_id, scope_workspace_id, incumbent_ids, trigger, "
+                "trigger_detail, occurrence_count, opened_at, opened_by_agent_id, "
+                "state, resolution, resolved_at, resolved_by, resolution_note, "
+                "escalated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    (
+                        entry.contest_id,
+                        entry.record_id,
+                        entry.claim_key,
+                        entry.observation_id,
+                        entry.scope.value,
+                        entry.scope_agent_id,
+                        entry.scope_workspace_id,
+                        json.dumps(entry.incumbent_ids, separators=(",", ":")),
+                        entry.trigger.value,
+                        json.dumps(
+                            entry.trigger_detail,
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        ),
+                        entry.occurrence_count,
+                        entry.opened_at.isoformat(),
+                        entry.opened_by_agent_id,
+                        entry.state.value,
+                        entry.resolution.value if entry.resolution else None,
+                        entry.resolved_at.isoformat() if entry.resolved_at else None,
+                        entry.resolved_by,
+                        entry.resolution_note,
+                        entry.escalated_at.isoformat()
+                        if entry.escalated_at
+                        else None,
+                    )
+                    for entry in _iter_contests(contests_path)
+                ),
+            )
+        if write_receipts_path is not None:
+            connection.executemany(
+                "INSERT INTO write_receipts("
+                "receipt_id, created_at, record_id, claim_key, agent_id, "
+                "workspace_id, disposition, receipt_json) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (
+                    (
+                        receipt.receipt_id,
+                        receipt.created_at.isoformat(),
+                        receipt.record_id,
+                        receipt.claim_key,
+                        receipt.agent_id,
+                        receipt.workspace_id,
+                        receipt.disposition.value,
+                        receipt.model_dump_json(),
+                    )
+                    for receipt in _iter_write_receipts(write_receipts_path)
+                ),
+            )
         connection.commit()
-    return RestoreResult(record_count, receipt_count)
+    return RestoreResult(
+        record_count, receipt_count, contest_count, write_receipt_count
+    )
 
 
 __all__ = [
+    "CONTESTS_FILE",
     "EXPORT_FORMAT",
     "EXPORT_FORMAT_VERSION",
     "MANIFEST_FILE",
+    "WRITE_RECEIPTS_FILE",
     "ExportResult",
     "PortableExportError",
     "RestoreResult",

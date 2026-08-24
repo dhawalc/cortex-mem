@@ -9,11 +9,17 @@ schema version 1; a breaking rename or semantic change requires version 2.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
-from aoms.contracts.models import ContractModel, MemoryKind, Scope
+from aoms.contracts.models import (
+    ContestTrigger,
+    ContractModel,
+    MemoryKind,
+    Scope,
+    WriteDisposition,
+)
 from aoms.version import __version__
 
 RECEIPT_SCHEMA_VERSION = 1
@@ -83,11 +89,52 @@ class RecallReceipt(ContractModel):
     latency_ms: float = Field(ge=0.0)
     engine_version: str
     vector_coverage: float = Field(default=0.0, ge=0.0, le=1.0)
+    # Additive v1 contest evidence. A recall that can withhold anything must
+    # name both what it withheld and the configuration that decided to, or it
+    # is no longer a complete explanation of its own output.
+    contested_withheld: list[str] = Field(default_factory=list)
+    contested_incumbents: dict[str, int] = Field(default_factory=dict)
+    ruleset_digest: str | None = None
 
     @field_validator("created_at")
     @classmethod
     def created_at_is_utc(cls, value: datetime) -> datetime:
         return _utc(value)
+
+
+class WriteReceipt(ContractModel):
+    """Stable JSON evidence for one write-admission decision.
+
+    Append-only and exempt from recall-receipt retention: the ledger's copy of
+    a decision is never trimmed by a background mechanism. ``trigger_detail``
+    carries integers, ids and timestamps only.
+    """
+
+    schema_version: Literal[1] = RECEIPT_SCHEMA_VERSION
+    receipt_id: str
+    created_at: datetime
+    record_id: str
+    claim_key: str | None = None
+    agent_id: str | None = None
+    workspace_id: str | None = None
+    kind: MemoryKind
+    scope: Scope
+    content_sha256: str
+    incumbent_ids: list[str] = Field(default_factory=list)
+    disposition: WriteDisposition
+    trigger: ContestTrigger | None = None
+    trigger_detail: dict[str, Any] = Field(default_factory=dict)
+    contest_id: str | None = None
+    asserted_at: datetime | None = None
+    derived_from: list[str] = Field(default_factory=list)
+    ruleset_digest: str
+    occurrence_count: int = Field(default=1, ge=1)
+    engine_version: str = ENGINE_VERSION
+
+    @field_validator("created_at", "asserted_at")
+    @classmethod
+    def write_timestamps_are_utc(cls, value: datetime | None) -> datetime | None:
+        return _utc(value) if value is not None else None
 
 
 __all__ = [
@@ -97,4 +144,5 @@ __all__ = [
     "RecallReceipt",
     "ScoreComponent",
     "SelectedMemory",
+    "WriteReceipt",
 ]

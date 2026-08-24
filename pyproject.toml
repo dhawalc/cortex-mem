@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Local-first shared memory for MCP agent fleets"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
     {name = "Dhawal Chheda"},
 ]
@@ -16,9 +16,9 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
@@ -77,8 +77,5 @@ exclude = ["tests*", "scripts*", "snapshots*", "index*"]
 ]
 
 [tool.pytest.ini_options]
-# Keep the product suite separate from the nested fixture repository's own
-# three tests. Run those from demo/relay_fixture/repository when testing the
-# deliberately incomplete starting project itself.
-testpaths = ["tests"]
-norecursedirs = ["demo/relay_fixture/repository"]
+# The root project is AOMS v2. The nested relay fixture has its own test suite.
+testpaths = ["tests/v2"]

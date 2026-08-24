@@ -8,6 +8,9 @@ from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from aoms.contracts import (
+    ContestEntry,
+    ContestResolution,
+    ContestState,
     MemoryKind,
     MemoryRecord,
     IntegrityReport,
@@ -19,7 +22,7 @@ from aoms.contracts import (
     ReceiptPruneReport,
 )
 from aoms.embeddings import EmbeddingProfile, EmbeddingVector
-from aoms.receipts import RecallReceipt
+from aoms.receipts import RecallReceipt, WriteReceipt
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +67,54 @@ class CompletedEmbedding:
     vector: EmbeddingVector
 
 
+@dataclass(frozen=True, slots=True)
+class LedgerWrite:
+    """The ledger rows that must commit with the record or not at all.
+
+    A contested record whose contest entry failed to commit would be a record
+    withheld from recall with nothing in the inbox explaining why — memory
+    silently lost. The receipt is written for every participating write,
+    admitted or contested, because both are decisions.
+    """
+
+    receipt: "WriteReceipt"
+    contest: "ContestEntry | None" = None
+    coalesced_contest_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ContestPage:
+    """One bounded page of ledger entries plus the total matching count."""
+
+    entries: tuple["ContestEntry", ...]
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
+class SlotContestNotice:
+    """Content-free notice attached to a surviving incumbent."""
+
+    count: int
+    contest_ids: tuple[str, ...]
+    since: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ConditionalStoreResult:
+    """Result of an atomic model-facing insert-or-retain decision."""
+
+    record: MemoryRecord
+    created: bool
+
+
+class RecordContentConflictError(ValueError):
+    """A conditional store retained a different record with the same id."""
+
+    def __init__(self, retained: MemoryRecord):
+        super().__init__(f"record {retained.id!r} already has different content")
+        self.retained = retained
+
+
 @runtime_checkable
 class VectorRepository(Protocol):
     async def store_with_embedding_pending(
@@ -71,8 +122,20 @@ class VectorRepository(Protocol):
     ) -> MemoryRecord: ...
 
     async def store_new_with_embedding_pending(
-        self, record: MemoryRecord, profile: EmbeddingProfile
+        self,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+        *,
+        ledger: LedgerWrite | None = None,
     ) -> MemoryRecord: ...
+
+    async def store_if_content_unchanged_with_embedding_pending(
+        self,
+        record: MemoryRecord,
+        profile: EmbeddingProfile,
+        *,
+        ledger: LedgerWrite | None = None,
+    ) -> ConditionalStoreResult: ...
 
     async def upsert_vector(
         self,
@@ -123,12 +186,64 @@ class VectorRepository(Protocol):
     async def pending_embedding_count(self, profile: EmbeddingProfile) -> int: ...
 
 
+class ContestLedger(Protocol):
+    """Durable, operator-facing record of every contested write."""
+
+    async def slot_occupants(
+        self,
+        *,
+        claim_key: str,
+        scope: Scope,
+        scope_agent_id: str | None,
+        scope_workspace_id: str | None,
+    ) -> list[MemoryRecord]: ...
+
+    async def list_contests(
+        self,
+        *,
+        state: ContestState | None = None,
+        claim_key: str | None = None,
+        agent_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        oldest_first: bool = True,
+    ) -> ContestPage: ...
+
+    async def get_contest(self, contest_id: str) -> ContestEntry | None: ...
+
+    async def resolve_contest(
+        self,
+        contest_id: str,
+        *,
+        resolution: ContestResolution,
+        resolved_by: str,
+        note: str | None,
+        receipt: WriteReceipt,
+        admit_record: bool,
+        new_claim_key: str | None = None,
+    ) -> ContestEntry: ...
+
+    async def slot_contest_notices(
+        self, records: Sequence[MemoryRecord]
+    ) -> dict[str, SlotContestNotice]: ...
+
+    async def save_write_receipt(self, receipt: WriteReceipt) -> None: ...
+
+    async def recent_write_receipts(self, *, limit: int = 20) -> list[WriteReceipt]: ...
+
+
 class MemoryRepository(Protocol):
     async def initialize(self) -> None: ...
 
     async def store(self, record: MemoryRecord) -> MemoryRecord: ...
 
-    async def store_new(self, record: MemoryRecord) -> MemoryRecord: ...
+    async def store_new(
+        self, record: MemoryRecord, *, ledger: LedgerWrite | None = None
+    ) -> MemoryRecord: ...
+
+    async def store_if_content_unchanged(
+        self, record: MemoryRecord, *, ledger: LedgerWrite | None = None
+    ) -> ConditionalStoreResult: ...
 
     async def store_many(
         self, records: Sequence[MemoryRecord]
@@ -190,4 +305,5 @@ class MemoryRepository(Protocol):
         *,
         scope_context: ScopeContext,
         as_of: datetime | None = None,
+        include_contested: bool = False,
     ) -> list[MemoryRecord]: ...

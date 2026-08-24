@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dhawalc/cortex-mem/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dhawalc/cortex-mem/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](pyproject.toml)
 
 **One local brain, hard workspace boundaries.** AOMS lets Claude Code, Codex, OpenClaw, and other MCP agents share durable memory without collapsing every client and project into one undifferentiated profile.
 
@@ -16,9 +16,20 @@ This is infrastructure for people running several agents and sessions—not a pe
 
 Memory systems make different tradeoffs: some center one assistant, a hosted service, or retrieval alone. AOMS is aimed at local multi-agent work where the boundary and the explanation matter as much as the match. It combines hard agent/workspace scope isolation, inspectable recall receipts and a local Observatory, local-first SQLite storage, and preview-first importers so existing notes and reviewed memory stores can move in deliberately. It can complement agent frameworks and RAG stacks rather than requiring them to be replaced.
 
-> **Demo GIF placeholder:** A captioned setup-to-cold-recall walkthrough is planned for [`docs/launch/assets/`](docs/launch/assets/README.md). The slot is intentionally marked as a placeholder until a synthetic-data capture is recorded and checked; no demo evidence is being claimed yet.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/launch/assets/recall-observatory-receipt-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/launch/assets/recall-observatory-receipt-light.png">
+  <img src="docs/launch/assets/recall-observatory-receipt-light.png" alt="Recall Observatory receipt inspector showing packed provenance-fenced context, a March decision marked as a superseded predecessor, the candidate funnel, and exact token arithmetic totaling 842 of a 1,000-token budget.">
+</picture>
+
+<p align="center"><em>Not just what your agent remembered—exactly what entered context, why, from where, and what was kept out.</em></p>
 
 ## Quick start
+
+> [!WARNING]
+> Do not install `cortex-mem` 1.0.0 from PyPI. That release is the retired v1
+> HTTP daemon, not AOMS v2. Until a reviewed v2 package is published, use the
+> pinned Git release command below.
 
 From the project you want to bind, run the pinned Git release:
 
@@ -36,7 +47,7 @@ Use `codex` or `openclaw` instead of `claude` for another supported host. `setup
 
 The success output names the binding explicitly—for example, `bound as agent=claude workspace=myproject`. It never silently registers `default/default`.
 
-Python 3.11 or 3.12 is recommended. The default local embedding model is downloaded only when a non-empty store first needs semantic retrieval. Empty-store recall returns immediately without loading it.
+Python 3.11 through 3.13 is supported. The default local embedding model is downloaded only when a non-empty store first needs semantic retrieval. Empty-store recall returns immediately without loading it.
 
 ## The 60-second check: remember, kill, cold-recall
 
@@ -57,6 +68,10 @@ Now end the host session completely. Start a fresh session in the same project a
 > Recall the release gate for this workspace. What must pass before release?
 
 The new process has no prior transcript. Its answer should come from the workspace-scoped memory, and recall returns a receipt ID documenting the exact serialization path. That cold handoff—not a health check—is the activation check.
+
+![Annotated terminal proof of init, remember, and cold recall in a fresh process, including the workspace-scoped source and receipt ID.](docs/launch/assets/aoms-60-second-proof.png)
+
+The image is a deterministic, annotated rendering of a real two-process CLI run; [open the accessible HTML transcript](docs/launch/assets/aoms-60-second-proof.html) or [read how the assets are regenerated](docs/launch/assets/README.md).
 
 If you do not have a durable fact yet, run an isolated tour:
 
@@ -106,6 +121,27 @@ The command prints the resulting validity timeline. `cortex-mem chain MEMORY_ID 
 | `search` | Inspect typed records and scores with filters and pagination; no context packing. |
 
 Maintenance is deliberately not model-facing. Setup, import, export, restore, diagnostics, token management, embedding backfill, sweeps, and the disposable tour remain CLI operations.
+
+## Contested writes, and what opting in costs
+
+Set `claim_key` on a write to name the proposition it answers, and a later write landing on that same proposition without declaring what it replaces is kept in full but held aside for review, instead of silently becoming a second current answer. Two dispositions exist, `admitted` and `contested`; nothing is refused, deleted, or truncated.
+
+It is off unless you turn it on, per write. `claim_key` defaults to `None`, no importer or recipe sets it, and every record written before the feature shipped is non-participating — measured on the frozen benchmark, not asserted.
+
+The cost when you do turn it on is real, and worth meeting here rather than in production:
+
+| Caller behaviour | False rejection | Valid supersession |
+|---|---:|---:|
+| Declares what it replaces (`supersedes`) | 0% | 100% |
+| Does not declare | 82.35% | 0% |
+
+Pair `claim_key` with `supersedes` and the gate costs nothing. Set `claim_key` without ever declaring replacement and roughly four out of five valid revisions are held for a human instead of applied.
+
+The prerequisite is a capability, not a prompt: **an agent that writes blind cannot declare supersession at all**, because it has no incumbent id to name. Adopt `claim_key` only for writers that read before they write. Measured against real models in [docs/experiments/declare-ab/](docs/experiments/declare-ab/): Claude Code reads first and declares correctly 8/8 without being told, while a smaller local model never read, never declared, and adopted `claim_key` anyway — the one configuration to avoid.
+
+See **[docs/CONTEST-LEDGER.md](docs/CONTEST-LEDGER.md)** for the full picture, including what draining the review queue costs, who should not opt in, and the limits of that experiment.
+
+This is a write-**authority** gate, not an evidence gate: it governs who may displace what, and never judges whether a claim is true, fresh, or well-sourced.
 
 ## The scope model
 
@@ -172,7 +208,7 @@ Read the supporting evidence:
 
 ## Operations
 
-Never copy a live WAL database directly. The shipped [v2 backup job](packaging/ops/backup-aoms-v2.sh) uses SQLite's online backup API for daily physical generations and `cortex-mem export` for weekly portable recovery bundles, verifies both locally and after VPS transfer, and enforces bounded daily/weekly retention. See [backup operations](docs/legacy/BACKUPS.md) for deployment, restore drills, and the temporary v1/v2 parallel-backup plan.
+Never copy a live WAL database directly. The shipped [v2 backup job](packaging/ops/backup-aoms-v2.sh) uses SQLite's online backup API for daily physical generations and `cortex-mem export` for weekly portable recovery bundles, verifies both locally and after VPS transfer, and enforces bounded daily/weekly retention. Use the [disaster-recovery runbook](docs/RECOVERY.md) for corrupted-store, machine-loss, and bad-write recovery; see [backup operations](docs/legacy/BACKUPS.md) for deployment and the temporary v1/v2 parallel-backup plan.
 
 ## Develop
 

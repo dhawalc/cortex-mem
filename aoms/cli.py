@@ -33,7 +33,11 @@ from aoms.activation import (
 )
 from aoms.backfill import BackfillProgress, backfill_embeddings
 from aoms.auth import TokenScope, TokenStore
+from aoms.contest import is_expired_held, is_overdue
 from aoms.contracts import (
+    ContestEntry,
+    ContestResolution,
+    ContestState,
     MemoryKind,
     MemoryRecord,
     Provenance,
@@ -188,6 +192,7 @@ def main() -> None:
 
 
 import aoms.importers.cli  # noqa: E402,F401
+import aoms.ops.backup_status  # noqa: E402,F401
 
 
 @main.command("init")
@@ -476,12 +481,25 @@ def recall_command(
     "--idempotency-key",
     help="Stable logical-write key; retries update instead of duplicating.",
 )
+@click.option(
+    "--claim-key",
+    help=(
+        "Opt this write into the contest gate as an answer to this proposition. "
+        "Omit it and the write behaves exactly as it did before the gate existed."
+    ),
+)
+@click.option(
+    "--supersedes",
+    help="Declare which record this write replaces on the claim slot.",
+)
 @_data_dir_option
 def remember_command(
     content: str,
     kind: str,
     tags: tuple[str, ...],
     idempotency_key: str | None,
+    claim_key: str | None,
+    supersedes: str | None,
     data_dir: Path | None,
 ) -> None:
     """Write one selective, scoped memory from a shell hook or pipeline."""
@@ -506,11 +524,24 @@ def remember_command(
             source="cli",
             details={"idempotency_key": key} if key else {},
         ),
+        claim_key=claim_key,
+        supersedes=supersedes,
     )
     try:
-        result = asyncio.run(_remember_once(_application(settings), request))
+        result = asyncio.run(
+            _remember_once(_application_with_ruleset(settings), request)
+        )
     except Exception as exc:
         raise click.ClickException(f"remember failed: {exc}") from exc
+    if result.contest_id is not None:
+        standing = ", ".join(result.incumbent_ids) or "the existing record"
+        click.echo(
+            f"Stored as CONTESTED memory {result.record.id} "
+            f"(kind={result.record.kind.value}, scope={result.record.scope.value})."
+        )
+        click.echo(f"Current memory is unchanged; {standing} still stands.")
+        click.echo(f"Review: cortex-mem contest show {result.contest_id}")
+        return
     action = "Created" if result.created else "Updated"
     click.echo(
         f"{action} memory {result.record.id} "
@@ -577,6 +608,442 @@ def supersede_command(
             f"  {version.valid_from.isoformat()} -> {end}  {version.record.id}"
         )
         click.echo(f"    {_content_display(version.record.content)}")
+
+
+def _reading_repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
+    """Open the store read-only for inspection commands.
+
+    A diagnostic must never be the thing that changes the store. Opening it
+    writable would apply pending migrations as a side effect of merely
+    looking, which is the last behaviour you want from the command you reach
+    for when you already suspect something is wrong.
+    """
+
+    return SQLiteMemoryRepository(
+        settings.db_path,
+        read_only=True,
+        receipt_retention=settings.receipt_retention,
+    )
+
+
+def _application_with_ruleset(settings: AOMSSettings) -> AOMSApplication:
+    return AOMSApplication(
+        _repository(settings),
+        scope_context=_scope_context(),
+        embedding_provider=provider_from_config(_embedding_environment(settings)),
+        ruleset=settings.ruleset,
+    )
+
+
+def _contest_display_state(entry: ContestEntry, settings: AOMSSettings) -> str:
+    """Derive the reporting state. Nothing here is ever written back.
+
+    ``expired-held`` is computed from the entry's age at the moment you look
+    at it. Storing it would mean a durable state changing on a timer, which is
+    exactly the shape of the endpoint that corrupted months of memory in 2026.
+    """
+
+    if entry.state is ContestState.RESOLVED:
+        resolution = entry.resolution.value if entry.resolution else "resolved"
+        return f"resolved ({resolution})"
+    now = datetime.now(timezone.utc)
+    ruleset = settings.ruleset
+    if is_expired_held(entry.opened_at, now=now, ruleset=ruleset):
+        return "expired-held"
+    if is_overdue(entry.opened_at, now=now, ruleset=ruleset):
+        return "open (overdue)"
+    return "open"
+
+
+def _print_contest_row(entry: ContestEntry, settings: AOMSSettings) -> None:
+    age = (datetime.now(timezone.utc) - entry.opened_at).days
+    click.echo(
+        f"  {entry.contest_id}  {_contest_display_state(entry, settings)}  "
+        f"slot={entry.claim_key}  trigger={entry.trigger.value}  "
+        f"by={entry.opened_by_agent_id}  x{entry.occurrence_count}  {age}d old"
+    )
+
+
+@main.group("contest")
+def contest_group() -> None:
+    """Review and resolve contested writes. Resolution is always yours."""
+
+
+@contest_group.command("list")
+@click.option(
+    "--state",
+    type=click.Choice([item.value for item in ContestState]),
+    help="Filter by stored state; 'expired-held' is derived, not stored.",
+)
+@click.option("--slot", "claim_key", help="Filter by claim key.")
+@click.option("--by-agent", "agent_id", help="Filter by the agent that wrote it.")
+@click.option("--oldest/--newest", default=True, show_default=True)
+@click.option("--limit", type=click.IntRange(min=1, max=500), default=50)
+@click.option("--json", "as_json", is_flag=True, help="Emit machine-readable JSON.")
+@_data_dir_option
+def contest_list_command(
+    state: str | None,
+    claim_key: str | None,
+    agent_id: str | None,
+    oldest: bool,
+    limit: int,
+    as_json: bool,
+    data_dir: Path | None,
+) -> None:
+    """List ledger entries, oldest first so the inbox drains in order."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    repository = _reading_repository(settings)
+
+    async def run():
+        return await repository.list_contests(
+            state=ContestState(state) if state else None,
+            claim_key=claim_key,
+            agent_id=agent_id,
+            limit=limit,
+            oldest_first=oldest,
+        )
+
+    page = asyncio.run(run())
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "total": page.total,
+                    "entries": [
+                        {
+                            **entry.model_dump(mode="json"),
+                            "display_state": _contest_display_state(entry, settings),
+                        }
+                        for entry in page.entries
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+    click.echo(f"Contest ledger: {page.total} matching entr(ies).")
+    if not page.entries:
+        click.echo("  Nothing to review.")
+        return
+    for entry in page.entries:
+        _print_contest_row(entry, settings)
+    click.echo("\nInspect one with: cortex-mem contest show CONTEST_ID")
+
+
+@contest_group.command("show")
+@click.argument("contest_id")
+@_data_dir_option
+def contest_show_command(contest_id: str, data_dir: Path | None) -> None:
+    """Show one entry side by side with the incumbents it did not displace."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    repository = _reading_repository(settings)
+
+    async def run():
+        entry = await repository.get_contest(contest_id)
+        if entry is None:
+            raise LookupError(f"contest not found: {contest_id}")
+        challenger = await repository.get(entry.record_id)
+        incumbents = []
+        for record_id in entry.incumbent_ids:
+            record = await repository.get(record_id)
+            if record is not None:
+                incumbents.append(record)
+        return entry, challenger, incumbents
+
+    try:
+        entry, challenger, incumbents = asyncio.run(run())
+    except LookupError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    click.echo(f"Contest {entry.contest_id}")
+    click.echo(f"  State:      {_contest_display_state(entry, settings)}")
+    click.echo(f"  Slot:       {entry.claim_key}")
+    click.echo(f"  Trigger:    {entry.trigger.value}")
+    click.echo(f"  Detail:     {json.dumps(entry.trigger_detail, sort_keys=True)}")
+    click.echo(f"  Opened:     {entry.opened_at.isoformat()} "
+               f"by {entry.opened_by_agent_id} (x{entry.occurrence_count})")
+    if entry.resolution is not None:
+        click.echo(
+            f"  Resolved:   {entry.resolution.value} by {entry.resolved_by} "
+            f"at {entry.resolved_at.isoformat() if entry.resolved_at else '-'}"
+        )
+        if entry.resolution_note:
+            click.echo(f"  Note:       {entry.resolution_note}")
+
+    click.echo("\nStanding (current memory, unchanged):")
+    for record in incumbents or []:
+        click.echo(f"  {record.id}  {_content_display(record.content)}")
+    if not incumbents:
+        click.echo("  (the incumbents are no longer retrievable at this scope)")
+    click.echo("\nContested (retained in full, not packed into recall):")
+    if challenger is not None:
+        click.echo(f"  {challenger.id}  {_content_display(challenger.content)}")
+
+    click.echo("\nResolve with one of:")
+    click.echo(f"  cortex-mem contest resolve {entry.contest_id} --admit")
+    for record in incumbents or []:
+        click.echo(
+            f"  cortex-mem contest resolve {entry.contest_id} "
+            f"--supersede {record.id}"
+        )
+    click.echo(
+        f"  cortex-mem contest resolve {entry.contest_id} "
+        '--set-aside --reason "..."'
+    )
+    click.echo(
+        f"  cortex-mem contest resolve {entry.contest_id} --split --claim-key KEY"
+    )
+
+
+@contest_group.command("resolve")
+@click.argument("contest_id")
+@click.option("--admit", is_flag=True, help="Admit the contested record as it stands.")
+@click.option(
+    "--supersede",
+    "supersede_id",
+    help="Admit its content as a successor to this incumbent.",
+)
+@click.option("--set-aside", "set_aside", is_flag=True, help="Decline, reversibly.")
+@click.option("--split", "split", is_flag=True, help="Re-file under another slot.")
+@click.option("--claim-key", help="New claim key for --split.")
+@click.option("--reason", help="Operator note recorded with the resolution.")
+@_data_dir_option
+def contest_resolve_command(
+    contest_id: str,
+    admit: bool,
+    supersede_id: str | None,
+    set_aside: bool,
+    split: bool,
+    claim_key: str | None,
+    reason: str | None,
+    data_dir: Path | None,
+) -> None:
+    """Record your verdict. Nothing else in AOMS can change a disposition."""
+
+    chosen = [
+        name
+        for name, selected in (
+            ("--admit", admit),
+            ("--supersede", supersede_id is not None),
+            ("--set-aside", set_aside),
+            ("--split", split),
+        )
+        if selected
+    ]
+    if len(chosen) != 1:
+        raise click.ClickException(
+            "choose exactly one of --admit, --supersede, --set-aside, --split"
+        )
+    if split and not claim_key:
+        raise click.ClickException("--split requires --claim-key")
+    if set_aside and not reason:
+        raise click.ClickException("--set-aside requires --reason")
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    application = _application_with_ruleset(settings)
+    resolver = _scope_context().agent_id
+
+    async def run():
+        entry = await application.repository.get_contest(contest_id)
+        if entry is None:
+            raise LookupError(f"contest not found: {contest_id}")
+        result = await application.resolve_contest(
+            contest_id,
+            resolution=(
+                ContestResolution.ADMIT
+                if admit
+                else ContestResolution.ADMIT_SUPERSEDING
+                if supersede_id
+                else ContestResolution.SET_ASIDE
+                if set_aside
+                else ContestResolution.SPLIT
+            ),
+            resolved_by=resolver,
+            note=reason,
+            supersede_incumbent_id=supersede_id,
+            new_claim_key=claim_key,
+        )
+        await application.wait_for_background_embeddings()
+        timeline = None
+        if result.successor_id is not None:
+            timeline = await application.chain_timeline(result.successor_id)
+        return result, timeline
+
+    try:
+        result, timeline = asyncio.run(run())
+    except Exception as exc:
+        raise click.ClickException(f"resolve failed: {exc}") from exc
+
+    click.echo(
+        f"Contest {contest_id} resolved as {result.entry.resolution.value} "
+        f"by {result.entry.resolved_by}."
+    )
+    click.echo(result.summary)
+    if timeline is not None:
+        click.echo(timeline.reconstruction_note)
+        for version in timeline.versions:
+            end = version.valid_until.isoformat() if version.valid_until else "open"
+            click.echo(
+                f"  {version.valid_from.isoformat()} -> {end}  {version.record.id}"
+            )
+            click.echo(f"    {_content_display(version.record.content)}")
+
+
+@contest_group.command("drain")
+@click.option("--limit", type=click.IntRange(min=1, max=200), default=10)
+@_data_dir_option
+def contest_drain_command(limit: int, data_dir: Path | None) -> None:
+    """Print the oldest open entries with ready-to-run commands. Zero writes."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    repository = _reading_repository(settings)
+
+    async def run():
+        return await repository.list_contests(
+            state=ContestState.OPEN, limit=limit, oldest_first=True
+        )
+
+    page = asyncio.run(run())
+    click.echo(f"Draining {len(page.entries)} of {page.total} open entr(ies).")
+    click.echo("This command writes nothing; each verdict below is yours to run.\n")
+    for entry in page.entries:
+        _print_contest_row(entry, settings)
+        click.echo(f"    cortex-mem contest show {entry.contest_id}")
+
+
+@contest_group.command("resolve-many")
+@click.option(
+    "--set-aside",
+    "set_aside",
+    is_flag=True,
+    required=True,
+    help="The only bulk verdict. Declines reversibly and deletes nothing.",
+)
+@click.option("--reason", required=True, help="Recorded on every entry resolved.")
+@click.option("--slot", "claim_key", help="Only entries on this claim key.")
+@click.option("--by-agent", "agent_id", help="Only entries opened by this agent.")
+@click.option(
+    "--from-source",
+    "source",
+    help="Only entries whose record declares this provenance source.",
+)
+@click.option(
+    "--limit", type=click.IntRange(min=1, max=500), default=100, show_default=True
+)
+@click.option("--yes", is_flag=True, help="Skip the confirmation prompt.")
+@_data_dir_option
+def contest_resolve_many_command(
+    set_aside: bool,
+    reason: str,
+    claim_key: str | None,
+    agent_id: str | None,
+    source: str | None,
+    limit: int,
+    yes: bool,
+    data_dir: Path | None,
+) -> None:
+    """Set aside a filtered batch of open entries, one receipt each.
+
+    Set-aside is deliberately the only bulk verdict. Bulk admission would let
+    one command make many contested claims current at once, which is the exact
+    shape of the thing this feature exists to prevent. Setting aside changes
+    nothing about what is currently true, deletes nothing, and is reversible
+    one entry at a time.
+    """
+
+    if not (claim_key or agent_id or source):
+        raise click.ClickException(
+            "refusing to act on every open entry: narrow the batch with "
+            "--slot, --by-agent, or --from-source"
+        )
+    settings = _settings(data_dir)
+    _require_database(settings)
+    application = _application_with_ruleset(settings)
+    resolver = _scope_context().agent_id
+
+    async def preview():
+        return await application.repository.list_contests(
+            state=ContestState.OPEN,
+            claim_key=claim_key,
+            agent_id=agent_id,
+            source=source,
+            limit=limit,
+            oldest_first=True,
+        )
+
+    page = asyncio.run(preview())
+    if not page.entries:
+        click.echo("No open entries match that filter; nothing was changed.")
+        return
+    click.echo(
+        f"About to set aside {len(page.entries)} of {page.total} matching open "
+        f"entr(ies), as {resolver}:"
+    )
+    for entry in page.entries:
+        _print_contest_row(entry, settings)
+    if page.total > len(page.entries):
+        click.echo(
+            f"  ({page.total - len(page.entries)} more match; raise --limit to "
+            "include them)"
+        )
+    click.echo(
+        "\nNothing is deleted. Every record stays searchable with "
+        "include_contested and can be admitted individually later."
+    )
+    if not yes:
+        click.confirm("Proceed?", abort=True)
+
+    async def run():
+        resolved = []
+        for entry in page.entries:
+            resolved.append(
+                await application.resolve_contest(
+                    entry.contest_id,
+                    resolution=ContestResolution.SET_ASIDE,
+                    resolved_by=resolver,
+                    note=reason,
+                )
+            )
+        return resolved
+
+    try:
+        resolved = asyncio.run(run())
+    except Exception as exc:
+        raise click.ClickException(f"resolve-many failed: {exc}") from exc
+    click.echo(
+        f"Set aside {len(resolved)} entr(ies); {len(resolved)} receipt(s) written."
+    )
+
+
+@main.command("receipts")
+@click.option("--limit", type=click.IntRange(min=1, max=1000), default=20)
+@click.option("--json", "as_json", is_flag=True)
+@_data_dir_option
+def receipts_command(limit: int, as_json: bool, data_dir: Path | None) -> None:
+    """Show recent write receipts, the append-only record of every decision."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    repository = _reading_repository(settings)
+    receipts = asyncio.run(repository.recent_write_receipts(limit=limit))
+    if as_json:
+        click.echo(
+            json.dumps([item.model_dump(mode="json") for item in receipts], indent=2)
+        )
+        return
+    click.echo(f"Write receipts: {len(receipts)} shown (append-only, never pruned).")
+    for receipt in receipts:
+        trigger = receipt.trigger.value if receipt.trigger else "-"
+        click.echo(
+            f"  {receipt.created_at.isoformat()}  {receipt.disposition.value:9s} "
+            f"{receipt.record_id}  slot={receipt.claim_key}  trigger={trigger}"
+        )
 
 
 @main.command("search")
@@ -910,6 +1377,35 @@ def _doctor_database(
         else:
             report.pass_("Memory records", f"{total} canonical records")
 
+        updated_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM memories WHERE updated_at <> created_at"
+            ).fetchone()[0]
+        )
+        if updated_count:
+            updated_ids = [
+                str(row["id"])
+                for row in connection.execute(
+                    "SELECT id FROM memories WHERE updated_at <> created_at "
+                    "ORDER BY id LIMIT 5"
+                ).fetchall()
+            ]
+            samples = ", ".join(updated_ids)
+            if updated_count > 5:
+                samples += f", +{updated_count - 5} more"
+            report.warn(
+                "In-place update signal",
+                f"{updated_count} record(s) have updated_at != created_at: "
+                f"{samples}",
+                "This can be legitimate for a trusted importer or idempotent "
+                "restore/upsert. Otherwise investigate provenance and compare "
+                "backup generations using docs/RECOVERY.md.",
+            )
+        else:
+            report.pass_(
+                "In-place update signal", "0 records have updated_at != created_at"
+            )
+
         unscoped = int(
             connection.execute(
                 f"SELECT COUNT(*) FROM memories WHERE {UNSCOPED_SQL}"
@@ -1038,23 +1534,160 @@ def _doctor_database(
         connection.close()
 
 
+def _doctor_contests(report: _DoctorReport, settings: AOMSSettings) -> None:
+    """Surface the ledger in the same pass/warn/fail reporter as everything else."""
+
+    repository = _reading_repository(settings)
+
+    async def run():
+        # Deliberately not `integrity_report()`: that also walks the FTS and
+        # vector projections, which is minutes of work on a large store, and
+        # doctor runs this check every time.
+        drift, contested_count, _ = await repository.contested_drift_report()
+        page = await repository.list_contests(
+            state=ContestState.OPEN, limit=500, oldest_first=True
+        )
+        return drift, contested_count, page
+
+    try:
+        drift, contested_count, page = asyncio.run(run())
+    except sqlite3.DatabaseError as exc:
+        report.fail(
+            "Contest ledger",
+            f"could not be read: {exc}",
+            "Restore a verified export into a new data directory.",
+        )
+        return
+
+    if drift:
+        named = ", ".join(drift[:10])
+        extra = f" (+{len(drift) - 10} more)" if len(drift) > 10 else ""
+        report.fail(
+            "Contested projection",
+            f"{len(drift)} record(s) disagree with the ledger: {named}{extra}",
+            "Do not write to this store. Run `cortex-mem contest list` and "
+            "reconcile before any further writes.",
+        )
+    else:
+        report.pass_(
+            "Contested projection",
+            f"agrees with the ledger ({contested_count} contested record(s))",
+        )
+
+    now = datetime.now(timezone.utc)
+    ruleset = settings.ruleset
+    overdue = [
+        entry
+        for entry in page.entries
+        if is_overdue(entry.opened_at, now=now, ruleset=ruleset)
+    ]
+    if overdue:
+        oldest = min(entry.opened_at for entry in overdue)
+        report.fail(
+            "Contest inbox",
+            f"{len(overdue)} of {page.total} open entr(ies) are past the "
+            f"{ruleset.contest_sla_days}-day review window "
+            f"(oldest opened {oldest.date().isoformat()})",
+            "Review them: cortex-mem contest drain. Nothing resolves on a "
+            "timer; a person decides each one.",
+        )
+    elif page.total:
+        report.warn(
+            "Contest inbox",
+            f"{page.total} open entr(ies) awaiting review",
+            "Review them: cortex-mem contest drain",
+        )
+    else:
+        report.pass_("Contest inbox", "no open entries")
+
+
 @main.command("doctor")
+@click.option(
+    "--contests",
+    "contests",
+    is_flag=True,
+    help="Print the projected disposition map for every claim slot. Zero writes.",
+)
 @_data_dir_option
-def doctor_command(data_dir: Path | None) -> None:
+def doctor_command(contests: bool, data_dir: Path | None) -> None:
     """Diagnose storage, schema, embeddings, vectors, queues, and receipts."""
 
     settings = _settings(data_dir)
+    if contests:
+        _print_disposition_map(settings)
+        return
     click.echo(f"AOMS doctor {__version__}")
     click.echo(f"Data directory: {settings.data_dir}\n")
     report = _DoctorReport()
     profile = _check_embedding_provider(report, settings)
     _doctor_database(report, settings, profile)
+    if settings.db_path.is_file():
+        _doctor_contests(report, settings)
     click.echo(
         f"\nDoctor finished: {report.failures} failure(s), "
         f"{report.warnings} warning(s)."
     )
     if report.failures:
         raise click.exceptions.Exit(1)
+
+
+def _print_disposition_map(settings: AOMSSettings) -> None:
+    """Read-only projection of which record holds which slot, and what does not."""
+
+    _require_database(settings)
+    click.echo(f"AOMS disposition map {__version__}")
+    click.echo(f"Data directory: {settings.data_dir}")
+    click.echo("Dry run: this command performs zero writes.\n")
+
+    with sqlite3.connect(
+        f"{settings.db_path.resolve().as_uri()}?mode=ro", uri=True, timeout=5.0
+    ) as connection:
+        connection.row_factory = sqlite3.Row
+        columns = {
+            str(row["name"])
+            for row in connection.execute("PRAGMA table_info(memories)").fetchall()
+        }
+        if "claim_key" not in columns:
+            click.echo("This store predates the contest ledger; nothing participates.")
+            return
+        rows = connection.execute(
+            "SELECT claim_key, scope, scope_agent_id, scope_workspace_id, "
+            "contested, COUNT(*) AS count FROM memories "
+            "WHERE claim_key IS NOT NULL "
+            "GROUP BY claim_key, scope, scope_agent_id, scope_workspace_id, contested "
+            "ORDER BY claim_key ASC, contested ASC"
+        ).fetchall()
+        non_participating = int(
+            connection.execute(
+                "SELECT COUNT(*) AS count FROM memories WHERE claim_key IS NULL"
+            ).fetchone()["count"]
+        )
+
+    click.echo(
+        f"{non_participating} record(s) do not participate in the gate "
+        "(claim_key IS NULL) and behave exactly as they did before it existed.\n"
+    )
+    if not rows:
+        click.echo("No record declares a claim key yet.")
+        return
+    slots: dict[tuple[str, str, str | None, str | None], dict[str, int]] = {}
+    for row in rows:
+        key = (
+            str(row["claim_key"]),
+            str(row["scope"]),
+            row["scope_agent_id"],
+            row["scope_workspace_id"],
+        )
+        bucket = slots.setdefault(key, {"admitted": 0, "contested": 0})
+        label = "contested" if int(row["contested"]) else "admitted"
+        bucket[label] += int(row["count"])
+    click.echo(f"{len(slots)} claim slot(s):")
+    for (claim_key, scope, agent_id, workspace_id), counts in slots.items():
+        binding = agent_id or workspace_id or "user-global"
+        click.echo(
+            f"  {claim_key}  [{scope} {binding}]  "
+            f"admitted={counts['admitted']}  contested={counts['contested']}"
+        )
 
 
 def _format_ownership_counts(counts: dict[str, int]) -> str:

@@ -12,14 +12,76 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secret-scan:
+    name: Secret scan (working tree and diff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out full repository history
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install pinned gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          bin_dir="$RUNNER_TEMP/gitleaks-bin"
+          curl -fsSL \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz \
+            -o "$archive"
+          echo "9991e0b2903da4c8f6122b5c3186448b927a5da4deef1fe45271c3793f4ee29c  $archive" \
+            | sha256sum -c -
+          mkdir -p "$bin_dir"
+          tar -xzf "$archive" -C "$bin_dir" gitleaks
+          echo "$bin_dir" >> "$GITHUB_PATH"
+
+      - name: Scan checked-out working tree
+        run: gitleaks dir . --config .gitleaks.toml --redact --no-banner
+
+      - name: Select event diff base
+        id: diff-base
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          zero=0000000000000000000000000000000000000000
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base="$PR_BASE_SHA"
+          elif [[ -n "$BEFORE_SHA" && "$BEFORE_SHA" != "$zero" ]] \
+            && git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            base="$BEFORE_SHA"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            base="$(git rev-parse HEAD^)"
+          else
+            base="$(git hash-object -t tree /dev/null)"
+          fi
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
+      - name: Scan event diff
+        shell: bash
+        env:
+          DIFF_BASE: ${{ steps.diff-base.outputs.base }}
+        run: |
+          set -euo pipefail
+          git diff --no-ext-diff --unified=0 "$DIFF_BASE" "$GITHUB_SHA" \
+            | sed -n '/^+++ /d; /^+/p' \
+            | gitleaks stdin --config .gitleaks.toml --redact --no-banner
+
   test:
     name: Tests (Python ${{ matrix.python-version }})
+    needs: secret-scan
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - name: Check out repository
@@ -35,8 +97,7 @@ jobs:
       - name: Install package and repository test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]" \
-            "fastapi>=0.109" "aiohttp>=3.9" "chromadb>=0.4"
+          python -m pip install -e ".[dev]"
 
       - name: Run canonical test suite
         run: python -m pytest
@@ -105,6 +166,7 @@ jobs:
 
   offline-harnesses:
     name: Offline eval and scripted relay
+    needs: secret-scan
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
