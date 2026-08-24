@@ -4,6 +4,11 @@
 
 Security fixes are made on the current default branch and included in the next release. Older snapshots and the legacy JSONL service should not be assumed to receive security updates.
 
+| Version | Supported |
+|---|---|
+| Current default branch / 2.x | Yes |
+| 1.x JSONL service | No |
+
 ## Report a vulnerability
 
 Please report suspected vulnerabilities privately through GitHub's **Security → Report a vulnerability** flow for this repository. Do not include secrets, private memory content, unredacted databases, or working exploit details in a public issue, discussion, or pull request.

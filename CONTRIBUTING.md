@@ -4,7 +4,7 @@ Thanks for helping improve AOMS. Changes are welcome across the core contracts, 
 
 ## Set up a development environment
 
-Use Python 3.11 or 3.12:
+The package supports Python 3.10 and newer. Python 3.11 or 3.12 is recommended for development and matches the primary CI matrix:
 
 ```console
 git clone https://github.com/dhawalc/cortex-mem.git
@@ -27,6 +27,17 @@ The tiny repository under `demo/relay_fixture/repository` has a separate interna
 cd demo/relay_fixture/repository
 python -m pytest
 ```
+
+The CI-safe credibility harnesses are deterministic and require no model account or network access at runtime:
+
+```console
+python -m aoms.eval run --records 78 --output-dir /tmp/aoms-eval-runs
+python -m demo.relay.runner run --output /tmp/aoms-relay \
+  --agents scripted,scripted,scripted --seed 7319 --with-baseline
+python -m demo.relay.runner validate /tmp/aoms-relay
+```
+
+These commands write only to the paths you provide. Do not point tests, demos, or recovery experiments at a real AOMS data directory.
 
 Build and inspect the distributable wheel with:
 
