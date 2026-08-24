@@ -22,10 +22,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "fastapi>=0.104.0",
-    "uvicorn[standard]>=0.24.0",
-    "chromadb>=0.4.0",
-    "aiosqlite>=0.19.0",
     "pyyaml>=6.0",
     "pydantic>=2.0.0",
     "platformdirs>=4.0",
@@ -52,7 +48,7 @@ Issues = "https://github.com/dhawalc/cortex-mem/issues"
 version = {attr = "aoms.version.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["aoms*", "demo*"]
+include = ["aoms*", "demo*", "recipes*"]
 exclude = ["tests*", "scripts*", "snapshots*", "index*"]
 
 [tool.setuptools.data-files]
@@ -62,6 +58,13 @@ exclude = ["tests*", "scripts*", "snapshots*", "index*"]
 ]
 
 [tool.setuptools.package-data]
+"recipes" = [
+    "README.md",
+    "claude-code/*",
+    "codex/*",
+    "openclaw/*",
+    "openclaw/hooks/aoms-recall/*",
+]
 "demo.relay" = ["README.md"]
 "demo.relay_fixture" = [
     "scenario.yaml",
