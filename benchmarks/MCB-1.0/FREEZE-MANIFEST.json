@@ -1,10 +1,10 @@
 {
   "benchmark": "MCB-1.0",
   "case_count": 48,
-  "frozen_at_utc": "2026-08-24T15:39:32Z",
+  "frozen_at_utc": "2026-08-24T15:42:48Z",
   "integrity_statement": "Cases and scoring rules were frozen before any execution against AOMS.",
   "sha256": {
     "cases.json": "d5d9db63ad0911110e7cc602a22a6f6e655b9b5fb72261c649a10debdd7ac54f",
-    "score.py": "82f658e8727a3d4fe2813977b1499e080beb9e7467780ad6f1c45be51ecafd40"
+    "score.py": "7565863b5c02d35d9d3e8dea9dcfa453fd903d618ac9f61280b5b3cc1a9dd98b"
   }
 }

@@ -90,20 +90,35 @@ def derive_actual_class(
     return "mixed"
 
 
+def inspect_final_state(values: Any) -> tuple[set[tuple[str, str]], str | None]:
+    if not isinstance(values, list):
+        return set(), "durable state must be a list"
+    try:
+        units = [_unit(value) for value in values]
+    except ScoreError as exc:
+        return set(), str(exc)
+    final = set(units)
+    if len(units) != len(final):
+        return final, "durable state contains duplicate statement pairs"
+    if len({topic for topic, _ in units}) != len(units):
+        return final, "durable state contains multiple current values for one topic"
+    return final, None
+
+
 def evaluate_case(case: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
     expected = case["expected"]
     initial = normalize_state(case["initial_state"])
     observation = normalize_state(case["observation"]["statements"])
     expected_final = normalize_state(expected["final_state"])
     error = result.get("error")
-    structural_error: str | None = None
+    final, structural_error = inspect_final_state(
+        result.get("resulting_durable_state")
+    )
     try:
-        final = normalize_state(result.get("resulting_durable_state"))
         actual_class = derive_actual_class(initial, observation, final)
     except ScoreError as exc:
-        final = set()
         actual_class = "invalid"
-        structural_error = str(exc)
+        structural_error = structural_error or str(exc)
     passed = (
         error is None
         and structural_error is None
