@@ -424,3 +424,208 @@ async def test_the_ledger_survives_a_restart_and_reports_its_own_age(tmp_path):
     assert page.total == 1
     assert page.entries[0].opened_at == old
     assert page.entries[0].trigger_detail == {"derived_from_count": 2}
+
+
+# --- portability ----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_a_legacy_store_round_trips_through_export_and_restore(tmp_path):
+    """Migration 7 must not change what a record is, only what a store knows.
+
+    Export a legacy-shaped store, restore it into a fresh one, and require the
+    canonical JSON to come back byte-identical. If the migration had rewritten
+    anything, this is where it would show.
+    """
+
+    from aoms.portable import export_bundle, restore_bundle
+
+    source_path = tmp_path / "source.sqlite3"
+    source = SQLiteMemoryRepository(source_path)
+    await source.initialize()
+    originals = [record(f"legacy-{index}") for index in range(5)]
+    for original in originals:
+        await source.store_new(original)
+
+    with sqlite3.connect(source_path) as connection:
+        connection.row_factory = sqlite3.Row
+        before = {
+            str(row["id"]): str(row["record_json"])
+            for row in connection.execute("SELECT id, record_json FROM memories")
+        }
+
+    bundle = tmp_path / "bundle"
+    await export_bundle(source, bundle)
+
+    restored_path = tmp_path / "restored.sqlite3"
+    restored = SQLiteMemoryRepository(restored_path)
+    await restore_bundle(restored, bundle)
+
+    with sqlite3.connect(restored_path) as connection:
+        connection.row_factory = sqlite3.Row
+        after = {
+            str(row["id"]): str(row["record_json"])
+            for row in connection.execute("SELECT id, record_json FROM memories")
+        }
+    assert after == before
+
+    for original in originals:
+        reloaded = await restored.get(original.id)
+        assert reloaded is not None
+        assert reloaded.claim_key is None
+        assert reloaded.disposition is WriteDisposition.ADMITTED
+    report = await restored.integrity_report()
+    assert report.contested_projection_drift == []
+
+
+@pytest.mark.asyncio
+async def test_a_contested_record_survives_export_and_restore_as_contested(tmp_path):
+    from aoms.portable import export_bundle, restore_bundle
+
+    source_path = tmp_path / "source.sqlite3"
+    source = SQLiteMemoryRepository(source_path)
+    await source.initialize()
+    await source.store_new(record("incumbent", claim_key="price"))
+    challenger = record(
+        "challenger",
+        claim_key="price",
+        content="rival",
+        disposition=WriteDisposition.CONTESTED,
+    )
+    await source.store_new(
+        challenger,
+        ledger=LedgerWrite(
+            receipt=write_receipt(
+                "challenger", disposition=WriteDisposition.CONTESTED
+            ),
+            contest=ContestEntry(
+                contest_id="ct-restore",
+                record_id="challenger",
+                claim_key="price",
+                scope=Scope.WORKSPACE,
+                scope_workspace_id="/w",
+                incumbent_ids=["incumbent"],
+                trigger=ContestTrigger.SLOT_COLLISION,
+                trigger_detail={},
+                opened_at=NOW,
+                opened_by_agent_id="agent-a",
+            ),
+        ),
+    )
+
+    bundle = tmp_path / "bundle"
+    await export_bundle(source, bundle)
+    restored = SQLiteMemoryRepository(tmp_path / "restored.sqlite3")
+    await restore_bundle(restored, bundle)
+
+    reloaded = await restored.get("challenger")
+    assert reloaded is not None
+    assert reloaded.content == "rival"
+    # The record's own disposition travels with it in record_json, so a
+    # restored bundle never quietly promotes a contested claim to current.
+    assert reloaded.disposition is WriteDisposition.CONTESTED
+
+
+@pytest.mark.asyncio
+async def test_the_ledger_travels_with_the_bundle(tmp_path):
+    """A backup that dropped the ledger would be silent evidence loss.
+
+    Before this, exporting and restoring a store left the contested record in
+    place with no entry explaining why it was withheld — a record held back
+    from recall that nothing in the store could account for, which `doctor`
+    correctly reported as drift.
+    """
+
+    from aoms.portable import export_bundle, restore_bundle
+
+    source_path = tmp_path / "source.sqlite3"
+    source = SQLiteMemoryRepository(source_path)
+    await source.initialize()
+    await source.store_new(record("incumbent", claim_key="price"))
+    await source.store_new(
+        record(
+            "challenger",
+            claim_key="price",
+            content="rival",
+            disposition=WriteDisposition.CONTESTED,
+        ),
+        ledger=LedgerWrite(
+            receipt=write_receipt(
+                "challenger", disposition=WriteDisposition.CONTESTED
+            ),
+            contest=ContestEntry(
+                contest_id="ct-travel",
+                record_id="challenger",
+                claim_key="price",
+                scope=Scope.WORKSPACE,
+                scope_workspace_id="/w",
+                incumbent_ids=["incumbent"],
+                trigger=ContestTrigger.SLOT_COLLISION,
+                trigger_detail={"undeclared_incumbent_count": 1},
+                opened_at=NOW,
+                opened_by_agent_id="agent-a",
+            ),
+        ),
+    )
+
+    bundle = tmp_path / "bundle"
+    exported = await export_bundle(source, bundle)
+    assert exported.contests == 1
+    assert exported.write_receipts == 1
+
+    restored = SQLiteMemoryRepository(tmp_path / "restored.sqlite3")
+    result = await restore_bundle(restored, bundle)
+    assert result.contests == 1
+    assert result.write_receipts == 1
+
+    entry = await restored.get_contest("ct-travel")
+    assert entry is not None
+    assert entry.incumbent_ids == ["incumbent"]
+    assert entry.trigger_detail == {"undeclared_incumbent_count": 1}
+    assert entry.opened_at == NOW
+
+    receipts = await restored.recent_write_receipts()
+    assert [item.record_id for item in receipts] == ["challenger"]
+
+    report = await restored.integrity_report()
+    assert report.contested_projection_drift == []
+    assert report.contested_count == 1
+    assert report.open_contest_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_bundle_written_before_the_ledger_still_restores(tmp_path):
+    import json as json_module
+
+    from aoms.portable import (
+        CONTESTS_FILE,
+        MANIFEST_FILE,
+        WRITE_RECEIPTS_FILE,
+        export_bundle,
+        restore_bundle,
+    )
+
+    source = SQLiteMemoryRepository(tmp_path / "source.sqlite3")
+    await source.initialize()
+    await source.store_new(record("legacy-a"))
+    bundle = tmp_path / "bundle"
+    await export_bundle(source, bundle)
+
+    # Rewrite the bundle as one produced before the ledger existed.
+    manifest = json_module.loads((bundle / MANIFEST_FILE).read_text())
+    del manifest["files"][CONTESTS_FILE]
+    del manifest["files"][WRITE_RECEIPTS_FILE]
+    (bundle / MANIFEST_FILE).write_text(json_module.dumps(manifest, indent=2))
+    (bundle / CONTESTS_FILE).unlink()
+    (bundle / WRITE_RECEIPTS_FILE).unlink()
+
+    restored = SQLiteMemoryRepository(tmp_path / "restored.sqlite3")
+    result = await restore_bundle(restored, bundle)
+    assert result.records == 1
+    assert result.contests == 0
+    assert result.write_receipts == 0
+    reloaded = await restored.get("legacy-a")
+    assert reloaded is not None
+    assert reloaded.claim_key is None
+    report = await restored.integrity_report()
+    assert report.contested_projection_drift == []

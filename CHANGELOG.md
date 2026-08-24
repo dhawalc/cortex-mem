@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added `cortex-mem doctor --contests`, a zero-write projection of which record holds which slot, and contest checks in `cortex-mem doctor` that fail on projection drift or on entries past the review window.
 - Added the read-only Observatory contradiction inbox at `GET /contests` and `GET /contests/{id}`, with a contested counter on `/truth`. Each row offers a copy-able CLI command rather than a resolve button, so an XSS or CSRF against the Observatory cannot change memory.
 - Added `AOMS_CONTEST_SLA_DAYS` (default 14) and `AOMS_CONTEST_EXPIRY_DAYS` (default 30). Both are reporting thresholds only.
+- Portable export bundles now carry `contests.jsonl` and `write_receipts.jsonl`. A backup that dropped the ledger would have discarded the only durable record of a contested write, and a restored store would have withheld a record from recall with nothing left to explain why. Bundles written before this restore unchanged.
 
 ### Changed
 
