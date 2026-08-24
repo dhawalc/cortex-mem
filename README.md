@@ -135,7 +135,11 @@ The cost when you do turn it on is real, and worth meeting here rather than in p
 | Declares what it replaces (`supersedes`) | 0% | 100% |
 | Does not declare | 82.35% | 0% |
 
-Pair `claim_key` with `supersedes` and the gate costs nothing. Set `claim_key` without ever declaring replacement and roughly four out of five valid revisions are held for a human instead of applied. See **[docs/CONTEST-LEDGER.md](docs/CONTEST-LEDGER.md)** for the full picture, including what draining the review queue costs and who should not opt in.
+Pair `claim_key` with `supersedes` and the gate costs nothing. Set `claim_key` without ever declaring replacement and roughly four out of five valid revisions are held for a human instead of applied.
+
+The prerequisite is a capability, not a prompt: **an agent that writes blind cannot declare supersession at all**, because it has no incumbent id to name. Adopt `claim_key` only for writers that read before they write. Measured against real models in [docs/experiments/declare-ab/](docs/experiments/declare-ab/): Claude Code reads first and declares correctly 8/8 without being told, while a smaller local model never read, never declared, and adopted `claim_key` anyway — the one configuration to avoid.
+
+See **[docs/CONTEST-LEDGER.md](docs/CONTEST-LEDGER.md)** for the full picture, including what draining the review queue costs, who should not opt in, and the limits of that experiment.
 
 This is a write-**authority** gate, not an evidence gate: it governs who may displace what, and never judges whether a claim is true, fresh, or well-sourced.
 

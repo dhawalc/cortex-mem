@@ -70,9 +70,10 @@ REMEMBER_DESCRIPTION = (
     "whenever known, and use a stable id when retrying the same logical write so "
     "retries update instead of duplicate. Record the useful conclusion in "
     "self-contained language that will make sense without this conversation. "
-    "When you are correcting or updating something already stored, set supersedes to "
-    "the id of the record you are replacing; a correction that does not declare what "
-    "it replaces may be kept but held aside instead of becoming current."
+    "When you are correcting or updating something already stored, first recall or "
+    "search for the record you are replacing, then set supersedes to its id; a "
+    "correction written without looking up what it replaces cannot declare it, and "
+    "may be kept but held aside instead of becoming current."
 )
 
 SEARCH_DESCRIPTION = (
