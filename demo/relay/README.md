@@ -1,9 +1,17 @@
 # AOMS Relay runner
 
 The runner starts a new process and a new private fixture-repository copy for
-each stage. Deterministic replay is the safe default:
+each stage. It ships in the source tree rather than as a standalone console
+command. From a fresh directory, clone the pinned release and install its
+development dependencies before replaying it. Deterministic replay requires no
+model account:
 
 ```console
+git clone --branch v2.0.0 --depth 1 https://github.com/dhawalc/cortex-mem.git
+cd cortex-mem
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
 python -m demo.relay.runner run \
   --output /tmp/aoms-relay-7319 \
   --agents scripted,scripted,scripted \

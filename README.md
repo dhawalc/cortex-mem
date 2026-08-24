@@ -134,6 +134,11 @@ The included cold-start relay has a planner record non-obvious constraints, then
 Deterministic scripted replay requires no model account:
 
 ```console
+git clone --branch v2.0.0 --depth 1 https://github.com/dhawalc/cortex-mem.git
+cd cortex-mem
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e ".[dev]"
 python -m demo.relay.runner run \
   --output /tmp/aoms-relay-7319 \
   --agents scripted,scripted,scripted \
