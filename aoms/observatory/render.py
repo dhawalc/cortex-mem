@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from urllib.parse import quote, urlencode
 
-from aoms.contracts import MemoryKind, MemoryRecord, Scope
+from aoms.contracts import ContestEntry, MemoryKind, MemoryRecord, Scope
 from aoms.observatory.evidence import ContextEvidence
 from aoms.observatory.partials import (
     candidate_rows,
@@ -83,7 +83,7 @@ margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 
 def _nav(active: str) -> str:
-    links = (("memories", "/memories", "Memories"), ("timeline", "/timeline", "Timeline"), ("truth", "/truth", "Truth"), ("receipts", "/receipts", "Receipts"))
+    links = (("memories", "/memories", "Memories"), ("timeline", "/timeline", "Timeline"), ("truth", "/truth", "Truth"), ("contests", "/contests", "Contests"), ("receipts", "/receipts", "Receipts"))
     return '<div class="topbar"><nav><a class="brand" href="/memories">RECALL <span>OBSERVATORY</span></a>' + "".join(
         f'<a class="{"active" if active == key else ""}" href="{url}">{label}</a>'
         for key, url, label in links
@@ -221,7 +221,20 @@ def receipts_page(page: Page[RecallReceipt]) -> str:
     return document("Receipts", body, active="receipts")
 
 
-def truth_page(report: ChainHealthReport) -> str:
+def _contest_counter(counts: Mapping[str, int] | None) -> str:
+    if not counts:
+        return ""
+    return f"""<section class="panel"><h2>Contested writes</h2>
+<p class="muted">Counts only. This page never renders challenger content.</p>
+<div class="badges"><span class="badge">{counts.get('open', 0)} open</span>
+<span class="badge">{counts.get('resolved', 0)} resolved</span>
+<span class="badge">{counts.get('contested_records', 0)} contested record(s)</span></div>
+<p><a href="/contests">Open the contradiction inbox \u2192</a></p></section>"""
+
+
+def truth_page(
+    report: ChainHealthReport, *, contest_counts: Mapping[str, int] | None = None
+) -> str:
     cards = ""
     for finding in report.findings:
         links = " → ".join(
@@ -235,7 +248,7 @@ def truth_page(report: ChainHealthReport) -> str:
     body = f"""<header class="hero"><p class="eyebrow">Truth · read-only inbox</p><h1>Declared lineage health</h1>
 <p class="lede">Cycles, dangling targets, branching heads, retrievable old/new pairs, and scope-boundary anomalies.</p>
 <p class="muted">These findings inspect explicit IDs, indexes, and scope bindings only. They do not infer semantic conflicts, judge truth, mutate records, or auto-fix anything.</p></header>
-<section class="grid cards">{cards}</section><p class="meta">Scanned {report.records_scanned:,} canonical record(s).</p>"""
+<section class="grid cards">{cards}</section>{_contest_counter(contest_counts)}<p class="meta">Scanned {report.records_scanned:,} canonical record(s).</p>"""
     return document("Truth", body, active="truth")
 
 
@@ -307,12 +320,102 @@ def receipt_inspector_page(
     )
 
 
+def _contest_row(entry: ContestEntry) -> str:
+    state = e(entry.state.value)
+    resolution = f" · {e(entry.resolution.value)}" if entry.resolution else ""
+    return f"""<article class="memory-row"><div><h2><a href="/contests/{quote(entry.contest_id, safe='')}"><code>{e(entry.contest_id)}</code></a></h2>
+<div class="badges"><span class="pill {'rejected' if entry.state.value == 'open' else 'selected'}">{state}{resolution}</span>
+<span class="badge">{e(entry.trigger.value)}</span><span class="badge">slot {e(entry.claim_key)}</span>
+<span class="badge">x{entry.occurrence_count}</span></div>
+<p class="preview">Opened by <code>{e(entry.opened_by_agent_id)}</code> against {e(len(entry.incumbent_ids))} incumbent(s).</p>
+<div class="meta">Opened {e(entry.opened_at.isoformat())}</div></div><time class="meta">{e(entry.opened_at.date())}</time></article>"""
+
+
+def contests_page(page: Page[ContestEntry], *, counts: Mapping[str, int]) -> str:
+    rows = "".join(_contest_row(entry) for entry in page.items)
+    if not rows:
+        rows = '<section class="panel empty"><h2>No contested writes</h2><p class="muted">Every write that declared a claim key holds its slot uncontested.</p></section>'
+    next_link = ""
+    if page.next_cursor:
+        next_link = f'<div class="pager"><a class="button secondary" rel="next" href="/contests?offset={e(page.next_cursor)}">Next page \u2192</a></div>'
+    body = f"""<header class="hero"><p class="eyebrow">Contradiction inbox \u00b7 read-only</p><h1>Contested writes</h1>
+<p class="lede">Writes that were durably retained but did not displace the record already holding their claim slot.</p>
+<p class="muted">Contested does not mean false. It means not yet adjudicated by a person. Nothing here was refused, deleted, truncated or rewritten, and nothing on this page can change what AOMS believes \u2014 you decide in the browser and act in the terminal.</p>
+<div class="badges"><span class="badge">{counts.get('open', 0)} open</span><span class="badge">{counts.get('resolved', 0)} resolved</span>
+<span class="badge">{counts.get('contested_records', 0)} contested record(s)</span></div></header>
+<section class="grid">{rows}</section>{next_link}"""
+    return document("Contests", body, active="contests")
+
+
+def contest_detail_page(
+    entry: ContestEntry,
+    *,
+    challenger: MemoryRecord | None,
+    incumbents: Sequence[MemoryRecord],
+) -> str:
+    def side(title: str, note: str, records: Sequence[MemoryRecord]) -> str:
+        cards = "".join(
+            f"""<article class="card"><h3><a href="/memories/{quote(record.id, safe='')}"><code>{e(record.id)}</code></a></h3>
+<div class="badges">{_scope_badge(record.scope)}<span class="badge">{e(record.kind.value)}</span>
+<span class="badge">{e(record.provenance.source)}</span></div>
+<pre class="content">{e(_content_text(record))}</pre></article>"""
+            for record in records
+        )
+        if not cards:
+            cards = '<p class="muted">Not retrievable at this boundary.</p>'
+        return f'<section class="panel"><h2>{e(title)}</h2><p class="muted">{e(note)}</p>{cards}</section>'
+
+    commands = "".join(
+        f"<li><code>{e(command)}</code></li>"
+        for command in _resolution_commands(entry, incumbents)
+    )
+    resolved = ""
+    if entry.resolution is not None:
+        note = f"<p>{e(entry.resolution_note)}</p>" if entry.resolution_note else ""
+        resolved = f"""<section class="panel"><h2>Resolved</h2>
+<p><strong>{e(entry.resolution.value)}</strong> by <code>{e(entry.resolved_by)}</code>
+at {e(entry.resolved_at.isoformat() if entry.resolved_at else '-')}</p>{note}</section>"""
+    body = f"""<header class="hero"><p class="eyebrow">Contest \u00b7 read-only</p><h1><code>{e(entry.contest_id)}</code></h1>
+<div class="badges"><span class="pill {'rejected' if entry.state.value == 'open' else 'selected'}">{e(entry.state.value)}</span>
+<span class="badge">{e(entry.trigger.value)}</span><span class="badge">slot {e(entry.claim_key)}</span>
+<span class="badge">opened by {e(entry.opened_by_agent_id)}</span><span class="badge">x{entry.occurrence_count}</span></div>
+<p class="meta">Opened {e(entry.opened_at.isoformat())} \u00b7 detail {e(json.dumps(entry.trigger_detail, sort_keys=True))}</p></header>
+{side('Standing', 'Current memory. This was not modified.', incumbents)}
+{side('Contested', 'Retained in full. Withheld from recall until a person decides.', [challenger] if challenger else [])}
+{resolved}
+<section class="panel"><h2>Resolve in your terminal</h2>
+<p class="muted">The Observatory serves GET only and opens the store read-only, so no request to this page can change memory. Copy one of these:</p>
+<ul class="breakdown">{commands}</ul></section>"""
+    return document(f"Contest {entry.contest_id}", body, active="contests", wide=True)
+
+
+def _resolution_commands(
+    entry: ContestEntry, incumbents: Sequence[MemoryRecord]
+) -> list[str]:
+    if entry.resolution is not None:
+        return [f"cortex-mem contest show {entry.contest_id}"]
+    commands = [f"cortex-mem contest resolve {entry.contest_id} --admit"]
+    commands.extend(
+        f"cortex-mem contest resolve {entry.contest_id} --supersede {record.id}"
+        for record in incumbents
+    )
+    commands.append(
+        f'cortex-mem contest resolve {entry.contest_id} --set-aside --reason "..."'
+    )
+    commands.append(
+        f"cortex-mem contest resolve {entry.contest_id} --split --claim-key KEY"
+    )
+    return commands
+
+
 def error_page(status: int, message: str) -> str:
     body = f'<section class="panel empty"><p class="eyebrow">{status}</p><h1>{e(message)}</h1><p><a href="/memories">Return to memories</a></p></section>'
     return document(str(status), body, active="")
 
 
 __all__ = [
+    "contest_detail_page",
+    "contests_page",
     "document",
     "error_page",
     "memories_page",
