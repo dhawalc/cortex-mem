@@ -11,7 +11,7 @@
 **ULTRON:** Autonomous AI agent (me) running on OpenClaw
 - **Model:** Claude Sonnet 4-5 (main session), Ollama/local (cron jobs)
 - **Role:** Orchestration, memory, task dispatch, integration
-- **Workspace:** `/home/dhawal/.openclaw/workspace`
+- **Workspace:** `/home/example/.openclaw/workspace`
 
 **Cursor:** You (AI code editor)
 - **Model:** Claude Sonnet 3.5
@@ -26,7 +26,7 @@
 
 ## The Big Picture: Daemon (ULTRON)
 
-**Location:** `/home/dhawal/daemon/`
+**Location:** `/home/example/daemon/`
 
 ### What It Is
 Autonomous AI agent with 4-tier persistent memory running 24/7.
@@ -74,7 +74,7 @@ All tiers use **Ollama (local, free):**
 ## Related Projects
 
 ### D2DT (Trading Platform)
-- **Location:** `/home/dhawal/D2DT/`
+- **Location:** `/home/example/D2DT/`
 - **Purpose:** Trading/data platform with PostgreSQL backend
 - **Focus:** SPX 0DTE options, quantitative strategies
 
@@ -102,19 +102,19 @@ All tiers use **Ollama (local, free):**
 - **Timezone:** America/Los_Angeles (PST/PDT)
 
 ### Key Paths
-- Daemon: `/home/dhawal/daemon/`
-- Daemon venv: `/home/dhawal/daemon/.venv/`
-- Memory data: `/home/dhawal/daemon/memory_data/`
-- OpenClaw workspace: `/home/dhawal/.openclaw/workspace/`
-- Cortex architecture doc: `/home/dhawal/D2DT/CORTEX_TIERED_ARCHITECTURE.md`
+- Daemon: `/home/example/daemon/`
+- Daemon venv: `/home/example/daemon/.venv/`
+- Memory data: `/home/example/daemon/memory_data/`
+- OpenClaw workspace: `/home/example/.openclaw/workspace/`
+- Cortex architecture doc: `/home/example/D2DT/CORTEX_TIERED_ARCHITECTURE.md`
 
 ### Trading VPS (skibidi-vps)
-- **Host:** 178.156.239.16
+- **Host:** 192.0.2.10
 - **User:** root
 - **SSH:** Key-based, passwordless
 - **Specs:** 1.9GB RAM, 38GB disk
 - **Purpose:** Trading execution + lightweight automation
-- **Health:** http://178.156.239.16:8000/health
+- **Health:** http://192.0.2.10:8000/health
 
 ---
 
@@ -154,7 +154,7 @@ All tiers use **Ollama (local, free):**
 ### ChromaDB Issue
 - **Problem:** Segfaults on Python 3.12 with Rust backend
 - **Workaround:** `DAEMON_DISABLE_CHROMADB=1` forces JSON fallback
-- **Storage:** `/home/dhawal/daemon/memory_data/episodic/episodes.json`
+- **Storage:** `/home/example/daemon/memory_data/episodic/episodes.json`
 
 ### OpenClaw 2026.2.19/21 Bug
 - **Issue:** Device scope loss on upgrade

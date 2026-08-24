@@ -68,7 +68,7 @@
     "aoms": "2.0.0",
     "git": "git version 2.53.0",
     "python": "3.12.3",
-    "python_executable": "/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python",
+    "python_executable": "/home/example/cortex-mem/cortex-mem/.venv/bin/python",
     "runner_schema": 1
   }
 }

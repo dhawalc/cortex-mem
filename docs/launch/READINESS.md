@@ -44,7 +44,7 @@ were made; HN/X remain with Dhawal.
 
 **Audited revision:** `v2` at `3b386778cd305e015bbed375dd7184d24325a345`
 
-**Interpreter:** `/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python`
+**Interpreter:** `/home/example/cortex-mem/cortex-mem/.venv/bin/python`
 
 **Decision:** **LAUNCH AUTHORIZED AT REHEARSAL GRADE**
 
@@ -98,7 +98,7 @@ only with the rehearsal grade stated wherever relay evidence is published.
 
 ## Rehearsal-008 validation
 
-Bundle: `/home/dhawal/openclaw_archives/aoms-relay-rehearsal-008`
+Bundle: `/home/example/openclaw_archives/aoms-relay-rehearsal-008`
 
 - Manifest SHA-256:
   `4ee172dc7be242e545682bb45478f35bfa66ae656ed13f316c9ee3fe4ee3e469`.
@@ -189,7 +189,7 @@ and external reproduction gates to post-launch.
 - [ ] Work from the audited checkout:
 
   ```console
-  cd /home/dhawal/cortex-mem/aoms-v2
+  cd /home/example/cortex-mem/aoms-v2
   git switch v2
   git status --short --branch
   ```
@@ -202,9 +202,9 @@ and external reproduction gates to post-launch.
 
   ```console
   AUDIT_TMP="$(mktemp -d /tmp/aoms-v2-release.XXXXXX)"
-  PYTHONDONTWRITEBYTECODE=1 /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python \
+  PYTHONDONTWRITEBYTECODE=1 /home/example/cortex-mem/cortex-mem/.venv/bin/python \
     -m pytest -p no:cacheprovider --basetemp "$AUDIT_TMP/pytest" -q
-  PYTHONDONTWRITEBYTECODE=1 /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python \
+  PYTHONDONTWRITEBYTECODE=1 /home/example/cortex-mem/cortex-mem/.venv/bin/python \
     -m pytest -p no:cacheprovider --basetemp "$AUDIT_TMP/fixture-pytest" \
     -q demo/relay_fixture/repository
   ```
@@ -212,7 +212,7 @@ and external reproduction gates to post-launch.
 - [ ] Generate the complete, unfiltered ablation matrix for the release:
 
   ```console
-  /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python -m aoms.eval run \
+  /home/example/cortex-mem/cortex-mem/.venv/bin/python -m aoms.eval run \
     --output-dir "$AUDIT_TMP/aoms-eval-v2.0.0"
   test "$(find "$AUDIT_TMP/aoms-eval-v2.0.0" -maxdepth 1 -type f -name '*.json' | wc -l)" -eq 5
   ```
@@ -225,16 +225,16 @@ and external reproduction gates to post-launch.
   ```console
   export AOMS_RELAY_CLAUDE_AUTH=bare
   export AOMS_RELAY_CODEX_SANDBOX=workspace-write
-  /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python -m demo.relay.runner run \
-    --output /home/dhawal/openclaw_archives/aoms-relay-proof-001 \
+  /home/example/cortex-mem/cortex-mem/.venv/bin/python -m demo.relay.runner run \
+    --output /home/example/openclaw_archives/aoms-relay-proof-001 \
     --agents claude,codex,openclaw --seed 7319 --with-baseline
-  /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python -m demo.relay.runner validate \
-    /home/dhawal/openclaw_archives/aoms-relay-proof-001
-  PYTHONDONTWRITEBYTECODE=1 /home/dhawal/cortex-mem/cortex-mem/.venv/bin/python \
+  /home/example/cortex-mem/cortex-mem/.venv/bin/python -m demo.relay.runner validate \
+    /home/example/openclaw_archives/aoms-relay-proof-001
+  PYTHONDONTWRITEBYTECODE=1 /home/example/cortex-mem/cortex-mem/.venv/bin/python \
     -m demo.relay_fixture.verify \
-    /home/dhawal/openclaw_archives/aoms-relay-proof-001
+    /home/example/openclaw_archives/aoms-relay-proof-001
   jq -e '.passed == true and .grade == "PROOF" and (.failures | length) == 0' \
-    /home/dhawal/openclaw_archives/aoms-relay-proof-001/verifier/report.json
+    /home/example/openclaw_archives/aoms-relay-proof-001/verifier/report.json
   ```
 
 - [ ] Confirm the bundle manifest's `source_revision` equals the release
@@ -311,7 +311,7 @@ and external reproduction gates to post-launch.
   ```console
   REHEARSAL_TGZ=/tmp/aoms-relay-rehearsal-008.tar.gz
   EVAL_TGZ=/tmp/aoms-eval-v2.0.0.tar.gz
-  tar -C /home/dhawal/openclaw_archives -czf "$REHEARSAL_TGZ" aoms-relay-rehearsal-008
+  tar -C /home/example/openclaw_archives -czf "$REHEARSAL_TGZ" aoms-relay-rehearsal-008
   tar -C demo/ablations -czf "$EVAL_TGZ" v2.0.0
   gh release create v2.0.0 --repo dhawalc/cortex-mem --verify-tag \
     --title "AOMS v2.0.0" --generate-notes \

@@ -75,7 +75,7 @@ Mitigation is a deliverable, not a hope: ship **host recipes** as part of the pr
 
 **Phase 0 — Stabilize the foundation (this week, already queued):** blob recovery (~105k records), embed-on-write, /stats fix, versioned backups. Non-negotiable prereq: don't build a product on a corrupting store.
 
-**Phase 1 — Core refactor (~wks 1–3):** contracts + application layer extraction; SQLite/WAL source of truth with JSONL import/export; portable settings (XDG paths, no `/home/dhawal` hardcodes); scope/namespace model.
+**Phase 1 — Core refactor (~wks 1–3):** contracts + application layer extraction; SQLite/WAL source of truth with JSONL import/export; portable settings (XDG paths, no `/home/example` hardcodes); scope/namespace model.
 
 **Phase 2 — MCP adapter + packaging (~wks 3–5):** FastMCP stdio server (3 tools); `uvx cortex-mem mcp` one-liner; first-run auto-init with bundled local embeddings; `doctor`; migration/import from the current live instance.
 

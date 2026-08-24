@@ -52,7 +52,7 @@ Where:
 ### ❌ DO NOT Touch These Existing Systems:
 - `~/.openclaw/workspace/memory/` (OpenClaw daily logs)
 - `~/.openclaw/workspace/MEMORY.md` (OpenClaw long-term memory)
-- `/home/dhawal/daemon/memory_data/` (Daemon Cortex)
+- `/home/example/daemon/memory_data/` (Daemon Cortex)
 
 ### ✅ Build Standalone:
 - Location: `~/projects/weighted-memory-poc/`

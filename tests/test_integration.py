@@ -124,7 +124,7 @@ async def test_sync_memory_md_writes_to_target(monkeypatch, tmp_path):
     # Monkeypatch Path to return our tmp_path as the root
     class FakePath:
         def __init__(self, *args):
-            self._path = tmp_path if args and args[0] == "/home/dhawal/cortex-mem/cortex-mem" else tmp_path / "/".join(str(a) for a in args)
+            self._path = tmp_path if args and args[0] == "/home/example/cortex-mem/cortex-mem" else tmp_path / "/".join(str(a) for a in args)
         def __truediv__(self, other):
             return tmp_path / other
     

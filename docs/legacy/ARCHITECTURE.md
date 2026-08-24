@@ -418,7 +418,7 @@ If needed:
 **Daily automated backup:**
 - Cron: 4 AM daily
 - Script: `backup_to_vps.sh`
-- Target: `root@178.156.239.16:/root/backups/openclaw-memory/`
+- Target: `backup@192.0.2.10:/root/backups/openclaw-memory/`
 
 **What's backed up:**
 - All JSONL files
@@ -434,16 +434,16 @@ If needed:
 
 **Full restore:**
 ```bash
-scp root@178.156.239.16:/root/backups/openclaw-memory/aoms-*.tar.gz /tmp/
-cd /home/dhawal
+scp backup@192.0.2.10:/root/backups/openclaw-memory/aoms-*.tar.gz /tmp/
+cd /home/example
 tar -xzf /tmp/aoms-*.tar.gz
 systemctl --user restart openclaw-memory
 ```
 
 **Partial restore (live sync):**
 ```bash
-rsync -avz root@178.156.239.16:/root/backups/openclaw-memory/live/ \
-    /home/dhawal/openclaw-memory/
+rsync -avz backup@192.0.2.10:/root/backups/openclaw-memory/live/ \
+    /home/example/openclaw-memory/
 ```
 
 ---

@@ -16,8 +16,8 @@ LOCK_FILE="${AOMS_BACKUP_LOCK_FILE:-${XDG_CACHE_HOME:-$HOME/.cache}/aoms-backup-
 PYTHON="${AOMS_PYTHON:-python3}"
 CLI="${AOMS_CLI:-cortex-mem}"
 ZSTD="${AOMS_ZSTD:-zstd}"
-VPS="${AOMS_BACKUP_VPS:-root@178.156.239.16}"
-VPS_ROOT="${AOMS_BACKUP_VPS_DIR:-/root/backups/aoms-v2}"
+VPS="${AOMS_BACKUP_VPS:-}"
+VPS_ROOT="${AOMS_BACKUP_VPS_DIR:-/srv/backups/aoms-v2}"
 LOCAL_DAILY_KEEP="${AOMS_LOCAL_DAILY_KEEP:-7}"
 REMOTE_DAILY_KEEP="${AOMS_REMOTE_DAILY_KEEP:-3}"
 WEEKLY_KEEP="${AOMS_WEEKLY_KEEP:-4}"
@@ -43,6 +43,7 @@ die() {
 for value in "$LOCAL_DAILY_KEEP" "$REMOTE_DAILY_KEEP" "$WEEKLY_KEEP"; do
     [[ "$value" =~ ^[1-9][0-9]*$ ]] || die "retention values must be positive integers"
 done
+[[ -n "$VPS" ]] || die "AOMS_BACKUP_VPS must name the remote backup host"
 [[ "$VPS" =~ ^[A-Za-z0-9._@:-]+$ ]] || die "unsafe VPS value: $VPS"
 [[ "$VPS_ROOT" =~ ^/[A-Za-z0-9._/-]+$ && "$VPS_ROOT" != "/" ]] || \
     die "VPS backup directory must be a safe absolute non-root path"
