@@ -26,7 +26,11 @@ Retention is:
 
 The job is guarded by `flock`, lowers its process priority, writes partial artifacts before atomic rename, refuses to overwrite an incomplete same-day generation, and logs to `~/.openclaw/workspace/logs/backup-aoms-v2.log`.
 
+On this transitional host, the 04:45 crontab entry pins both the requested venv interpreter and `PYTHONPATH=/home/dhawal/cortex-mem/aoms-v2`. The installed 2.0.0 wheel predates an additive receipt field already present on branch `v2`; the source pin keeps export/restore behavior aligned with the live schema until the normal package deployment is refreshed. Remove that pin only after a portable restore drill passes with the installed launcher by itself.
+
 ## Recovery drills
+
+For the production recovery decision tree, verified cutover procedure, VPS machine-loss commands, and the 2026-08-24 restore evidence, use the [disaster-recovery runbook](../RECOVERY.md).
 
 Physical recovery is the fastest path and preserves the vector tables. Restore into a new directory, never over the live store:
 
