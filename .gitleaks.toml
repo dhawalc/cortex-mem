@@ -6,6 +6,10 @@ id = "private-infrastructure-identifiers"
 description = "Private infrastructure identifiers must never be committed"
 regex = '''(?:178[.]156[.]239[.]16|100[.]120[.]89[.]37|r[o]ot@|dh[a]wal/)'''
 
+[[rules.allowlists]]
+description = "Preserve the design panel's required verbatim provenance paths"
+paths = ['''^docs/design/WRITE-CORRECTNESS-DECISION[.]md$''']
+
 [[rules]]
 id = "private-memory-corpus"
 description = "The local modules corpus must never be committed"
