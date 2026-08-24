@@ -7,7 +7,20 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from aoms.contest import (
+    DEFAULT_RULESET,
+    Decision,
+    Ruleset,
+    SlotOccupant,
+    SlotState,
+    WriteIntent,
+    content_digest,
+    decide,
+)
 from aoms.contracts import (
+    ContestEntry,
+    ContestState,
+    ContestTrigger,
     MemoryRecord,
     IntegrityReport,
     Provenance,
@@ -21,12 +34,14 @@ from aoms.contracts import (
     SearchResult,
     Scope,
     ScopeContext,
+    WriteDisposition,
 )
 from aoms.embedding_jobs import EmbeddingSweepResult, sweep_pending_embeddings
 from aoms.embeddings import EmbeddingProvider, FastEmbedProvider
 from aoms.recall import RecallEngine
-from aoms.receipts import RecallReceipt
+from aoms.receipts import ENGINE_VERSION, RecallReceipt, WriteReceipt
 from aoms.repositories.base import (
+    LedgerWrite,
     MemoryRepository,
     RecordContentConflictError,
     VectorRepository,
@@ -46,12 +61,14 @@ class AOMSApplication:
         recall_engine: RecallEngine | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         background_embeddings: bool = True,
+        ruleset: Ruleset = DEFAULT_RULESET,
     ):
         self.repository = repository
         self.scope_context = scope_context
         self.receipt_repository = receipt_repository or repository
         self.embedding_provider = embedding_provider or FastEmbedProvider()
         self.background_embeddings = background_embeddings
+        self.ruleset = ruleset
         self._embedding_tasks: set[asyncio.Task[EmbeddingSweepResult]] = set()
         if recall_engine is not None and recall_engine.scope_context != scope_context:
             raise ValueError("recall_engine scope context must match the application")
@@ -60,6 +77,7 @@ class AOMSApplication:
             self.receipt_repository,
             embedding_provider=self.embedding_provider,
             scope_context=scope_context,
+            ruleset=ruleset,
         )
 
     async def remember(self, request: RememberRequest) -> RememberResult:
@@ -81,7 +99,11 @@ class AOMSApplication:
                     "in-place content change; append a successor with `supersedes` "
                     "instead."
                 )
-            return RememberResult(record=existing, created=False)
+            return RememberResult(
+                record=existing,
+                created=False,
+                disposition=existing.disposition,
+            )
         now = datetime.now(timezone.utc)
         scope_agent_id = (
             self.scope_context.agent_id
@@ -102,6 +124,14 @@ class AOMSApplication:
                 }
             }
         )
+        decision, ledger_context = await self._adjudicate(
+            request,
+            record_id=record_id,
+            scope_agent_id=scope_agent_id,
+            scope_workspace_id=scope_workspace_id,
+            provenance=provenance,
+            now=now,
+        )
         record = MemoryRecord(
             id=record_id,
             kind=request.kind,
@@ -116,6 +146,12 @@ class AOMSApplication:
             updated_at=now,
             supersedes=request.supersedes,
             metadata=request.metadata,
+            claim_key=request.claim_key,
+            disposition=decision.disposition,
+            observation_id=request.observation_id,
+        )
+        ledger = self._ledger_write(
+            record, decision=decision, context=ledger_context, now=now
         )
         conditional_result = None
         if self.embedding_provider.profile is not None and isinstance(
@@ -123,13 +159,13 @@ class AOMSApplication:
         ):
             if create_only:
                 await self.repository.store_new_with_embedding_pending(
-                    record, self.embedding_provider.profile
+                    record, self.embedding_provider.profile, ledger=ledger
                 )
             else:
                 try:
                     conditional_result = (
                         await self.repository.store_if_content_unchanged_with_embedding_pending(
-                            record, self.embedding_provider.profile
+                            record, self.embedding_provider.profile, ledger=ledger
                         )
                     )
                 except RecordContentConflictError as exc:
@@ -145,11 +181,13 @@ class AOMSApplication:
                 task.add_done_callback(self._embedding_task_done)
         else:
             if create_only:
-                await self.repository.store_new(record)
+                await self.repository.store_new(record, ledger=ledger)
             else:
                 try:
                     conditional_result = (
-                        await self.repository.store_if_content_unchanged(record)
+                        await self.repository.store_if_content_unchanged(
+                            record, ledger=ledger
+                        )
                     )
                 except RecordContentConflictError as exc:
                     self._raise_retained_conflict(exc.retained)
@@ -158,11 +196,158 @@ class AOMSApplication:
                 conditional_result.record
             ):
                 raise PermissionError("memory id belongs to an inaccessible scope")
-            return RememberResult(
-                record=conditional_result.record,
+            return self._remember_result(
+                conditional_result.record,
                 created=conditional_result.created,
+                decision=decision,
+                ledger=ledger,
             )
-        return RememberResult(record=record, created=True)
+        return self._remember_result(
+            record, created=True, decision=decision, ledger=ledger
+        )
+
+    async def _adjudicate(
+        self,
+        request: RememberRequest,
+        *,
+        record_id: str,
+        scope_agent_id: str | None,
+        scope_workspace_id: str | None,
+        provenance: Provenance,
+        now: datetime,
+    ) -> tuple[Decision, ContestEntry | None]:
+        """Run the gate, returning its verdict and any entry to coalesce into.
+
+        A write that declares no ``claim_key`` never reaches ``decide`` with a
+        slot to collide with, and never touches the ledger at all. That is the
+        migration sentinel: for every record written before this feature
+        existed, and every caller that has not adopted it, nothing changes.
+        """
+
+        if request.claim_key is None:
+            return Decision(disposition=WriteDisposition.ADMITTED), None
+
+        occupants = await self.repository.slot_occupants(
+            claim_key=request.claim_key,
+            scope=request.scope,
+            scope_agent_id=scope_agent_id,
+            scope_workspace_id=scope_workspace_id,
+        )
+        slot = SlotState(
+            occupants=tuple(
+                SlotOccupant(
+                    record_id=occupant.id,
+                    content_sha256=content_digest(occupant.content),
+                    asserted_at=occupant.provenance.asserted_at,
+                    created_at=occupant.created_at,
+                )
+                for occupant in occupants
+                if occupant.id != record_id
+            )
+        )
+        intent = WriteIntent(
+            kind=request.kind,
+            scope=request.scope,
+            content_sha256=content_digest(request.content),
+            claim_key=request.claim_key,
+            supersedes=request.supersedes,
+            asserted_at=provenance.asserted_at,
+            derived_from=tuple(provenance.derived_from),
+        )
+        decision = decide(intent, slot, now=now, ruleset=self.ruleset)
+        if not decision.contested:
+            return decision, None
+        coalesce_into = await self.repository.open_contest_for_slot(
+            claim_key=request.claim_key,
+            scope=request.scope,
+            scope_agent_id=scope_agent_id,
+            scope_workspace_id=scope_workspace_id,
+            opened_by_agent_id=self.scope_context.agent_id,
+        )
+        return decision, coalesce_into
+
+    def _ledger_write(
+        self,
+        record: MemoryRecord,
+        *,
+        decision: Decision,
+        context: ContestEntry | None,
+        now: datetime,
+    ) -> LedgerWrite | None:
+        """Build the rows that must commit with the record, or none at all."""
+
+        if record.claim_key is None:
+            # No decision was made, so there is nothing to receipt.
+            return None
+        contest: ContestEntry | None = None
+        coalesced_id: str | None = None
+        contest_id: str | None = None
+        if decision.contested:
+            if context is not None:
+                coalesced_id = context.contest_id
+                contest_id = context.contest_id
+            else:
+                # Server-generated, always. Never derived from the caller's
+                # record id, which accepts 256 arbitrary characters and would
+                # otherwise render attacker prose into every recalled context.
+                contest_id = str(uuid4())
+                contest = ContestEntry(
+                    contest_id=contest_id,
+                    record_id=record.id,
+                    claim_key=record.claim_key,
+                    observation_id=record.observation_id,
+                    scope=record.scope,
+                    scope_agent_id=record.scope_agent_id,
+                    scope_workspace_id=record.scope_workspace_id,
+                    incumbent_ids=list(decision.incumbent_ids),
+                    trigger=decision.trigger or ContestTrigger.SLOT_COLLISION,
+                    trigger_detail=dict(decision.detail),
+                    opened_at=now,
+                    opened_by_agent_id=self.scope_context.agent_id,
+                    state=ContestState.OPEN,
+                )
+        receipt = WriteReceipt(
+            receipt_id=str(uuid4()),
+            created_at=now,
+            record_id=record.id,
+            claim_key=record.claim_key,
+            agent_id=self.scope_context.agent_id,
+            workspace_id=self.scope_context.workspace_id,
+            kind=record.kind,
+            scope=record.scope,
+            content_sha256=content_digest(record.content),
+            incumbent_ids=list(decision.incumbent_ids),
+            disposition=decision.disposition,
+            trigger=decision.trigger,
+            trigger_detail=dict(decision.detail),
+            contest_id=contest_id,
+            asserted_at=record.provenance.asserted_at,
+            derived_from=list(record.provenance.derived_from),
+            ruleset_digest=self.ruleset.digest,
+            occurrence_count=(
+                context.occurrence_count + 1 if context is not None else 1
+            ),
+            engine_version=ENGINE_VERSION,
+        )
+        return LedgerWrite(
+            receipt=receipt, contest=contest, coalesced_contest_id=coalesced_id
+        )
+
+    @staticmethod
+    def _remember_result(
+        record: MemoryRecord,
+        *,
+        created: bool,
+        decision: Decision,
+        ledger: LedgerWrite | None,
+    ) -> RememberResult:
+        return RememberResult(
+            record=record,
+            created=created,
+            disposition=record.disposition,
+            contest_id=ledger.receipt.contest_id if ledger is not None else None,
+            incumbent_ids=list(decision.incumbent_ids),
+        )
 
     async def catch_up_embeddings(
         self,
@@ -250,6 +435,7 @@ class AOMSApplication:
                 provenance=provenance,
                 supersedes=old.id,
                 metadata=dict(old.metadata),
+                claim_key=request.claim_key or old.claim_key,
             ),
             create_only=True,
         )

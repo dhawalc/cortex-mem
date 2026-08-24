@@ -1492,6 +1492,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=request.include_contested,
         )
         clauses.insert(0, "memories_fts MATCH ?")
         parameters.insert(0, expression)
@@ -1558,6 +1559,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=request.include_contested,
         )
         anchor_clauses.insert(0, "memories_fts MATCH ?")
         anchor_parameters.insert(0, expression)
@@ -1571,6 +1573,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=request.include_contested,
         )
         successor_access, successor_parameters = (
             self._scope_access_filter(scope_context, table_alias="successor.")
@@ -2563,10 +2566,12 @@ class SQLiteMemoryRepository:
     ) -> int:
         if scope_context is None:
             return 0
+        include_contested = getattr(request, "include_contested", False)
         unscoped_clauses, unscoped_parameters = self._filters(
             kinds=request.kinds,
             scopes=request.scopes,
             table_alias="m.",
+            include_contested=include_contested,
         )
         unscoped_clauses.insert(0, "memories_fts MATCH ?")
         unscoped_parameters.insert(0, expression)
@@ -2584,6 +2589,7 @@ class SQLiteMemoryRepository:
             scopes=request.scopes,
             table_alias="m.",
             scope_context=scope_context,
+            include_contested=include_contested,
         )
         scoped_clauses.insert(0, "memories_fts MATCH ?")
         scoped_parameters.insert(0, expression)

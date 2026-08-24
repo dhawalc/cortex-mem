@@ -38,6 +38,7 @@ from aoms.contracts import (
     ScopeContext,
     SearchRequest,
     SearchResult,
+    WriteDisposition,
 )
 from aoms.embeddings import provider_from_config
 from aoms.recall import memory_content_text, render_memory_block
@@ -243,8 +244,25 @@ def _recall_text(request: RecallRequest, result: RecallResult) -> str:
 
 
 def _remember_text(_: RememberRequest, result: RememberResult) -> str:
-    action = "Created" if result.created else "Updated"
     record = result.record
+    if result.disposition is WriteDisposition.CONTESTED:
+        # Told in-band, same turn: the agent that opened the contest learns
+        # immediately that its write did not take effect. This is the
+        # strongest force against a ledger nobody reads.
+        standing = ", ".join(
+            _content_preview(incumbent, limit=256)
+            for incumbent in result.incumbent_ids
+        )
+        return (
+            f"Stored as CONTESTED memory {_content_preview(record.id, limit=256)} "
+            f"(kind={record.kind.value}, scope={record.scope.value}). "
+            "Current memory is unchanged.\n"
+            f"Still standing: {standing or 'the existing record'}.\n"
+            "Your write is retained in full and is one operator command from "
+            "current; it does not pack into recall until a human resolves it.\n"
+            f"Resolve: cortex-mem contest show {result.contest_id}"
+        )
+    action = "Created" if result.created else "Updated"
     return (
         f"{action} memory {_content_preview(record.id, limit=256)} "
         f"(kind={record.kind.value}, scope={record.scope.value})."
