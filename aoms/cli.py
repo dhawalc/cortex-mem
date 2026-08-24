@@ -910,6 +910,35 @@ def _doctor_database(
         else:
             report.pass_("Memory records", f"{total} canonical records")
 
+        updated_count = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM memories WHERE updated_at <> created_at"
+            ).fetchone()[0]
+        )
+        if updated_count:
+            updated_ids = [
+                str(row["id"])
+                for row in connection.execute(
+                    "SELECT id FROM memories WHERE updated_at <> created_at "
+                    "ORDER BY id LIMIT 5"
+                ).fetchall()
+            ]
+            samples = ", ".join(updated_ids)
+            if updated_count > 5:
+                samples += f", +{updated_count - 5} more"
+            report.warn(
+                "In-place update signal",
+                f"{updated_count} record(s) have updated_at != created_at: "
+                f"{samples}",
+                "This can be legitimate for a trusted importer or idempotent "
+                "restore/upsert. Otherwise investigate provenance and compare "
+                "backup generations using docs/RECOVERY.md.",
+            )
+        else:
+            report.pass_(
+                "In-place update signal", "0 records have updated_at != created_at"
+            )
+
         unscoped = int(
             connection.execute(
                 f"SELECT COUNT(*) FROM memories WHERE {UNSCOPED_SQL}"

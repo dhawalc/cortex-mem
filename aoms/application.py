@@ -26,7 +26,11 @@ from aoms.embedding_jobs import EmbeddingSweepResult, sweep_pending_embeddings
 from aoms.embeddings import EmbeddingProvider, FastEmbedProvider
 from aoms.recall import RecallEngine
 from aoms.receipts import RecallReceipt
-from aoms.repositories.base import MemoryRepository, VectorRepository
+from aoms.repositories.base import (
+    MemoryRepository,
+    RecordContentConflictError,
+    VectorRepository,
+)
 from aoms.truth import ChainTimeline, reconstruct_timeline
 
 logger = logging.getLogger(__name__)
@@ -113,6 +117,7 @@ class AOMSApplication:
             supersedes=request.supersedes,
             metadata=request.metadata,
         )
+        conditional_result = None
         if self.embedding_provider.profile is not None and isinstance(
             self.repository, VectorRepository
         ):
@@ -121,10 +126,17 @@ class AOMSApplication:
                     record, self.embedding_provider.profile
                 )
             else:
-                await self.repository.store_with_embedding_pending(
-                    record, self.embedding_provider.profile
-                )
-            if self.background_embeddings:
+                try:
+                    conditional_result = (
+                        await self.repository.store_if_content_unchanged_with_embedding_pending(
+                            record, self.embedding_provider.profile
+                        )
+                    )
+                except RecordContentConflictError as exc:
+                    self._raise_retained_conflict(exc.retained)
+            if self.background_embeddings and (
+                conditional_result is None or conditional_result.created
+            ):
                 task = asyncio.create_task(
                     self.catch_up_embeddings(batch_size=1, max_batches=1),
                     name=f"aoms-embed-{record.id}",
@@ -135,8 +147,22 @@ class AOMSApplication:
             if create_only:
                 await self.repository.store_new(record)
             else:
-                await self.repository.store(record)
-        return RememberResult(record=record, created=existing is None)
+                try:
+                    conditional_result = (
+                        await self.repository.store_if_content_unchanged(record)
+                    )
+                except RecordContentConflictError as exc:
+                    self._raise_retained_conflict(exc.retained)
+        if conditional_result is not None:
+            if not conditional_result.created and not self._can_access(
+                conditional_result.record
+            ):
+                raise PermissionError("memory id belongs to an inaccessible scope")
+            return RememberResult(
+                record=conditional_result.record,
+                created=conditional_result.created,
+            )
+        return RememberResult(record=record, created=True)
 
     async def catch_up_embeddings(
         self,
@@ -277,3 +303,10 @@ class AOMSApplication:
         if record.scope is Scope.WORKSPACE:
             return record.scope_workspace_id == self.scope_context.workspace_id
         return record.scope_agent_id == self.scope_context.agent_id
+
+    def _raise_retained_conflict(self, retained: MemoryRecord) -> None:
+        if not self._can_access(retained):
+            raise PermissionError("memory id belongs to an inaccessible scope")
+        raise ValueError(
+            "in-place content change; append a successor with `supersedes` instead."
+        )

@@ -64,6 +64,22 @@ class CompletedEmbedding:
     vector: EmbeddingVector
 
 
+@dataclass(frozen=True, slots=True)
+class ConditionalStoreResult:
+    """Result of an atomic model-facing insert-or-retain decision."""
+
+    record: MemoryRecord
+    created: bool
+
+
+class RecordContentConflictError(ValueError):
+    """A conditional store retained a different record with the same id."""
+
+    def __init__(self, retained: MemoryRecord):
+        super().__init__(f"record {retained.id!r} already has different content")
+        self.retained = retained
+
+
 @runtime_checkable
 class VectorRepository(Protocol):
     async def store_with_embedding_pending(
@@ -73,6 +89,10 @@ class VectorRepository(Protocol):
     async def store_new_with_embedding_pending(
         self, record: MemoryRecord, profile: EmbeddingProfile
     ) -> MemoryRecord: ...
+
+    async def store_if_content_unchanged_with_embedding_pending(
+        self, record: MemoryRecord, profile: EmbeddingProfile
+    ) -> ConditionalStoreResult: ...
 
     async def upsert_vector(
         self,
@@ -129,6 +149,10 @@ class MemoryRepository(Protocol):
     async def store(self, record: MemoryRecord) -> MemoryRecord: ...
 
     async def store_new(self, record: MemoryRecord) -> MemoryRecord: ...
+
+    async def store_if_content_unchanged(
+        self, record: MemoryRecord
+    ) -> ConditionalStoreResult: ...
 
     async def store_many(
         self, records: Sequence[MemoryRecord]

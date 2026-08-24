@@ -6,7 +6,7 @@ import os
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from aoms.application import AOMSApplication
@@ -170,8 +170,39 @@ def test_doctor_missing_corrupt_and_empty_store_findings(tmp_path: Path) -> None
     empty = run_cli("doctor", data_dir=empty_dir)
     assert empty.returncode == 0
     assert "[WARN] Memory records: store is healthy but empty" in empty.stdout
+    assert (
+        "[PASS] In-place update signal: 0 records have updated_at != created_at"
+        in empty.stdout
+    )
     assert "[PASS] Receipt store" in empty.stdout
     assert "Doctor finished: 0 failure(s)" in empty.stdout
+
+
+def test_doctor_warns_about_in_place_update_signal_without_content(
+    tmp_path: Path,
+) -> None:
+    data_dir = tmp_path / "updated-signal"
+    run_cli("init", data_dir=data_dir, check=True)
+    created_at = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
+    record = MemoryRecord(
+        id="updated-record-id",
+        kind=MemoryKind.FACT,
+        content="private synthetic body must not appear in doctor output",
+        scope=Scope.WORKSPACE,
+        provenance=Provenance(source="trusted-importer"),
+        created_at=created_at,
+        updated_at=created_at + timedelta(minutes=5),
+    )
+    asyncio.run(SQLiteMemoryRepository(data_dir / "aoms.sqlite3").store(record))
+
+    result = run_cli("doctor", data_dir=data_dir, check=True)
+
+    assert (
+        "[WARN] In-place update signal: 1 record(s) have updated_at != created_at: "
+        "updated-record-id" in result.stdout
+    )
+    assert "trusted importer or idempotent restore/upsert" in result.stdout
+    assert "private synthetic body" not in result.stdout
 
 
 def _seed_ownership_fixture(data_dir: Path) -> None:
