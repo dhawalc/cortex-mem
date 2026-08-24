@@ -18,6 +18,7 @@ from aoms.observatory.partials import (
 )
 from aoms.observatory.repository import ChainNode, MemoryListItem, Page
 from aoms.receipts import RecallReceipt
+from aoms.truth import ChainHealthReport, ChainTimeline
 
 CSS = """
 :root{color-scheme:light dark;--bg:#f4f3ef;--panel:#fff;--ink:#17201d;--muted:#65716d;
@@ -82,7 +83,7 @@ margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 
 
 def _nav(active: str) -> str:
-    links = (("memories", "/memories", "Memories"), ("timeline", "/timeline", "Timeline"), ("receipts", "/receipts", "Receipts"))
+    links = (("memories", "/memories", "Memories"), ("timeline", "/timeline", "Timeline"), ("truth", "/truth", "Truth"), ("receipts", "/receipts", "Receipts"))
     return '<div class="topbar"><nav><a class="brand" href="/memories">RECALL <span>OBSERVATORY</span></a>' + "".join(
         f'<a class="{"active" if active == key else ""}" href="{url}">{label}</a>'
         for key, url, label in links
@@ -148,7 +149,9 @@ def memories_page(
     return document("Memories", body, active="memories")
 
 
-def memory_detail_page(record: MemoryRecord, chain: list[ChainNode]) -> str:
+def memory_detail_page(
+    record: MemoryRecord, chain: list[ChainNode], timeline: ChainTimeline
+) -> str:
     details = json.dumps(record.provenance.details, ensure_ascii=False, indent=2, sort_keys=True)
     chain_html = ""
     for index, node in enumerate(chain):
@@ -158,6 +161,16 @@ def memory_detail_page(record: MemoryRecord, chain: list[ChainNode]) -> str:
         chain_html += f"""<article class="chain-node{current}"><span class="badge">{e(node.relation)}</span>
 <h3><a href="/memories/{quote(node.record.id, safe='')}"><code>{e(node.record.id)}</code></a></h3>
 <p class="preview">{e(_content_text(node.record))}</p><small class="meta">{e(node.record.updated_at.isoformat())}</small></article>"""
+    timeline_html = ""
+    for version in timeline.versions:
+        end = version.valid_until.isoformat() if version.valid_until else "open"
+        successor_text = ", ".join(version.successor_ids) or "none retained/visible"
+        timeline_html += f"""<article class="timeline-item"><div class="badges">
+<span class="badge">valid {e(version.valid_from.isoformat())} → {e(end)}</span>
+<span class="badge">{e(version.record.kind.value)}</span></div>
+<h3><a href="/memories/{quote(version.record.id, safe='')}"><code>{e(version.record.id)}</code></a></h3>
+<pre class="detail-content">{e(_content_text(version.record))}</pre>
+<p class="meta">Declared direct successor(s): {e(successor_text)}</p></article>"""
     body = f"""<header class="hero"><p class="eyebrow">Memory detail</p><h1><code>{e(record.id)}</code></h1>
 <div class="badges">{_scope_badge(record.scope)}<span class="badge">{e(record.kind.value)}</span></div></header>
 <section class="panel"><h2>Full content</h2><pre class="detail-content">{e(_content_text(record))}</pre></section>
@@ -167,7 +180,9 @@ def memory_detail_page(record: MemoryRecord, chain: list[ChainNode]) -> str:
 <dt>Created by agent</dt><dd>{e(record.created_by_agent_id or '—')}</dd><dt>Agent binding</dt><dd>{e(record.scope_agent_id or '—')}</dd>
 <dt>Workspace binding</dt><dd>{e(record.scope_workspace_id or '—')}</dd><dt>Details</dt><dd><pre>{e(details)}</pre></dd></dl></section>
 <section class="panel"><h2>Supersession chain</h2><p class="muted">Predecessor links are followed in both directions from this record.</p>
-<div class="chain">{chain_html}</div></section>"""
+<div class="chain">{chain_html}</div></section>
+<section class="panel"><p class="eyebrow">Truth timeline</p><h2>What this store declared, and when it changed</h2>
+<p class="muted">{e(timeline.reconstruction_note)}</p><div class="timeline-items">{timeline_html}</div></section>"""
     return document(record.id, body, active="memories")
 
 
@@ -204,6 +219,24 @@ def receipts_page(page: Page[RecallReceipt]) -> str:
 <p class="lede">Every row is an immutable explanation of a recall decision.</p></header><section class="grid cards">{cards}</section>
 {_next_link('/receipts', {}, page.next_cursor)}"""
     return document("Receipts", body, active="receipts")
+
+
+def truth_page(report: ChainHealthReport) -> str:
+    cards = ""
+    for finding in report.findings:
+        links = " → ".join(
+            f'<a href="/memories/{quote(record_id, safe="")}"><code>{e(record_id)}</code></a>'
+            for record_id in finding.record_ids
+        )
+        cards += f"""<article class="card"><div class="badges"><span class="pill rejected">{e(finding.category)}</span>
+<span class="badge">deterministic</span></div><h2>{links}</h2><p>{e(finding.detail)}</p></article>"""
+    if not cards:
+        cards = '<section class="panel empty"><h2>No deterministic chain findings</h2></section>'
+    body = f"""<header class="hero"><p class="eyebrow">Truth · read-only inbox</p><h1>Declared lineage health</h1>
+<p class="lede">Cycles, dangling targets, branching heads, retrievable old/new pairs, and scope-boundary anomalies.</p>
+<p class="muted">These findings inspect explicit IDs, indexes, and scope bindings only. They do not infer semantic conflicts, judge truth, mutate records, or auto-fix anything.</p></header>
+<section class="grid cards">{cards}</section><p class="meta">Scanned {report.records_scanned:,} canonical record(s).</p>"""
+    return document("Truth", body, active="truth")
 
 
 def _selected_cards(
@@ -287,4 +320,5 @@ __all__ = [
     "receipt_inspector_page",
     "receipts_page",
     "timeline_page",
+    "truth_page",
 ]

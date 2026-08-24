@@ -269,6 +269,14 @@ class SQLiteMemoryRepository:
         await asyncio.to_thread(self._store_many_sync, [record])
         return record
 
+    async def store_new(self, record: MemoryRecord) -> MemoryRecord:
+        """Insert exactly once; an existing id is never updated."""
+
+        self._require_writable()
+        await self.initialize()
+        await asyncio.to_thread(self._store_many_sync, [record], None, True)
+        return record
+
     async def store_with_embedding_pending(
         self, record: MemoryRecord, profile: EmbeddingProfile
     ) -> MemoryRecord:
@@ -277,6 +285,16 @@ class SQLiteMemoryRepository:
         self._require_writable()
         await self.initialize()
         await asyncio.to_thread(self._store_many_sync, [record], profile)
+        return record
+
+    async def store_new_with_embedding_pending(
+        self, record: MemoryRecord, profile: EmbeddingProfile
+    ) -> MemoryRecord:
+        """Atomically insert a new record and its embedding work, never upsert."""
+
+        self._require_writable()
+        await self.initialize()
+        await asyncio.to_thread(self._store_many_sync, [record], profile, True)
         return record
 
     async def store_many(self, records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
@@ -292,6 +310,7 @@ class SQLiteMemoryRepository:
         self,
         records: Sequence[MemoryRecord],
         embedding_profile: EmbeddingProfile | None = None,
+        insert_only: bool = False,
     ) -> None:
         with self._connect() as connection:
             if embedding_profile is not None:
@@ -303,13 +322,15 @@ class SQLiteMemoryRepository:
                     if isinstance(record.content, str)
                     else json.dumps(record.content, ensure_ascii=False, sort_keys=True)
                 )
-                connection.execute(
-                    """
+                insert_sql = """
                     INSERT INTO memories(
                         id, kind, scope, scope_agent_id, scope_workspace_id,
                         created_by_agent_id, created_at, updated_at, record_json
                     )
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                if not insert_only:
+                    insert_sql += """
                     ON CONFLICT(id) DO UPDATE SET
                         kind = excluded.kind,
                         scope = excluded.scope,
@@ -319,7 +340,9 @@ class SQLiteMemoryRepository:
                         created_at = excluded.created_at,
                         updated_at = excluded.updated_at,
                         record_json = excluded.record_json
-                    """,
+                    """
+                connection.execute(
+                    insert_sql,
                     (
                         record.id,
                         record.kind.value,
@@ -394,13 +417,16 @@ class SQLiteMemoryRepository:
         scopes: list[Scope] | None = None,
         limit: int = 100,
         offset: int = 0,
+        scope_context: ScopeContext | None = None,
     ) -> list[MemoryRecord]:
         if limit < 1:
             raise ValueError("limit must be at least 1")
         if offset < 0:
             raise ValueError("offset must not be negative")
         await self.initialize()
-        return await asyncio.to_thread(self._list_sync, kinds, scopes, limit, offset)
+        return await asyncio.to_thread(
+            self._list_sync, kinds, scopes, limit, offset, scope_context
+        )
 
     def _list_sync(
         self,
@@ -408,8 +434,14 @@ class SQLiteMemoryRepository:
         scopes: list[Scope] | None,
         limit: int,
         offset: int,
+        scope_context: ScopeContext | None,
     ) -> list[MemoryRecord]:
-        clauses, parameters = self._filters(kinds=kinds, scopes=scopes, table_alias="")
+        clauses, parameters = self._filters(
+            kinds=kinds,
+            scopes=scopes,
+            table_alias="",
+            scope_context=scope_context,
+        )
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         sql = (
             "SELECT record_json FROM memories"
@@ -419,14 +451,84 @@ class SQLiteMemoryRepository:
             rows = connection.execute(sql, [*parameters, limit, offset]).fetchall()
         return [self._record_from_row(row) for row in rows]
 
+    async def lineage(
+        self,
+        record_id: str,
+        *,
+        scope_context: ScopeContext,
+        as_of: datetime | None = None,
+    ) -> list[MemoryRecord]:
+        """Return only scope-visible members connected by declared links."""
+
+        await self.initialize()
+        return await asyncio.to_thread(
+            self._lineage_sync, record_id, scope_context, as_of
+        )
+
+    def _lineage_sync(
+        self,
+        record_id: str,
+        scope_context: ScopeContext,
+        as_of: datetime | None,
+    ) -> list[MemoryRecord]:
+        access, access_parameters = self._scope_access_filter(
+            scope_context, table_alias="m."
+        )
+        recursive_access, recursive_parameters = self._scope_access_filter(
+            scope_context, table_alias="linked."
+        )
+        boundary = " AND m.created_at <= ?" if as_of is not None else ""
+        recursive_boundary = (
+            " AND linked.created_at <= ?" if as_of is not None else ""
+        )
+        parameters: list[Any] = [record_id, *access_parameters]
+        if as_of is not None:
+            parameters.append(as_of.isoformat())
+        parameters.extend(recursive_parameters)
+        if as_of is not None:
+            parameters.append(as_of.isoformat())
+        sql = f"""
+            WITH RECURSIVE chain(id, path, depth) AS (
+                SELECT m.id, ',' || m.id || ',', 0
+                FROM memories AS m
+                WHERE m.id = ? AND {' AND '.join(access)}{boundary}
+                UNION ALL
+                SELECT linked.id, chain.path || linked.id || ',', chain.depth + 1
+                FROM chain
+                JOIN memories AS current ON current.id = chain.id
+                JOIN memories AS linked ON (
+                    linked.id = json_extract(current.record_json, '$.supersedes')
+                    OR json_extract(linked.record_json, '$.supersedes') = current.id
+                )
+                WHERE chain.depth < 100
+                  AND instr(chain.path, ',' || linked.id || ',') = 0
+                  AND {' AND '.join(recursive_access)}{recursive_boundary}
+            )
+            SELECT DISTINCT m.record_json
+            FROM chain JOIN memories AS m ON m.id = chain.id
+            ORDER BY m.created_at ASC, m.id ASC
+        """
+        with self._connect() as connection:
+            rows = connection.execute(sql, parameters).fetchall()
+        return [self._record_from_row(row) for row in rows]
+
     async def search_by_keyword(
-        self, request: SearchRequest, *, scope_context: ScopeContext | None = None
+        self,
+        request: SearchRequest,
+        *,
+        scope_context: ScopeContext | None = None,
+        as_of: datetime | None = None,
     ) -> SearchResult:
         await self.initialize()
-        return await asyncio.to_thread(self._search_sync, request, scope_context)
+        return await asyncio.to_thread(
+            self._search_sync, request, scope_context, as_of
+        )
 
     def _search_sync(
-        self, request: SearchRequest, scope_context: ScopeContext | None
+        self,
+        request: SearchRequest,
+        scope_context: ScopeContext | None,
+        as_of: datetime | None,
     ) -> SearchResult:
         expression = self._fts_expression(request.query)
         if not expression:
@@ -434,6 +536,10 @@ class SQLiteMemoryRepository:
                 items=[],
                 total=0,
                 diagnostics={"strategy": "fts5", "reason": "query_has_no_tokens"},
+            )
+        if as_of is not None:
+            return self._search_as_of_sync(
+                request, scope_context, as_of, expression
             )
 
         clauses, parameters = self._filters(
@@ -460,7 +566,7 @@ class SQLiteMemoryRepository:
         with self._connect() as connection:
             total = int(connection.execute(count_sql, parameters).fetchone()["count"])
             scope_filtered_count = self._scope_filtered_fts_count(
-                connection, expression, request, scope_context
+                connection, expression, request, scope_context, as_of=as_of
             )
             rows = connection.execute(
                 search_sql, [*parameters, request.limit, request.offset]
@@ -480,6 +586,141 @@ class SQLiteMemoryRepository:
                 "strategy": "fts5",
                 "query_tokens": len(expression.split(" AND ")),
                 "scope_filtered_count": scope_filtered_count,
+                "as_of": as_of.isoformat() if as_of else None,
+                "temporal_semantics": (
+                    "declared-lineage reconstruction" if as_of else None
+                ),
+            },
+        )
+
+    def _search_as_of_sync(
+        self,
+        request: SearchRequest,
+        scope_context: ScopeContext | None,
+        as_of: datetime,
+        expression: str,
+    ) -> SearchResult:
+        """Resolve FTS-matched declared chains at one authorized boundary.
+
+        Matching any visible retained version discovers its visible lineage;
+        the result is the version active at ``as_of``. This lets current topic
+        wording find an older predecessor (and vice versa) without ever using
+        an inaccessible record as an anchor or traversal step.
+        """
+
+        anchor_clauses, anchor_parameters = self._filters(
+            kinds=request.kinds,
+            scopes=request.scopes,
+            table_alias="m.",
+            scope_context=scope_context,
+        )
+        anchor_clauses.insert(0, "memories_fts MATCH ?")
+        anchor_parameters.insert(0, expression)
+        linked_access, linked_parameters = (
+            self._scope_access_filter(scope_context, table_alias="linked.")
+            if scope_context is not None
+            else ([], [])
+        )
+        output_filters, output_parameters = self._filters(
+            kinds=request.kinds,
+            scopes=request.scopes,
+            table_alias="m.",
+            scope_context=scope_context,
+        )
+        successor_access, successor_parameters = (
+            self._scope_access_filter(scope_context, table_alias="successor.")
+            if scope_context is not None
+            else ([], [])
+        )
+        linked_where = (
+            " AND " + " AND ".join(linked_access) if linked_access else ""
+        )
+        output_where = (
+            " AND " + " AND ".join(output_filters) if output_filters else ""
+        )
+        successor_where = (
+            " AND " + " AND ".join(successor_access)
+            if successor_access
+            else ""
+        )
+        sql = f"""
+            WITH RECURSIVE
+            matched(id, rank) AS (
+                SELECT m.id, bm25(memories_fts)
+                FROM memories_fts
+                JOIN memories AS m ON m.id = memories_fts.id
+                WHERE {' AND '.join(anchor_clauses)}
+            ),
+            lineage(anchor_id, id, path, depth, rank) AS (
+                SELECT id, id, ',' || id || ',', 0, rank FROM matched
+                UNION ALL
+                SELECT lineage.anchor_id, linked.id,
+                       lineage.path || linked.id || ',', lineage.depth + 1,
+                       lineage.rank
+                FROM lineage
+                JOIN memories AS current ON current.id = lineage.id
+                JOIN memories AS linked ON (
+                    linked.id = json_extract(current.record_json, '$.supersedes')
+                    OR json_extract(linked.record_json, '$.supersedes') = current.id
+                )
+                WHERE lineage.depth < 100
+                  AND instr(lineage.path, ',' || linked.id || ',') = 0
+                  {linked_where}
+            ),
+            eligible AS (
+                SELECT m.id, m.record_json, MIN(lineage.rank) AS rank
+                FROM lineage JOIN memories AS m ON m.id = lineage.id
+                WHERE m.created_at <= ?{output_where}
+                  AND NOT EXISTS (
+                      SELECT 1 FROM memories AS successor
+                      WHERE json_extract(
+                          successor.record_json, '$.supersedes'
+                      ) = m.id
+                        AND successor.created_at > m.created_at
+                        AND successor.created_at <= ?{successor_where}
+                  )
+                GROUP BY m.id, m.record_json
+            )
+        """
+        parameters = [
+            *anchor_parameters,
+            *linked_parameters,
+            as_of.isoformat(),
+            *output_parameters,
+            as_of.isoformat(),
+            *successor_parameters,
+        ]
+        with self._connect() as connection:
+            total = int(
+                connection.execute(
+                    sql + "SELECT COUNT(*) AS count FROM eligible", parameters
+                ).fetchone()["count"]
+            )
+            rows = connection.execute(
+                sql
+                + "SELECT record_json, rank FROM eligible "
+                "ORDER BY rank ASC, json_extract(record_json, '$.created_at') DESC, "
+                "id ASC LIMIT ? OFFSET ?",
+                [*parameters, request.limit, request.offset],
+            ).fetchall()
+            scope_filtered_count = self._scope_filtered_fts_count(
+                connection, expression, request, scope_context
+            )
+        return SearchResult(
+            items=[
+                SearchHit(
+                    record=self._record_from_row(row),
+                    score=1.0 / (1.0 + abs(float(row["rank"]))),
+                )
+                for row in rows
+            ],
+            total=total,
+            diagnostics={
+                "strategy": "fts5-declared-lineage",
+                "query_tokens": len(expression.split(" AND ")),
+                "scope_filtered_count": scope_filtered_count,
+                "as_of": as_of.isoformat(),
+                "temporal_semantics": "declared-lineage reconstruction",
             },
         )
 
@@ -1295,6 +1536,7 @@ class SQLiteMemoryRepository:
         expression: str,
         request: SearchRequest | RecallRequest,
         scope_context: ScopeContext | None,
+        as_of: datetime | None = None,
     ) -> int:
         if scope_context is None:
             return 0
@@ -1305,6 +1547,9 @@ class SQLiteMemoryRepository:
         )
         unscoped_clauses.insert(0, "memories_fts MATCH ?")
         unscoped_parameters.insert(0, expression)
+        if as_of is not None:
+            unscoped_clauses.append("m.created_at <= ?")
+            unscoped_parameters.append(as_of.isoformat())
         unscoped = connection.execute(
             "SELECT COUNT(*) AS count FROM memories_fts "
             "JOIN memories AS m ON m.id = memories_fts.id "
@@ -1319,6 +1564,9 @@ class SQLiteMemoryRepository:
         )
         scoped_clauses.insert(0, "memories_fts MATCH ?")
         scoped_parameters.insert(0, expression)
+        if as_of is not None:
+            scoped_clauses.append("m.created_at <= ?")
+            scoped_parameters.append(as_of.isoformat())
         scoped = connection.execute(
             "SELECT COUNT(*) AS count FROM memories_fts "
             "JOIN memories AS m ON m.id = memories_fts.id "

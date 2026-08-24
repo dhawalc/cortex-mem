@@ -39,8 +39,10 @@ from aoms.contracts import (
     Provenance,
     RecallRequest,
     RememberRequest,
+    SearchRequest,
     Scope,
     ScopeContext,
+    SupersedeRequest,
 )
 from aoms.embeddings import (
     DEFAULT_FASTEMBED_MODEL,
@@ -54,6 +56,14 @@ from aoms.ownership import UNSCOPED_SQL, OwnershipReport, assign_ownership
 from aoms.portable import PortableExportError, export_bundle, restore_bundle
 from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION, SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
+from aoms.truth import (
+    BOTH_ENDS_RETRIEVABLE,
+    CYCLE,
+    DANGLING_TARGET,
+    MULTIPLE_HEADS,
+    SCOPE_BOUNDARY,
+    diagnose_chains,
+)
 from aoms.version import __version__
 
 DEFAULT_MODEL_SIZE_MB = 67
@@ -114,6 +124,23 @@ def _idempotent_record_id(key: str, scope_context: ScopeContext) -> str:
 
 def _normalized_tags(values: tuple[str, ...]) -> list[str]:
     return [tag.strip() for value in values for tag in value.split(",") if tag.strip()]
+
+
+def _parse_timestamp(value: str, *, parameter: str = "--as-of") -> datetime:
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise click.BadParameter(
+            "must be an ISO-8601 timestamp, for example 2026-03-15T12:00:00Z",
+            param_hint=parameter,
+        ) from exc
+    if parsed.tzinfo is None:
+        raise click.BadParameter(
+            "must include a timezone, for example a trailing Z",
+            param_hint=parameter,
+        )
+    return parsed.astimezone(timezone.utc)
 
 
 async def _remember_once(application: AOMSApplication, request: RememberRequest) -> Any:
@@ -491,6 +518,147 @@ def remember_command(
     )
 
 
+def _content_display(content: object) -> str:
+    return content if isinstance(content, str) else json.dumps(
+        content, ensure_ascii=False, sort_keys=True
+    )
+
+
+@main.command("supersede")
+@click.argument("old_id")
+@click.option(
+    "--content",
+    help="Corrected content; omit to prompt, or use '-' to read UTF-8 stdin.",
+)
+@click.option("--successor-id", help="Optional stable id for the new version.")
+@_data_dir_option
+def supersede_command(
+    old_id: str,
+    content: str | None,
+    successor_id: str | None,
+    data_dir: Path | None,
+) -> None:
+    """Append a correction linked to OLD_ID, then print its declared chain."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    if content is None:
+        content = click.prompt("New content", type=str)
+    elif content == "-":
+        content = click.get_text_stream("stdin").read()
+    content = content.strip()
+    if not content:
+        raise click.ClickException("content must not be empty")
+    application = _application(settings)
+
+    async def run() -> tuple[Any, Any]:
+        result = await application.supersede(
+            old_id,
+            SupersedeRequest(
+                id=successor_id,
+                content=content,
+                provenance=Provenance(
+                    source="cli-supersede", details={"predecessor_id": old_id}
+                ),
+            ),
+        )
+        await application.wait_for_background_embeddings()
+        return result, await application.chain_timeline(result.record.id)
+
+    try:
+        result, timeline = asyncio.run(run())
+    except Exception as exc:
+        raise click.ClickException(f"supersede failed: {exc}") from exc
+    click.echo(f"Created successor {result.record.id} superseding {old_id}.")
+    click.echo(timeline.reconstruction_note)
+    for version in timeline.versions:
+        end = version.valid_until.isoformat() if version.valid_until else "open"
+        click.echo(
+            f"  {version.valid_from.isoformat()} -> {end}  {version.record.id}"
+        )
+        click.echo(f"    {_content_display(version.record.content)}")
+
+
+@main.command("search")
+@click.argument("query")
+@click.option("--limit", type=click.IntRange(min=1, max=100), default=10, show_default=True)
+@click.option("--as-of", help="ISO-8601 historical boundary for declared chains.")
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(("text", "json"), case_sensitive=False),
+    default="text",
+    show_default=True,
+)
+@_data_dir_option
+def search_command(
+    query: str,
+    limit: int,
+    as_of: str | None,
+    output_format: str,
+    data_dir: Path | None,
+) -> None:
+    """Search scoped records, optionally at a declared-lineage boundary."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    boundary = _parse_timestamp(as_of) if as_of else None
+    try:
+        result = asyncio.run(
+            _application(settings).search(
+                SearchRequest(query=query, limit=limit), as_of=boundary
+            )
+        )
+    except Exception as exc:
+        raise click.ClickException(f"search failed: {exc}") from exc
+    if output_format.casefold() == "json":
+        click.echo(result.model_dump_json(indent=2))
+        return
+    if boundary is not None:
+        click.echo(
+            "Declared-lineage reconstruction at "
+            f"{boundary.isoformat()} (retained evidence, not omniscient history)."
+        )
+    for item in result.items:
+        click.echo(
+            f"{item.record.id}\t{item.record.kind.value}\t"
+            f"{item.record.created_at.isoformat()}\t"
+            f"{_content_display(item.record.content)}"
+        )
+    click.echo(f"{result.total} result(s).")
+
+
+@main.command("chain")
+@click.argument("record_id")
+@click.option("--as-of", help="ISO-8601 historical boundary for this chain.")
+@_data_dir_option
+def chain_command(
+    record_id: str, as_of: str | None, data_dir: Path | None
+) -> None:
+    """Show a scope-safe declared-lineage validity timeline."""
+
+    settings = _settings(data_dir)
+    _require_database(settings)
+    boundary = _parse_timestamp(as_of) if as_of else None
+    try:
+        timeline = asyncio.run(
+            _application(settings).chain_timeline(record_id, as_of=boundary)
+        )
+    except Exception as exc:
+        raise click.ClickException(f"chain failed: {exc}") from exc
+    click.echo(timeline.reconstruction_note)
+    if boundary is not None:
+        click.echo(f"Historical read boundary: {boundary.isoformat()}")
+    for version in timeline.versions:
+        end = version.valid_until.isoformat() if version.valid_until else "open"
+        state = "active" if version.active_at_boundary else "inactive"
+        click.echo(
+            f"  {version.valid_from.isoformat()} -> {end}  "
+            f"{version.record.id} [{state}]"
+        )
+        click.echo(f"    {_content_display(version.record.content)}")
+
+
 @dataclass(slots=True)
 class _DoctorReport:
     failures: int = 0
@@ -756,6 +924,51 @@ def _doctor_database(
             )
         else:
             report.pass_("Unscoped records", "0 records")
+
+        record_rows = connection.execute(
+            "SELECT record_json FROM memories ORDER BY id"
+        ).fetchall()
+        fts_ids = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT DISTINCT id FROM memories_fts ORDER BY id"
+            ).fetchall()
+        }
+        chain_health = diagnose_chains(
+            (
+                MemoryRecord.model_validate_json(row["record_json"])
+                for row in record_rows
+            ),
+            fts_memory_ids=fts_ids,
+        )
+        chain_categories = (
+            (CYCLE, "Supersession cycles"),
+            (DANGLING_TARGET, "Dangling supersedes targets"),
+            (MULTIPLE_HEADS, "Multiple apparent heads"),
+            (BOTH_ENDS_RETRIEVABLE, "Both-ends-retrievable pairs"),
+            (SCOPE_BOUNDARY, "Scope-boundary anomalies"),
+        )
+        for category, title in chain_categories:
+            findings = [
+                finding
+                for finding in chain_health.findings
+                if finding.category == category
+            ]
+            if not findings:
+                report.pass_(title, "0 deterministic finding(s)")
+                continue
+            samples = "; ".join(
+                f"{','.join(item.record_ids)} ({item.detail})"
+                for item in findings[:5]
+            )
+            if len(findings) > 5:
+                samples += f"; +{len(findings) - 5} more"
+            report.warn(
+                title,
+                f"{len(findings)} deterministic finding(s): {samples}",
+                "Inspect linked records in `cortex-mem observe`; no auto-fix is "
+                "performed.",
+            )
 
         receipt_count = int(
             connection.execute("SELECT COUNT(*) FROM recall_receipts").fetchone()[0]

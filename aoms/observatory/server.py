@@ -27,6 +27,7 @@ from aoms.observatory.render import (
     receipt_inspector_page,
     receipts_page,
     timeline_page,
+    truth_page,
 )
 from aoms.observatory.repository import InvalidCursor, ObservatoryRepository
 from aoms.repositories import SQLiteMemoryRepository
@@ -97,6 +98,8 @@ class ObservatoryApplication:
                     200,
                     timeline_page(page, cursor=_one(parameters, "cursor") or None),
                 )
+            if path == "/truth":
+                return self._html(200, truth_page(self.repository.chain_health()))
             if path == "/receipts":
                 page = self.repository.receipts(
                     cursor=_one(parameters, "cursor") or None,
@@ -109,7 +112,8 @@ class ObservatoryApplication:
                 if record is None:
                     return self._html(404, error_page(404, "Memory not found"))
                 chain = self.repository.supersession_chain(record_id)
-                return self._html(200, memory_detail_page(record, chain))
+                timeline = self.repository.truth_timeline(record_id)
+                return self._html(200, memory_detail_page(record, chain, timeline))
             if path.startswith("/receipts/") and path.endswith("/export"):
                 receipt_id = unquote(
                     path.removeprefix("/receipts/").removesuffix("/export").rstrip("/")

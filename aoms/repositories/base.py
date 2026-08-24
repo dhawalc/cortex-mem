@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from aoms.contracts import (
@@ -69,6 +70,10 @@ class VectorRepository(Protocol):
         self, record: MemoryRecord, profile: EmbeddingProfile
     ) -> MemoryRecord: ...
 
+    async def store_new_with_embedding_pending(
+        self, record: MemoryRecord, profile: EmbeddingProfile
+    ) -> MemoryRecord: ...
+
     async def upsert_vector(
         self,
         record: MemoryRecord,
@@ -123,6 +128,8 @@ class MemoryRepository(Protocol):
 
     async def store(self, record: MemoryRecord) -> MemoryRecord: ...
 
+    async def store_new(self, record: MemoryRecord) -> MemoryRecord: ...
+
     async def store_many(
         self, records: Sequence[MemoryRecord]
     ) -> list[MemoryRecord]: ...
@@ -138,7 +145,11 @@ class MemoryRepository(Protocol):
     ) -> int: ...
 
     async def search_by_keyword(
-        self, request: SearchRequest, *, scope_context: ScopeContext | None = None
+        self,
+        request: SearchRequest,
+        *,
+        scope_context: ScopeContext | None = None,
+        as_of: datetime | None = None,
     ) -> SearchResult: ...
 
     async def retrieve_recall_candidates(
@@ -170,4 +181,13 @@ class MemoryRepository(Protocol):
         scopes: list[Scope] | None = None,
         limit: int = 100,
         offset: int = 0,
+        scope_context: ScopeContext | None = None,
+    ) -> list[MemoryRecord]: ...
+
+    async def lineage(
+        self,
+        record_id: str,
+        *,
+        scope_context: ScopeContext,
+        as_of: datetime | None = None,
     ) -> list[MemoryRecord]: ...

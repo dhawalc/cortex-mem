@@ -70,7 +70,7 @@ Run `cortex-mem import-from --help` for source-specific choices. Import is never
 
 ## Inspect recall locally
 
-The Recall Observatory is a read-only browser for canonical memories, scope metadata, recall receipts, candidate scores, token accounting, and retained provenance-fenced context. Start it on IPv4 loopback, then open the printed local URL:
+The Recall Observatory is a read-only browser for canonical memories, scope metadata, recall receipts, candidate scores, token accounting, retained provenance-fenced context, and declared truth timelines. Its **Truth** inbox reports deterministic chain findings—cycles, dangling targets, branching heads, retrievable old/new pairs, and scope-boundary anomalies—with record links and no auto-fix or semantic truth claims. Start it on IPv4 loopback, then open the printed local URL:
 
 ```console
 uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 \
@@ -78,6 +78,14 @@ uvx --from git+https://github.com/dhawalc/cortex-mem@v2.0.0 \
 ```
 
 It does not expose a non-loopback bind option or alter the store.
+
+Correct a retained record by appending a successor; the predecessor is never rewritten:
+
+```console
+cortex-mem supersede MEMORY_ID --content "The corrected durable fact"
+```
+
+The command prints the resulting validity timeline. `cortex-mem chain MEMORY_ID --as-of 2026-03-15T12:00:00Z` and `cortex-mem search QUERY --as-of ...` reconstruct declared lineage from retained timestamps while applying the bound scope to every chain member. This is explicitly not omniscient event history. Model-facing recall intentionally has no `as_of` option yet: safe temporal recall also requires candidate, semantic-retrieval, and receipt semantics to move together.
 
 ## Three model-facing tools, one contract
 

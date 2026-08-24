@@ -17,6 +17,12 @@ from typing import Generic, TypeVar
 
 from aoms.contracts import MemoryKind, MemoryRecord, Scope
 from aoms.receipts import RecallReceipt
+from aoms.truth import (
+    ChainHealthReport,
+    ChainTimeline,
+    diagnose_chains,
+    reconstruct_timeline,
+)
 
 T = TypeVar("T")
 _WORD = re.compile(r"\w+", re.UNICODE)
@@ -288,6 +294,53 @@ class ObservatoryRepository:
         )
         return nodes
 
+    def truth_timeline(self, record_id: str) -> ChainTimeline:
+        sql = """
+            WITH RECURSIVE chain(id, path, depth) AS (
+                SELECT id, ',' || id || ',', 0 FROM memories WHERE id = ?
+                UNION ALL
+                SELECT linked.id, chain.path || linked.id || ',', chain.depth + 1
+                FROM chain
+                JOIN memories AS current ON current.id = chain.id
+                JOIN memories AS linked ON (
+                    linked.id = json_extract(current.record_json, '$.supersedes')
+                    OR json_extract(linked.record_json, '$.supersedes') = current.id
+                )
+                WHERE chain.depth < 100
+                  AND instr(chain.path, ',' || linked.id || ',') = 0
+            )
+            SELECT DISTINCT m.record_json
+            FROM chain JOIN memories AS m ON m.id = chain.id
+            ORDER BY m.created_at ASC, m.id ASC
+        """
+        with self._connect() as connection:
+            rows = connection.execute(sql, (record_id,)).fetchall()
+        records = [
+            MemoryRecord.model_validate_json(row["record_json"]) for row in rows
+        ]
+        return reconstruct_timeline(record_id, records)
+
+    def chain_health(self) -> ChainHealthReport:
+        """Return deterministic findings without interpreting memory content."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT record_json FROM memories ORDER BY id"
+            ).fetchall()
+            fts_ids = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT DISTINCT id FROM memories_fts ORDER BY id"
+                ).fetchall()
+            }
+        return diagnose_chains(
+            (
+                MemoryRecord.model_validate_json(row["record_json"])
+                for row in rows
+            ),
+            fts_memory_ids=fts_ids,
+        )
+
     def predecessor_chain(self, record: MemoryRecord) -> list[MemoryRecord]:
         records = [record]
         seen = {record.id}
@@ -356,6 +409,8 @@ class ObservatoryRepository:
 
 __all__ = [
     "ChainNode",
+    "ChainHealthReport",
+    "ChainTimeline",
     "InvalidCursor",
     "MemoryListItem",
     "ObservatoryRepository",

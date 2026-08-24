@@ -122,6 +122,12 @@ class RememberResult(ContractModel):
     created: bool
 
 
+class SupersedeRequest(ContractModel):
+    content: str | dict[str, Any] | list[Any]
+    id: str | None = Field(default=None, min_length=1)
+    provenance: Provenance | None = None
+
+
 class SearchRequest(ContractModel):
     query: str = Field(min_length=1)
     limit: int = Field(default=10, ge=1, le=100)
