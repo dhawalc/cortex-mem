@@ -116,6 +116,21 @@ async def test_store_get_upsert_and_list(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_store_many_new_is_insert_only(tmp_path: Path) -> None:
+    repository = SQLiteMemoryRepository(tmp_path / "aoms.sqlite3")
+    record = make_record("record-1", "Synthetic restore content")
+
+    assert await repository.store_many_new([]) == []
+    assert await repository.store_many_new([record]) == [record]
+    with pytest.raises(sqlite3.IntegrityError):
+        await repository.store_many_new([record])
+
+    results = await repository.search_by_keyword(SearchRequest(query="restore"))
+    assert results.total == 1
+    assert results.items[0].record == record
+
+
+@pytest.mark.asyncio
 async def test_fts_keyword_search_and_filters(tmp_path: Path) -> None:
     repository = SQLiteMemoryRepository(tmp_path / "aoms.sqlite3")
     await repository.store(make_record("fact", "Orchid launch checklist and telemetry"))
