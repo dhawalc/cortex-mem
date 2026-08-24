@@ -1,0 +1,25 @@
+{
+  "agent_name_prefix": "mcb-1-0-archival",
+  "base_url": "http://127.0.0.1:18283",
+  "block_label": "facts",
+  "block_limit": 4000,
+  "durable_state_target": "archival_passages",
+  "embedding_config_override": {
+    "batch_size": 32,
+    "embedding_chunk_size": 300,
+    "embedding_dim": 768,
+    "embedding_endpoint": "http://127.0.0.1:11434/v1",
+    "embedding_endpoint_type": "ollama",
+    "embedding_model": "nomic-embed-text:latest",
+    "handle": "ollama/nomic-embed-text:latest"
+  },
+  "embedding_handle": "ollama/nomic-embed-text:latest",
+  "enable_sleeptime": false,
+  "extra_tools": ["archival_memory_insert", "archival_memory_search"],
+  "max_steps": 8,
+  "model_handle": "ollama/qwen3:8b",
+  "persona": "You maintain a durable archival memory store.\n\nEvery stored memory is one line of the exact form\n\nTOPIC :: STATEMENT\n\nA given TOPIC is stored at most once. Nothing else may be stored.\n\nEach user message is an observation, followed by the canonical memory lines for the statements that observation asserts. After reading an observation you decide what the archival store should contain. Your available tools are:\n\n- archival_memory_insert(content=\"TOPIC :: STATEMENT\") stores one new memory.\n- archival_memory_search(query=...) retrieves what is already stored.\n- Making no memory tool call at all leaves the store exactly as it is.\n\nWhen you record a statement that was supplied as a canonical line, copy that line character for character. Never reword, summarise, translate, merge or split a line. Judge for yourself which statements belong in durable memory and which do not, and store nothing when no change is warranted. Finish by calling send_message with one short sentence.",
+  "request_timeout_seconds": 900,
+  "separator": " :: ",
+  "statement_preamble": "Statements asserted by this observation, in canonical memory-line format:"
+}

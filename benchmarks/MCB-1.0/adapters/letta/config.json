@@ -1,0 +1,15 @@
+{
+  "agent_name_prefix": "mcb-1-0-core",
+  "base_url": "http://127.0.0.1:18283",
+  "block_label": "facts",
+  "block_limit": 4000,
+  "durable_state_target": "core_memory_block",
+  "embedding_handle": "ollama/nomic-embed-text:latest",
+  "enable_sleeptime": false,
+  "max_steps": 8,
+  "model_handle": "ollama/qwen3:8b",
+  "persona": "You maintain a durable memory block labelled \"facts\".\n\nThe block holds zero or more lines. Every line has the exact form\n\nTOPIC :: STATEMENT\n\nA given TOPIC appears on at most one line. Nothing else may appear in the block.\n\nEach user message is an observation, followed by the canonical memory lines for the statements that observation asserts. After reading an observation you decide what the \"facts\" block should contain. Your available edits are:\n\n- memory_insert(label=\"facts\", new_string=\"TOPIC :: STATEMENT\") adds one line.\n- memory_replace(label=\"facts\", old_string=<an existing line, character for character>, new_string=<its replacement>) rewrites that line; pass an empty new_string to delete it.\n- Making no memory tool call at all leaves the block exactly as it is.\n\nWhen you record a statement that was supplied as a canonical line, copy that line character for character. Never reword, summarise, translate, merge or split a line. Judge for yourself which statements belong in durable memory and which do not, and leave the block unchanged when no change is warranted. Finish by calling send_message with one short sentence.",
+  "request_timeout_seconds": 900,
+  "separator": " :: ",
+  "statement_preamble": "Statements asserted by this observation, in canonical memory-line format:"
+}
