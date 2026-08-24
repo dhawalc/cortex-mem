@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AOMS 60-second cold-recall proof</title><style>
+:root{--bg:#0b0f14;--panel:#111820;--line:#2a3541;--ink:#e8eef5;--muted:#91a0af;--green:#62d49f;--cyan:#73c7ec;--amber:#e9c46a}
+*{box-sizing:border-box}body{margin:0;padding:44px;background:var(--bg);color:var(--ink);font:17px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace}
+.frame{max-width:1380px;margin:auto;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--panel);box-shadow:0 24px 70px #0008}
+.bar{height:52px;display:flex;align-items:center;gap:9px;padding:0 18px;border-bottom:1px solid var(--line);background:#151d26}.dot{width:12px;height:12px;border-radius:50%;background:#ff6b67}.dot:nth-child(2){background:#f0c65c}.dot:nth-child(3){background:#59c87a}.title{margin-left:10px;color:var(--muted);font:600 14px ui-sans-serif,system-ui}
+.body{padding:28px 32px 34px}.step{display:flex;gap:10px;align-items:center;margin:18px 0 8px;color:var(--cyan);font:700 13px ui-sans-serif,system-ui;text-transform:uppercase;letter-spacing:.08em}.badge{padding:4px 9px;border:1px solid #315064;border-radius:999px;background:#122632}pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}.prompt{color:var(--green)}.output{color:#bdc8d3}.json{color:#d6dee7;border-left:2px solid #355167;padding-left:18px;margin-top:8px}.receipt{color:var(--amber)}.note{margin-top:24px;padding:14px 16px;border:1px solid #29443a;border-radius:10px;background:#10241d;color:#bfe8d4;font:600 15px/1.45 ui-sans-serif,system-ui}.muted{color:var(--muted)}
+</style></head><body><main class="frame"><div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">AOMS · disposable store · synthetic data</span></div><div class="body">
+<div class="step"><span class="badge">process 1</span> initialize and remember</div>
+<pre><span class="prompt">$</span> cortex-mem init --data-dir /tmp/aoms-launch-assets/cold-recall
+<span class="output">Created AOMS data directory: /tmp/aoms-launch-assets/cold-recall
+SQLite store ready (schema 5): /tmp/aoms-launch-assets/cold-recall/aoms.sqlite3
+Embeddings are disabled; search and recall will use lexical retrieval.
+
+Connect a client:
+  Run: cortex-mem setup claude
+  Or:  cortex-mem setup codex
+  Or:  cortex-mem setup openclaw</span>
+
+<span class="prompt">$</span> cortex-mem remember \
+    --content "Decision: release only after the amber canary passes." \
+    --kind decision --tags release,canary \
+    --idempotency-key release-amber-gate
+<span class="output">Created memory cli-1f21a27736688ada6dfd119654c48d1934c68075e7d06dfb12ac7450bfb062c9 (kind=decision, scope=workspace).</span></pre>
+<div class="step"><span class="badge">process 2 · fresh PID</span> cold recall, same workspace</div>
+<pre><span class="prompt">$</span> cortex-mem recall \
+    --task "Recall the release gate for this workspace." \
+    --budget 500 --format json
+<span class="muted"># selected receipt fields; packed context is omitted from this annotated view</span>
+<span class="json">{
+  &quot;sources&quot;: [
+    {
+      &quot;memory_id&quot;: &quot;cli-1f21a27736688ada6dfd119654c48d1934c68075e7d06dfb12ac7450bfb062c9&quot;,
+      &quot;scope&quot;: &quot;workspace&quot;,
+      &quot;token_count&quot;: 207
+    }
+  ],
+  &quot;token_count&quot;: 207,
+  &quot;diagnostics&quot;: {
+    &quot;receipt_id&quot;: &quot;7d9d6b43-71dd-4c17-90b8-c15a6d46c4f2&quot;,
+    &quot;selected_count&quot;: 1,
+    &quot;scope_filtered_count&quot;: 0
+  }
+}</span></pre>
+<div class="note">✓ New process. One workspace-scoped source recalled. <span class="receipt">Receipt 7d9d6b43-71dd-4c17-90b8-c15a6d46c4f2</span> records the serialization path.</div>
+</div></main></body></html>
