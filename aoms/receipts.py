@@ -77,6 +77,11 @@ class RecallReceipt(ContractModel):
     token_budget: int = Field(ge=1)
     candidate_count: int = Field(ge=0)
     scope_filtered_count: int = Field(default=0, ge=0)
+    # Additive v1 evidence. The scope-filtered count is bounded so that one
+    # recall cannot spend the whole store establishing it; when it stops at
+    # that bound the number is a floor, and the receipt says so rather than
+    # reporting a total it did not compute.
+    scope_filtered_count_capped: bool = False
     top_candidates: list[CandidateScore]
     rejected_sample: list[CandidateScore]
     selected: list[SelectedMemory]

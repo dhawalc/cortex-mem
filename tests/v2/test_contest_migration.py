@@ -71,19 +71,19 @@ def write_receipt(record_id: str, **overrides: object) -> WriteReceipt:
 # --- the numbering correction --------------------------------------------
 
 
-def test_latest_schema_version_is_seven_and_six_is_still_the_fts_placeholder():
+def test_latest_schema_version_is_current_and_six_is_still_the_fts_placeholder():
     # Every proposal and every judge said this constant was 5. It was 6, with
     # MIGRATIONS[6] a live placeholder dispatched by an `if version == 6`
     # branch. Numbering the new migration 6 would have overwritten that branch
     # and never applied to any existing store, while the version claimed it
     # had. This test is the regression guard for exactly that error.
-    assert LATEST_SCHEMA_VERSION == 7
+    assert LATEST_SCHEMA_VERSION == 8
     assert MIGRATIONS[6] == ""
-    assert set(MIGRATIONS) == {1, 2, 3, 4, 5, 6, 7}
+    assert set(MIGRATIONS) == {1, 2, 3, 4, 5, 6, 7, 8}
 
 
 @pytest.mark.asyncio
-async def test_a_store_already_at_version_six_advances_to_seven(tmp_path):
+async def test_a_store_already_at_version_six_advances_to_the_latest(tmp_path):
     path = tmp_path / "aoms.sqlite3"
     first = SQLiteMemoryRepository(path)
     await first.initialize()
@@ -91,13 +91,15 @@ async def test_a_store_already_at_version_six_advances_to_seven(tmp_path):
 
     # Rewind to a store that has recorded version 6 and knows nothing of 7.
     with sqlite3.connect(path) as connection:
-        connection.execute("DELETE FROM schema_version WHERE version = 7")
+        connection.execute("DELETE FROM schema_version WHERE version IN (7, 8)")
         connection.execute("DROP INDEX idx_memories_claim_slot")
         for index in (
             "idx_memories_contested",
             "idx_memories_scope_contested",
             "idx_memories_workspace_contested",
             "idx_memories_agent_contested",
+            # Migration 8's covering index also names the contest columns.
+            "idx_memories_scope_cover",
         ):
             connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
@@ -107,7 +109,7 @@ async def test_a_store_already_at_version_six_advances_to_seven(tmp_path):
         connection.commit()
 
     upgraded = SQLiteMemoryRepository(path)
-    assert await upgraded.schema_version() == 7
+    assert await upgraded.schema_version() == LATEST_SCHEMA_VERSION
     with sqlite3.connect(path) as connection:
         connection.row_factory = sqlite3.Row
         columns = {
@@ -132,7 +134,7 @@ async def test_migration_seven_is_idempotent_when_reapplied(tmp_path):
         connection.commit()
     retried = SQLiteMemoryRepository(path)
     await retried.initialize()
-    assert await retried.schema_version() == 7
+    assert await retried.schema_version() == LATEST_SCHEMA_VERSION
 
 
 def test_migration_seven_touches_no_existing_data():
@@ -369,13 +371,15 @@ async def test_a_read_only_store_still_at_schema_six_opens_and_reads(tmp_path):
     await repository.initialize()
     await repository.store_new(record("a"))
     with sqlite3.connect(path) as connection:
-        connection.execute("DELETE FROM schema_version WHERE version = 7")
+        connection.execute("DELETE FROM schema_version WHERE version IN (7, 8)")
         connection.execute("DROP INDEX idx_memories_claim_slot")
         for index in (
             "idx_memories_contested",
             "idx_memories_scope_contested",
             "idx_memories_workspace_contested",
             "idx_memories_agent_contested",
+            # Migration 8's covering index also names the contest columns.
+            "idx_memories_scope_cover",
         ):
             connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")

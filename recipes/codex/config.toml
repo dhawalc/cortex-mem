@@ -1,4 +1,13 @@
+# Copy this block into ~/.codex/config.toml.
+#
+# AOMS_WORKSPACE is deliberately absent: a literal placeholder path here would
+# bind every copy-paste user to a workspace scope that does not exist, and
+# nothing would fail loudly. Unset, the server binds the directory Codex
+# launched it from, which is the project you have open.
+#
+# To bind an explicit workspace instead, run `cortex-mem setup codex`, which
+# writes this file with the identity already resolved.
 [mcp_servers.aoms]
 command = "uvx"
 args = ["cortex-mem", "mcp"]
-env = { AOMS_AGENT_ID = "codex", AOMS_WORKSPACE = "/absolute/path/to/project" }
+env = { AOMS_AGENT_ID = "codex" }

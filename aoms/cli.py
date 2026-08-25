@@ -34,6 +34,7 @@ from aoms.activation import (
 from aoms.backfill import BackfillProgress, backfill_embeddings
 from aoms.auth import TokenScope, TokenStore
 from aoms.contest import is_expired_held, is_overdue
+from aoms.identity import SUPPORTED_HOSTS, agent_id_for_host, resolved_agent_id
 from aoms.contracts import (
     ContestEntry,
     ContestResolution,
@@ -102,7 +103,7 @@ def _repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
 
 def _scope_context() -> ScopeContext:
     return ScopeContext(
-        agent_id=os.environ.get("AOMS_AGENT_ID", "").strip() or "cli",
+        agent_id=resolved_agent_id(os.environ.get("AOMS_AGENT_ID")),
         workspace_id=(
             os.environ.get("AOMS_WORKSPACE", "").strip() or str(Path.cwd().resolve())
         ),
@@ -110,12 +111,18 @@ def _scope_context() -> ScopeContext:
 
 
 def _application(settings: AOMSSettings) -> AOMSApplication:
-    """Build the same scoped application used by transport adapters."""
+    """Build the same scoped application used by transport adapters.
+
+    The configured ruleset is passed on every path, not just the write ones:
+    recall receipts stamp its digest too, so a process that read its triggers
+    from the environment must not report the shipped default.
+    """
 
     return AOMSApplication(
         _repository(settings),
         scope_context=_scope_context(),
         embedding_provider=provider_from_config(_embedding_environment(settings)),
+        ruleset=settings.ruleset,
     )
 
 
@@ -243,9 +250,7 @@ def init_command(data_dir: Path | None) -> None:
 
 
 @main.command("setup")
-@click.argument(
-    "host", type=click.Choice(("claude", "codex", "openclaw"), case_sensitive=False)
-)
+@click.argument("host", type=click.Choice(SUPPORTED_HOSTS, case_sensitive=False))
 @click.option(
     "--workspace",
     type=click.Path(path_type=Path, exists=True, file_okay=False),
@@ -257,7 +262,7 @@ def setup_command(host: str, workspace: Path | None, data_dir: Path | None) -> N
 
     normalized_host = host.casefold()
     bound_workspace = (workspace or Path.cwd()).expanduser().resolve()
-    agent_id = normalized_host
+    agent_id = agent_id_for_host(normalized_host)
     settings = _settings(data_dir)
     source = detect_invocation_source()
     try:
@@ -529,7 +534,7 @@ def remember_command(
     )
     try:
         result = asyncio.run(
-            _remember_once(_application_with_ruleset(settings), request)
+            _remember_once(_application(settings), request)
         )
     except Exception as exc:
         raise click.ClickException(f"remember failed: {exc}") from exc
@@ -623,15 +628,6 @@ def _reading_repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
         settings.db_path,
         read_only=True,
         receipt_retention=settings.receipt_retention,
-    )
-
-
-def _application_with_ruleset(settings: AOMSSettings) -> AOMSApplication:
-    return AOMSApplication(
-        _repository(settings),
-        scope_context=_scope_context(),
-        embedding_provider=provider_from_config(_embedding_environment(settings)),
-        ruleset=settings.ruleset,
     )
 
 
@@ -845,7 +841,7 @@ def contest_resolve_command(
 
     settings = _settings(data_dir)
     _require_database(settings)
-    application = _application_with_ruleset(settings)
+    application = _application(settings)
     resolver = _scope_context().agent_id
 
     async def run():
@@ -964,7 +960,7 @@ def contest_resolve_many_command(
         )
     settings = _settings(data_dir)
     _require_database(settings)
-    application = _application_with_ruleset(settings)
+    application = _application(settings)
     resolver = _scope_context().agent_id
 
     async def preview():

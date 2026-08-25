@@ -20,6 +20,7 @@ from aoms.contracts import (
     SearchRequest,
 )
 from aoms.embeddings import NullProvider
+from aoms.identity import DEFAULT_AGENT_ID
 from aoms.repositories import SQLiteMemoryRepository
 from aoms.repositories.sqlite import LATEST_SCHEMA_VERSION
 
@@ -107,8 +108,8 @@ def test_cli_import_export_restore_smoke(tmp_path: Path) -> None:
         assert (
             connection.execute(
                 "SELECT COUNT(*) FROM memories "
-                "WHERE scope_workspace_id = ? AND created_by_agent_id = 'cli'",
-                (str(ROOT.resolve()),),
+                "WHERE scope_workspace_id = ? AND created_by_agent_id = ?",
+                (str(ROOT.resolve()), DEFAULT_AGENT_ID),
             ).fetchone()[0]
             == 5
         )

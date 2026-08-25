@@ -21,6 +21,30 @@ The emitted directory contains `aoms-binding.json` and a private
 `cortex-mem-bound` launcher. Install lifecycle hooks only from that directory;
 the checked-in files here are templates and are not workspace-bound.
 
+## One identity per host
+
+`AOMS_AGENT_ID` is not a label. It decides which `agent-private` records a
+process can see, so two paths on one machine that disagree about it do not
+fail — they read different halves of the store.
+
+Each host therefore binds exactly one identity, equal to its `setup` name:
+
+| Host | `AOMS_AGENT_ID` |
+| --- | --- |
+| `setup claude` | `claude` |
+| `setup codex` | `codex` |
+| `setup openclaw` | `openclaw`, refined to `openclaw-<subagent>` by the recall hook |
+| nothing bound | `default` |
+
+These come from `aoms/identity.py`, and `tests/v2/test_identity.py` fails if a
+recipe, the `setup` command or a transport fallback ever drifts from it. If you
+write your own automation, export the same value the host uses — or just use
+the materialized `cortex-mem-bound` launcher, which already exports it.
+
+Seeing `default` in `cortex-mem doctor` or on a receipt means nothing bound an
+identity. Records still work; `agent-private` scope simply is not isolated to a
+host.
+
 ## Claude Code
 
 After `setup claude`, merge the materialized `hooks.json` into
