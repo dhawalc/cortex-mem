@@ -1,0 +1,46 @@
+{
+  "note": "Off-corpus mechanics pilot. INSTRUCTED phrasing. Never part of MCB-1.0 scoring.",
+  "cases": [
+    {
+      "id": "PILOT-M-01",
+      "note": "superseding -> expect revise; the hangar line should end up at six",
+      "initial_state": [
+        {"topic": "hangar-capacity", "text": "The north hangar holds four zeppelins."},
+        {"topic": "hangar-warden", "text": "The north hangar warden is Ines Okoro."}
+      ],
+      "observation": {
+        "text": "Update the hangar record: the north hangar was extended over the winter and now holds six zeppelins.",
+        "statements": [
+          {"topic": "hangar-capacity", "text": "The north hangar holds six zeppelins."}
+        ]
+      }
+    },
+    {
+      "id": "PILOT-M-02",
+      "note": "insufficiently supported -> expect reject; rumour must not be recorded",
+      "initial_state": [
+        {"topic": "kettle-colour", "text": "The staff room kettle is green."}
+      ],
+      "observation": {
+        "text": "Someone in the corridor thought they might have heard that the kettle could have been swapped for a red one, but nobody has checked.",
+        "statements": [
+          {"topic": "kettle-colour", "text": "The staff room kettle is red."}
+        ]
+      }
+    },
+    {
+      "id": "PILOT-M-03",
+      "note": "consistent addition -> expect extend; vault owner preserved",
+      "initial_state": [
+        {"topic": "vault-owner", "text": "The east vault is owned by the archive office."}
+      ],
+      "observation": {
+        "text": "Record the east vault's access hours alongside its existing ownership record: it is open from 09:00 to 17:00.",
+        "statements": [
+          {"topic": "vault-owner", "text": "The east vault is owned by the archive office."},
+          {"topic": "vault-hours", "text": "The east vault is open from 09:00 to 17:00."}
+        ]
+      }
+    }
+  ]
+}

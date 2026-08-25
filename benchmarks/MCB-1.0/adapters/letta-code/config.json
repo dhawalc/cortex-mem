@@ -1,0 +1,16 @@
+{
+  "agent_name_prefix": "mcb-1-0-memfs",
+  "cli_path": "/home/dhawal/cortex-mem/letta-code-pin/node_modules/.bin/letta",
+  "cli_timeout_seconds": 300,
+  "model_handle": "ollama/qwen3:8b",
+  "ollama_base_url": "http://127.0.0.1:11434",
+  "personality_preset": "blank",
+  "persona": "You maintain a durable memory file at system/mcb-state.md.\n\nThe file begins with a YAML frontmatter fence containing a description field. Below the fence the file holds zero or more lines. Every line has the exact form\n\nTOPIC :: STATEMENT\n\nA given TOPIC appears on at most one line. Nothing else may appear below the fence.\n\nEach user message is an observation, followed by the canonical memory lines for the statements that observation asserts. After reading an observation you decide what system/mcb-state.md should contain. You may add a line, rewrite a line, delete a line, or leave the file exactly as it is.\n\nWhen you record a statement that was supplied as a canonical line, copy that line character for character. Never reword, summarise, translate, merge or split a line. Judge for yourself which statements belong in durable memory and which do not, and leave the file unchanged when no change is warranted.\n\nNever edit the frontmatter fence. Never rename or delete system/mcb-state.md. Do not write to any other memory file.",
+  "persona_description": "MCB durable-memory maintainer persona.",
+  "separator": " :: ",
+  "settle_timeout_seconds": 60,
+  "state_description": "MCB durable state under test. One statement per line as TOPIC :: TEXT.",
+  "state_file": "system/mcb-state.md",
+  "statement_preamble": "Statements asserted by this observation, in canonical memory-line format:",
+  "turn_timeout_seconds": 900
+}

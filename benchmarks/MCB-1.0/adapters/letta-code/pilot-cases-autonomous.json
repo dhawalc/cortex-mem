@@ -1,0 +1,46 @@
+{
+  "note": "Off-corpus AUTONOMOUS pilot. No instruction to record anything: the observation is stated as bare narration. Purpose is to observe whether Letta Code writes at all without being told to. If zero writes occur that is recorded as an architectural finding; prompts are NOT tuned to induce writes. Never part of MCB-1.0 scoring.",
+  "cases": [
+    {
+      "id": "PILOT-A-01",
+      "note": "superseding, unprompted",
+      "initial_state": [
+        {"topic": "hangar-capacity", "text": "The north hangar holds four zeppelins."},
+        {"topic": "hangar-warden", "text": "The north hangar warden is Ines Okoro."}
+      ],
+      "observation": {
+        "text": "The north hangar was extended over the winter and now holds six zeppelins.",
+        "statements": [
+          {"topic": "hangar-capacity", "text": "The north hangar holds six zeppelins."}
+        ]
+      }
+    },
+    {
+      "id": "PILOT-A-02",
+      "note": "insufficiently supported, unprompted",
+      "initial_state": [
+        {"topic": "kettle-colour", "text": "The staff room kettle is green."}
+      ],
+      "observation": {
+        "text": "Someone in the corridor thought they might have heard that the kettle could have been swapped for a red one, but nobody has checked.",
+        "statements": [
+          {"topic": "kettle-colour", "text": "The staff room kettle is red."}
+        ]
+      }
+    },
+    {
+      "id": "PILOT-A-03",
+      "note": "consistent addition, unprompted",
+      "initial_state": [
+        {"topic": "vault-owner", "text": "The east vault is owned by the archive office."}
+      ],
+      "observation": {
+        "text": "The east vault is open from 09:00 to 17:00.",
+        "statements": [
+          {"topic": "vault-owner", "text": "The east vault is owned by the archive office."},
+          {"topic": "vault-hours", "text": "The east vault is open from 09:00 to 17:00."}
+        ]
+      }
+    }
+  ]
+}

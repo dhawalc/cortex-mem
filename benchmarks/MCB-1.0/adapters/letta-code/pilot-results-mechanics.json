@@ -1,0 +1,122 @@
+{
+  "pilot_cases": [
+    {
+      "id": "PILOT-M-01",
+      "note": "superseding -> expect revise; the hangar line should end up at six",
+      "initial_state": [
+        {
+          "topic": "hangar-capacity",
+          "text": "The north hangar holds four zeppelins."
+        },
+        {
+          "topic": "hangar-warden",
+          "text": "The north hangar warden is Ines Okoro."
+        }
+      ],
+      "observation": {
+        "text": "Update the hangar record: the north hangar was extended over the winter and now holds six zeppelins.",
+        "statements": [
+          {
+            "topic": "hangar-capacity",
+            "text": "The north hangar holds six zeppelins."
+          }
+        ]
+      },
+      "resulting_durable_state": [
+        {
+          "topic": "hangar-capacity",
+          "text": "The north hangar holds six zeppelins."
+        },
+        {
+          "topic": "hangar-warden",
+          "text": "The north hangar warden is Ines Okoro."
+        }
+      ],
+      "error": null,
+      "latency_ms": 44678.565,
+      "commit_log_after": [
+        "9201da2 Update hangar capacity after winter expansion",
+        "47c0c95 setup: establish durable state",
+        "0f639e1 setup: install MCB persona",
+        "2c8e9ae chore: initialize local memory"
+      ],
+      "agent_id": "agent-local-0b32d7fc-17d0-49b0-a9c0-b85d02185569"
+    },
+    {
+      "id": "PILOT-M-02",
+      "note": "insufficiently supported -> expect reject; rumour must not be recorded",
+      "initial_state": [
+        {
+          "topic": "kettle-colour",
+          "text": "The staff room kettle is green."
+        }
+      ],
+      "observation": {
+        "text": "Someone in the corridor thought they might have heard that the kettle could have been swapped for a red one, but nobody has checked.",
+        "statements": [
+          {
+            "topic": "kettle-colour",
+            "text": "The staff room kettle is red."
+          }
+        ]
+      },
+      "resulting_durable_state": [
+        {
+          "topic": "kettle-colour",
+          "text": "The staff room kettle is red."
+        }
+      ],
+      "error": null,
+      "latency_ms": 63909.919,
+      "commit_log_after": [
+        "b61e69d Update kettle colour observation",
+        "fee4ab0 setup: establish durable state",
+        "008b76f setup: install MCB persona",
+        "cf1cdee chore: initialize local memory"
+      ],
+      "agent_id": "agent-local-d06dc344-1778-4e8e-b0fb-237c696cf80d"
+    },
+    {
+      "id": "PILOT-M-03",
+      "note": "consistent addition -> expect extend; vault owner preserved",
+      "initial_state": [
+        {
+          "topic": "vault-owner",
+          "text": "The east vault is owned by the archive office."
+        }
+      ],
+      "observation": {
+        "text": "Record the east vault's access hours alongside its existing ownership record: it is open from 09:00 to 17:00.",
+        "statements": [
+          {
+            "topic": "vault-owner",
+            "text": "The east vault is owned by the archive office."
+          },
+          {
+            "topic": "vault-hours",
+            "text": "The east vault is open from 09:00 to 17:00."
+          }
+        ]
+      },
+      "resulting_durable_state": [
+        {
+          "topic": "vault-owner",
+          "text": "The east vault is owned by the archive office."
+        },
+        {
+          "topic": "vault-hours",
+          "text": "The east vault is open from 09:00 to 17:00."
+        }
+      ],
+      "error": null,
+      "latency_ms": 60223.652,
+      "commit_log_after": [
+        "568f95e Record vault access hours",
+        "148f325 setup: establish durable state",
+        "e5ed0b7 setup: install MCB persona",
+        "32afc2d chore: initialize local memory"
+      ],
+      "agent_id": "agent-local-c0bcbce9-ef74-4b58-9589-8fd27be46fa2"
+    }
+  ]
+}
