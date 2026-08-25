@@ -1,4 +1,38 @@
-# MCB-1.0 results — Letta
+> # ⚠ CORRECTION — THIS RESULT MEASURES A DEPRECATED PRODUCT
+>
+> **This page does not measure Letta's current system, and no figure on it may be
+> cited as a measurement of Letta.**
+>
+> This run targeted PyPI `letta` 0.16.8 (upstream tag commit
+> `1131535716e8a31c9a437f8695e25ac98f203a24`), which is the **retired Letta V1
+> server**. **Sarah Wooders of Letta identified this on 2026-08-24**, the day the
+> results were published, and pointed us at Letta's current products: the Agent
+> SDK (<https://docs.letta.com/agent-sdk>) and letta-code
+> (<https://github.com/letta-ai/letta-code>). Current Letta stores durable memory
+> in **MemFS**, a git-backed markdown filesystem — a materially different
+> architecture from the V1 core-memory blocks this adapter was written against.
+>
+> **This page is retained verbatim as the historical record of what was actually
+> run.** Nothing on it has been edited or deleted. It is a correct measurement of
+> Letta V1 and an invalid measurement of Letta.
+>
+> **Two defects now compound.** The model confound disclosed below (AOMS is
+> deterministic code; Letta ran on local `qwen3:8b`) stacks with this
+> deprecated-target error. The AOMS-vs-Letta comparison on this page **is not a
+> valid architecture comparison on either axis** — the model differs *and* the
+> system under test is not the system named. Fixing one defect alone would not
+> make it valid.
+>
+> The one finding untouched by both defects is that **both systems scored 0/12 on
+> insufficiently-supported observations** — a missing mechanism rather than a
+> judgement failure. Even that is now narrower than published: it is a statement
+> about AOMS and Letta V1. Whether current Letta has a write-side evidence gate is
+> **unmeasured**.
+>
+> Full correction log: [`CORRECTIONS.md`](CORRECTIONS.md). Re-run plan:
+> [`RERUN-PLAN-LETTA-SDK.md`](RERUN-PLAN-LETTA-SDK.md).
+
+# MCB-1.0 results — Letta 0.16.8 (V1 — DEPRECATED, see correction above)
 
 This is the first MCB-1.0 execution against a system the benchmark's author did
 not write. Letta is an independent open-source agent memory framework with no
@@ -23,7 +57,7 @@ scored against. `runner.py` revalidated them before executing.
 
 | | |
 | --- | --- |
-| System | Letta |
+| System | Letta **V1 — DEPRECATED**; not Letta's current system (see correction at top) |
 | Package | `letta==0.16.8` (PyPI wheel, SHA-256 `2d200cd1…4091d3`) |
 | SDK | `letta-client==1.12.1` (SHA-256 `6f554569…1baf99`) |
 | Upstream tag `0.16.8` | commit `1131535716e8a31c9a437f8695e25ac98f203a24` |
@@ -311,6 +345,11 @@ in `results.json` comes from `client.agents.blocks.retrieve` alone.
 
 ## INTERPRETATION
 
+**Before anything else: this measures a deprecated product.** Everything in this
+section was written before Sarah Wooders identified that `letta` 0.16.8 is the
+retired V1 server. It is preserved unedited. Read every claim below as a claim
+about Letta V1 driven by `qwen3:8b`, never about Letta.
+
 **This measures one narrow property, and it is not an overall ranking of the two
 systems.** MCB-1.0 evaluates write-side state transitions when durable state
 meets a later observation. It says nothing about retrieval quality, ranking,
@@ -331,7 +370,9 @@ not commensurable at all. Letta's numbers are also a joint property of Letta and
 `qwen3:8b`: a different model behind the same framework would very likely move
 them, and the insufficiently-supported class in particular is a judgement task
 that a stronger model might handle better. This is one configuration of Letta,
-not Letta's ceiling.
+not Letta's ceiling. **And it is a configuration of a product Letta has since
+retired** — so the model confound named in this paragraph now compounds with a
+deprecated-target error, and the comparison fails on both axes at once.
 
 **AOMS is the benchmark author's own system; Letta is an independent project
 with no affiliation.** MCB-1.0 was written by the author of AOMS, which is a

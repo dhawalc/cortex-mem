@@ -1,5 +1,28 @@
 # Draft: upstream issue for letta-ai/letta
 
+> # ⚠ SUPERSEDED — DO NOT POST
+>
+> **This draft is obsolete and must not be posted in its current form.** It asks
+> `letta-ai/letta` to validate an adapter for a product they have retired.
+>
+> Upstream contact has since happened, by a different route. **Sarah Wooders of
+> Letta wrote on 2026-08-24 at 20:46:**
+>
+> > Hi - the letta repo is deprecated. If you are looking to benchmark letta
+> > code, please use the agents SDK or letta code directory
+> > https://docs.letta.com/agent-sdk
+> > https://github.com/letta-ai/letta-code
+>
+> That answers this draft's premise rather than its questions. The three
+> questions below were asked about V1 memory semantics; the corresponding
+> questions for Letta's current architecture are restated as Q1–Q6 in
+> [`RERUN-PLAN-LETTA-SDK.md`](RERUN-PLAN-LETTA-SDK.md).
+>
+> Retained verbatim as the record of what we were about to ask. See
+> [`CORRECTIONS.md`](CORRECTIONS.md).
+
+Status: SUPERSEDED — never posted. Original status line follows.
+
 Status: DRAFT — not posted. Prepared 2026-08-24. All links verified publicly reachable.
 
 **Title:** External memory-conflict benchmark: request for validation of Letta adapter semantics

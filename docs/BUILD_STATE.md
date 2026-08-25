@@ -113,6 +113,11 @@ CORRECTNESS
 MEASUREMENT (benchmarks/MCB-1.0, branch mcb-1.0, NOT YET PUSHED)
 - MCB-1.0 authored + frozen BEFORE running it against AOMS. Six verbatim result artifacts.
 - AOMS baseline 50% DA. Letta (independent, local Ollama) 75%. Letta archival target 27%
+  - **⚠ CORRECTED 2026-08-24: the Letta figures measure `letta` 0.16.8, the RETIRED
+    LETTA V1 SERVER, not current Letta. Sarah Wooders of Letta identified this. Stacked
+    on the existing model confound, the AOMS-vs-Letta comparison is not a valid
+    architecture comparison on either axis. Do not cite these as Letta numbers.
+    See benchmarks/MCB-1.0/CORRECTIONS.md.**
   (demonstrates why core memory was the right target). AOMS+ledger 62.5%, structural
   errors 18->0, but false rejection 0->41.2% and the improvement is NOT detection: all 18
   changed cases changed identically.

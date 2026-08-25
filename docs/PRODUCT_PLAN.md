@@ -27,7 +27,7 @@ The customer is not "a developer who wants their coding assistant to remember." 
 | **agentmemory** (~27k★) | Local memory server for coding agents, MCP+REST, plugins for Claude Code/Codex/Cursor/OpenClaw | The incumbent for the *generic* version of this product. Do not compete generically. Differentiate on fleet scopes, provenance/observability, packed recall. |
 | **claude-mem** (~90k★) | Coding-session compression, $30/mo sync | Owns session-compression for Claude Code. Not our battle. |
 | **Mem0** (~63k★) | Managed extraction/profile memory, $19/mo | Cloud-first; ceded local. Their SDK ergonomics set the bar for onboarding. |
-| **Zep/Graphiti, Letta, Hindsight, Cognee** | Temporal KG / agent-OS / reflective / graph camps | Different camps; steal ideas (supersession links, reflection), don't chase their architecture. |
+| **Zep/Graphiti, Letta, Hindsight, Cognee** | Temporal KG / agent-OS / reflective / graph camps | Different camps; steal ideas (supersession links, reflection), don't chase their architecture. **Note: our MCB-1.0 Letta run measured the retired Letta V1 server, not the current Agent SDK / letta-code — see benchmarks/MCB-1.0/CORRECTIONS.md. Any read of Letta's architecture drawn from that run is a read of V1.** |
 | **ClawHub memory plugins** (mem0 official, Memory Tools v2, MemClaw, OB1) | Per-platform plugins | The losing pattern we already lived. Our MCP-first approach obsoletes per-platform plugins — that's the pitch to OpenClaw users. |
 
 **Table stakes (must have, not differentiators):** token-budgeted recall, hybrid search, MCP transport, local storage.

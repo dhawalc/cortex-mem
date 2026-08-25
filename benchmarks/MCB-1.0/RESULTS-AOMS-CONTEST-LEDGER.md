@@ -244,6 +244,16 @@ We do not claim:
 ## Cross-system context
 
 MCB-1.0 was also run against Letta on the same frozen cases (`RESULTS-LETTA.md`).
+
+> **⚠ CORRECTION — do not cite that Letta comparison.** That run targeted `letta`
+> 0.16.8, the **retired Letta V1 server**, not Letta's current system. **Sarah
+> Wooders of Letta identified this on 2026-08-24.** Combined with the
+> already-disclosed model confound — AOMS decides writes in deterministic Python
+> with no model, while Letta ran on local `qwen3:8b` — the AOMS-vs-Letta
+> comparison **is not a valid architecture comparison on either axis**, and
+> correcting either defect alone would not make it one. The result is retained
+> verbatim as the historical record. See [`CORRECTIONS.md`](CORRECTIONS.md) and
+> [`RERUN-PLAN-LETTA-SDK.md`](RERUN-PLAN-LETTA-SDK.md).
 On the insufficiently-supported class **both systems score 0/12**. Neither has
 a write-side evidence gate. AOMS's contest ledger is a write-side **authority**
 gate — it governs who may displace what, not whether a claim is supported —
