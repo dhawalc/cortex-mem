@@ -66,8 +66,8 @@ def _write_live_store(path: Path, records: int) -> None:
         connection.close()
 
 
-def _age(path: Path, *, hours: float) -> None:
-    stamp = (NOW - timedelta(hours=hours)).timestamp()
+def _age(path: Path, *, hours: float, reference: datetime = NOW) -> None:
+    stamp = (reference - timedelta(hours=hours)).timestamp()
     os.utime(path, (stamp, stamp))
 
 
@@ -84,6 +84,7 @@ def _write_artifact(
     metadata: bool = True,
     integrity: str = "ok",
     source_database: Path | None = None,
+    reference: datetime = NOW,
 ) -> Path:
     directory.mkdir(parents=True, exist_ok=True)
     artifact = directory / name
@@ -100,7 +101,7 @@ def _write_artifact(
                 {
                     "artifact": name,
                     "backup_kind": "daily-physical",
-                    "created_at": NOW.isoformat(),
+                    "created_at": reference.isoformat(),
                     "integrity_check": integrity,
                     "receipts": 14,
                     "records": records,
@@ -112,7 +113,7 @@ def _write_artifact(
             ),
             encoding="utf-8",
         )
-    _age(artifact, hours=age_hours)
+    _age(artifact, hours=age_hours, reference=reference)
     return artifact
 
 
@@ -137,6 +138,7 @@ class _Scenario:
         log: str = SUCCESS_LOG,
         daily: bool = True,
         weekly: bool = True,
+        reference: datetime = NOW,
         **artifact_options: object,
     ) -> BackupConfig:
         _write_live_store(self.live_db, live_records)
@@ -146,22 +148,24 @@ class _Scenario:
         if daily:
             _write_artifact(
                 self.backup_root / "daily",
-                "aoms-v2-2026-08-24.sqlite3.zst",
+                f"aoms-v2-{reference:%Y-%m-%d}.sqlite3.zst",
                 payload=self.payload,
                 live_db=self.live_db,
                 records=backup_records,
                 age_hours=daily_age_hours,
+                reference=reference,
                 **artifact_options,  # type: ignore[arg-type]
             )
         if weekly:
             weekly_dir = self.backup_root / "weekly"
             _write_artifact(
                 weekly_dir,
-                "aoms-v2-portable-2026-08-23.tar.zst",
+                f"aoms-v2-portable-{reference - timedelta(days=1):%Y-%m-%d}.tar.zst",
                 payload=self.payload,
                 live_db=self.live_db,
                 records=backup_records,
                 age_hours=weekly_age_days * 24,
+                reference=reference,
             )
         return BackupConfig(
             backup_root=self.backup_root,
@@ -519,10 +523,16 @@ def test_every_non_passing_check_carries_a_remediation(scenario: _Scenario) -> N
 
 
 def test_standalone_script_runs_and_reports(tmp_path: Path) -> None:
-    """The cron entry point shares the CLI's implementation, so smoke-test it."""
+    """The cron entry point shares the CLI's implementation, so smoke-test it.
+
+    Every other test injects the frozen ``NOW``. This one runs the real script
+    in a subprocess, so it is judged against the real clock and has to build
+    its fixture against the real clock too — pinning the fixture to ``NOW``
+    made the artifact age out for good once the calendar passed it.
+    """
 
     scenario = _Scenario(tmp_path)
-    scenario.build()
+    scenario.build(reference=datetime.now(timezone.utc))
     environ = dict(os.environ)
     environ.update(
         {
