@@ -27,7 +27,7 @@ import sqlite3
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import uuid4
 
 from aoms.contest import content_digest
@@ -75,7 +75,21 @@ def _parse_timestamp(value: str) -> datetime:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
-LATEST_SCHEMA_VERSION = 7
+LATEST_SCHEMA_VERSION = 8
+
+# How many scope-filtered FTS matches one recall will count before reporting a
+# floor instead of a total. The count is a diagnostic, not an answer, and it is
+# defined over the whole match set: without a bound, a store where most matches
+# are invisible to the caller pays for a full scan on every recall to produce a
+# number nobody reads past the first thousand.
+DEFAULT_SCOPE_FILTERED_COUNT_CAP = 1_000
+
+
+class ScopeFilteredCount(NamedTuple):
+    """A scope-filtered match count, and whether it is a total or a floor."""
+
+    count: int
+    capped: bool
 
 # Migration 7 adds the contest ledger. The two new ``memories`` columns are
 # listed separately so the applier can skip one that already exists, making
@@ -250,6 +264,17 @@ MIGRATIONS: dict[int, str] = {
     # rebuild must preserve the legacy FTS payload while changing its rowids.
     6: "",
     7: ";\n".join(MIGRATION_7_COLUMNS.values()) + ";\n" + MIGRATION_7_OBJECTS,
+    # Migration 8 is one covering index. The scope-filtered count joins
+    # ``memories`` by id and then reads nothing but the scope columns, while
+    # the row it lands on carries the record's whole JSON payload. Covering the
+    # join keeps it out of the table entirely. Measured on a 165k-record store,
+    # the count query drops a further fifth once the planner stops paging in
+    # rows it does not read. Building it costs about five seconds there, once.
+    8: """
+        CREATE INDEX IF NOT EXISTS idx_memories_scope_cover ON memories(
+            id, contested, scope, scope_workspace_id, scope_agent_id, kind
+        );
+    """,
 }
 
 
@@ -262,12 +287,16 @@ class SQLiteMemoryRepository:
         *,
         read_only: bool = False,
         receipt_retention: int = 1_000,
+        scope_filtered_count_cap: int = DEFAULT_SCOPE_FILTERED_COUNT_CAP,
     ):
         if receipt_retention < 1:
             raise ValueError("receipt_retention must be at least 1")
+        if scope_filtered_count_cap < 1:
+            raise ValueError("scope_filtered_count_cap must be at least 1")
         self.db_path = Path(db_path)
         self.read_only = read_only
         self.receipt_retention = receipt_retention
+        self.scope_filtered_count_cap = scope_filtered_count_cap
         self._initialized = False
         self._initialize_lock = asyncio.Lock()
         self._sqlite_vec_available: bool | None = None
@@ -1556,7 +1585,7 @@ class SQLiteMemoryRepository:
         )
         with self._connect() as connection:
             total = int(connection.execute(count_sql, parameters).fetchone()["count"])
-            scope_filtered_count = self._scope_filtered_fts_count(
+            scope_filtered = self._scope_filtered_fts_count(
                 connection, expression, request, scope_context, as_of=as_of
             )
             rows = connection.execute(
@@ -1576,7 +1605,8 @@ class SQLiteMemoryRepository:
             diagnostics={
                 "strategy": "fts5",
                 "query_tokens": len(expression.split(" AND ")),
-                "scope_filtered_count": scope_filtered_count,
+                "scope_filtered_count": scope_filtered.count,
+                "scope_filtered_count_capped": scope_filtered.capped,
                 "as_of": as_of.isoformat() if as_of else None,
                 "temporal_semantics": (
                     "declared-lineage reconstruction" if as_of else None
@@ -1696,7 +1726,7 @@ class SQLiteMemoryRepository:
                 "id ASC LIMIT ? OFFSET ?",
                 [*parameters, request.limit, request.offset],
             ).fetchall()
-            scope_filtered_count = self._scope_filtered_fts_count(
+            scope_filtered = self._scope_filtered_fts_count(
                 connection, expression, request, scope_context
             )
         return SearchResult(
@@ -1711,7 +1741,8 @@ class SQLiteMemoryRepository:
             diagnostics={
                 "strategy": "fts5-declared-lineage",
                 "query_tokens": len(expression.split(" AND ")),
-                "scope_filtered_count": scope_filtered_count,
+                "scope_filtered_count": scope_filtered.count,
+                "scope_filtered_count_capped": scope_filtered.capped,
                 "as_of": as_of.isoformat(),
                 "temporal_semantics": "declared-lineage reconstruction",
             },
@@ -1755,7 +1786,7 @@ class SQLiteMemoryRepository:
     ) -> RecallCandidateBatch:
         expression = self._recall_fts_expression(request.task)
         fts_rows: list[sqlite3.Row] = []
-        scope_filtered_count = 0
+        scope_filtered = ScopeFilteredCount(count=0, capped=False)
         with self._connect() as connection:
             if expression:
                 clauses, parameters = self._filters(
@@ -1774,7 +1805,7 @@ class SQLiteMemoryRepository:
                     "ORDER BY rank ASC, m.updated_at DESC, m.id ASC LIMIT ?",
                     [*parameters, limit],
                 ).fetchall()
-                scope_filtered_count = self._scope_filtered_fts_count(
+                scope_filtered = self._scope_filtered_fts_count(
                     connection, expression, request, scope_context
                 )
 
@@ -1862,7 +1893,8 @@ class SQLiteMemoryRepository:
                 )
                 for value in candidates.values()
             ),
-            scope_filtered_count=scope_filtered_count,
+            scope_filtered_count=scope_filtered.count,
+            scope_filtered_count_capped=scope_filtered.capped,
         )
 
     async def upsert_vector(
@@ -2623,46 +2655,60 @@ class SQLiteMemoryRepository:
         request: SearchRequest | RecallRequest,
         scope_context: ScopeContext | None,
         as_of: datetime | None = None,
-    ) -> int:
+    ) -> ScopeFilteredCount:
+        """How many FTS matches the caller's scopes hid, counted once.
+
+        This was two unbounded ``COUNT(*)`` queries — every match, then every
+        visible match — subtracted. Both walked the whole match set, which on a
+        real store is most of it: a recall expression ORs up to 32 tokens, so a
+        165k-record store matched 84k rows and spent 320 ms of an 827 ms recall
+        establishing that nine of them were hidden.
+
+        Counting the difference directly halves that. The ``LIMIT`` bounds the
+        case the old shape could not survive at all — a store where most
+        matches are invisible to the caller, where both counts ran to
+        completion over hundreds of thousands of rows. Below the cap the count
+        is exact; at the cap it is a floor, and ``capped`` says so rather than
+        letting a truncated number pass for a total.
+
+        The remaining cost is the FTS scan itself, and it is inherent: a count
+        defined over every match cannot be shown to be small without visiting
+        every match.
+        """
+
         if scope_context is None:
-            return 0
+            return ScopeFilteredCount(count=0, capped=False)
         include_contested = getattr(request, "include_contested", False)
-        unscoped_clauses, unscoped_parameters = self._filters(
+        clauses, parameters = self._filters(
             kinds=request.kinds,
             scopes=request.scopes,
             table_alias="m.",
             include_contested=include_contested,
         )
-        unscoped_clauses.insert(0, "memories_fts MATCH ?")
-        unscoped_parameters.insert(0, expression)
+        clauses.insert(0, "memories_fts MATCH ?")
+        parameters.insert(0, expression)
         if as_of is not None:
-            unscoped_clauses.append("m.created_at <= ?")
-            unscoped_parameters.append(as_of.isoformat())
-        unscoped = connection.execute(
-            "SELECT COUNT(*) AS count FROM memories_fts "
-            "JOIN memories AS m ON m.id = memories_fts.id "
-            f"WHERE {' AND '.join(unscoped_clauses)}",
-            unscoped_parameters,
-        ).fetchone()["count"]
-        scoped_clauses, scoped_parameters = self._filters(
-            kinds=request.kinds,
-            scopes=request.scopes,
-            table_alias="m.",
-            scope_context=scope_context,
-            include_contested=include_contested,
+            clauses.append("m.created_at <= ?")
+            parameters.append(as_of.isoformat())
+        access_clauses, access_parameters = self._scope_access_filter(
+            scope_context, table_alias="m."
         )
-        scoped_clauses.insert(0, "memories_fts MATCH ?")
-        scoped_parameters.insert(0, expression)
-        if as_of is not None:
-            scoped_clauses.append("m.created_at <= ?")
-            scoped_parameters.append(as_of.isoformat())
-        scoped = connection.execute(
-            "SELECT COUNT(*) AS count FROM memories_fts "
-            "JOIN memories AS m ON m.id = memories_fts.id "
-            f"WHERE {' AND '.join(scoped_clauses)}",
-            scoped_parameters,
-        ).fetchone()["count"]
-        return max(0, int(unscoped) - int(scoped))
+        # ``IS NOT 1`` rather than ``NOT (...)``: the access filter compares
+        # nullable scope columns, so it can evaluate to NULL, and a NULL row is
+        # one the scoped query excluded. Plain NOT would drop those rows, which
+        # the subtraction this replaces counted.
+        clauses.append(f"{access_clauses[0]} IS NOT 1")
+        parameters.extend(access_parameters)
+        cap = self.scope_filtered_count_cap
+        counted = int(
+            connection.execute(
+                "SELECT COUNT(*) AS count FROM (SELECT 1 FROM memories_fts "
+                "JOIN memories AS m ON m.id = memories_fts.id "
+                f"WHERE {' AND '.join(clauses)} LIMIT ?)",
+                [*parameters, cap],
+            ).fetchone()["count"]
+        )
+        return ScopeFilteredCount(count=counted, capped=counted >= cap)
 
     @staticmethod
     def _fts_expression(query: str) -> str:

@@ -374,13 +374,15 @@ def test_inspection_commands_work_on_a_store_predating_the_ledger(store):
     runner, db_path = store
     run(runner, "remember", "--content", "a legacy write")
     with sqlite3.connect(db_path) as connection:
-        connection.execute("DELETE FROM schema_version WHERE version = 7")
+        connection.execute("DELETE FROM schema_version WHERE version IN (7, 8)")
         for index in (
             "idx_memories_claim_slot",
             "idx_memories_contested",
             "idx_memories_scope_contested",
             "idx_memories_workspace_contested",
             "idx_memories_agent_contested",
+            # Migration 8's covering index also names the contest columns.
+            "idx_memories_scope_cover",
         ):
             connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
