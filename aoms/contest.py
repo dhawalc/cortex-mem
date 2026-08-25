@@ -257,25 +257,27 @@ def decide(
 
     # T1 — slot collision. An occupied slot, different content, and no
     # declared supersession of the occupant.
-    if ContestTrigger.SLOT_COLLISION in enabled:
-        undeclared = tuple(
-            occupant.record_id
-            for occupant in slot.occupants
-            if occupant.record_id != intent.supersedes
+    undeclared = tuple(
+        occupant.record_id
+        for occupant in slot.occupants
+        if occupant.record_id != intent.supersedes
+    )
+    if ContestTrigger.SLOT_COLLISION in enabled and undeclared:
+        return Decision(
+            disposition=WriteDisposition.CONTESTED,
+            trigger=ContestTrigger.SLOT_COLLISION,
+            incumbent_ids=incumbent_ids,
+            detail={"undeclared_incumbent_count": len(undeclared)},
         )
-        if undeclared:
-            return Decision(
-                disposition=WriteDisposition.CONTESTED,
-                trigger=ContestTrigger.SLOT_COLLISION,
-                incumbent_ids=incumbent_ids,
-                detail={"undeclared_incumbent_count": len(undeclared)},
-            )
 
-    # A declared supersession of every occupant is an ordinary correction.
+    # A declared supersession of every occupant is an ordinary correction. With
+    # T1 disabled this is also where an *undeclared* write lands, so the flag
+    # reports what the writer actually declared rather than asserting the
+    # reason it would have had under the default ruleset.
     return Decision(
         disposition=WriteDisposition.ADMITTED,
         incumbent_ids=incumbent_ids,
-        detail={"declared_supersession": True},
+        detail={"declared_supersession": not undeclared},
     )
 
 

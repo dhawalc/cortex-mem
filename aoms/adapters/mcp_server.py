@@ -141,6 +141,7 @@ class MCPRuntime:
                 receipt_repository=self.application.receipt_repository,
                 embedding_provider=self.application.embedding_provider,
                 background_embeddings=self.application.background_embeddings,
+                ruleset=self.application.ruleset,
             )
             self.scoped_applications[scope_key] = scoped
         return scoped
@@ -318,6 +319,7 @@ def _application_from_settings(
         repository,
         scope_context=scope_context,
         embedding_provider=provider_from_config(environ),
+        ruleset=settings.ruleset,
     )
 
 

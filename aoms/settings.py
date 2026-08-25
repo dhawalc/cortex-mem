@@ -21,6 +21,48 @@ def _platform_data_dir() -> Path:
     return user_data_path("aoms", appauthor=False)
 
 
+def _parse_contest_triggers(raw: str) -> frozenset[str]:
+    """Parse ``AOMS_CONTEST_TRIGGERS`` into the trigger set to put in force.
+
+    An empty value — or the explicit spelling ``none`` — disables write gating
+    entirely: every write is admitted to its slot and nothing is routed to the
+    ledger. That is a supported configuration, not a broken one, so it is
+    spelled out rather than inferred. Receipts still record the incumbents and
+    the ruleset digest, so the audit trail says which configuration admitted a
+    write.
+    """
+
+    from aoms.contracts import ContestTrigger
+
+    requested = [part.strip().casefold() for part in raw.split(",") if part.strip()]
+    if not requested or requested == ["none"]:
+        return frozenset()
+    if "none" in requested:
+        raise ValueError(
+            "AOMS_CONTEST_TRIGGERS: 'none' disables every trigger and cannot be "
+            "combined with others"
+        )
+
+    selectable = {
+        trigger.value
+        for trigger in ContestTrigger
+        if trigger is not ContestTrigger.POLICY_HOLD
+    }
+    for name in requested:
+        if name == ContestTrigger.POLICY_HOLD.value:
+            raise ValueError(
+                f"AOMS_CONTEST_TRIGGERS: {name!r} is a reserved seam; no "
+                "policy-hold rule ships in v1"
+            )
+        if name not in selectable:
+            options = ", ".join(sorted(selectable))
+            raise ValueError(
+                f"AOMS_CONTEST_TRIGGERS: unknown trigger {name!r}; choose from "
+                f"{options}, or 'none' to disable gating"
+            )
+    return frozenset(requested)
+
+
 class AOMSSettings(BaseModel):
     """Resolved storage locations with an optional ``AOMS_DATA_DIR`` override."""
 
@@ -35,14 +77,27 @@ class AOMSSettings(BaseModel):
     ollama_url: str = "http://localhost:11434"
     contest_sla_days: int = Field(default=14, ge=1)
     contest_expiry_days: int = Field(default=30, ge=1)
+    # ``None`` means "unset": keep the shipped default trigger set. An empty
+    # frozenset is a different thing — an operator explicitly turning gating
+    # off — so the two are not collapsed.
+    contest_triggers: frozenset[str] | None = None
 
     @property
     def ruleset(self) -> "Ruleset":
         """The contest configuration this process stamps on its receipts."""
 
         from aoms.contest import Ruleset
+        from aoms.contracts import ContestTrigger
 
+        if self.contest_triggers is None:
+            return Ruleset(
+                contest_sla_days=self.contest_sla_days,
+                contest_expiry_days=self.contest_expiry_days,
+            )
         return Ruleset(
+            enabled_triggers=frozenset(
+                ContestTrigger(value) for value in self.contest_triggers
+            ),
             contest_sla_days=self.contest_sla_days,
             contest_expiry_days=self.contest_expiry_days,
         )
@@ -65,6 +120,10 @@ class AOMSSettings(BaseModel):
             contest_expiry_days = int(env.get("AOMS_CONTEST_EXPIRY_DAYS", "30"))
         except ValueError as exc:
             raise ValueError("AOMS contest day settings must be integers") from exc
+        triggers_text = env.get("AOMS_CONTEST_TRIGGERS")
+        contest_triggers = (
+            None if triggers_text is None else _parse_contest_triggers(triggers_text)
+        )
         return cls(
             data_dir=data_dir,
             db_path=data_dir / "aoms.sqlite3",
@@ -81,4 +140,5 @@ class AOMSSettings(BaseModel):
             ollama_url=env.get("AOMS_OLLAMA_URL", "http://localhost:11434"),
             contest_sla_days=contest_sla_days,
             contest_expiry_days=contest_expiry_days,
+            contest_triggers=contest_triggers,
         )

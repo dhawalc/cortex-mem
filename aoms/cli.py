@@ -111,12 +111,18 @@ def _scope_context() -> ScopeContext:
 
 
 def _application(settings: AOMSSettings) -> AOMSApplication:
-    """Build the same scoped application used by transport adapters."""
+    """Build the same scoped application used by transport adapters.
+
+    The configured ruleset is passed on every path, not just the write ones:
+    recall receipts stamp its digest too, so a process that read its triggers
+    from the environment must not report the shipped default.
+    """
 
     return AOMSApplication(
         _repository(settings),
         scope_context=_scope_context(),
         embedding_provider=provider_from_config(_embedding_environment(settings)),
+        ruleset=settings.ruleset,
     )
 
 
@@ -528,7 +534,7 @@ def remember_command(
     )
     try:
         result = asyncio.run(
-            _remember_once(_application_with_ruleset(settings), request)
+            _remember_once(_application(settings), request)
         )
     except Exception as exc:
         raise click.ClickException(f"remember failed: {exc}") from exc
@@ -622,15 +628,6 @@ def _reading_repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
         settings.db_path,
         read_only=True,
         receipt_retention=settings.receipt_retention,
-    )
-
-
-def _application_with_ruleset(settings: AOMSSettings) -> AOMSApplication:
-    return AOMSApplication(
-        _repository(settings),
-        scope_context=_scope_context(),
-        embedding_provider=provider_from_config(_embedding_environment(settings)),
-        ruleset=settings.ruleset,
     )
 
 
@@ -844,7 +841,7 @@ def contest_resolve_command(
 
     settings = _settings(data_dir)
     _require_database(settings)
-    application = _application_with_ruleset(settings)
+    application = _application(settings)
     resolver = _scope_context().agent_id
 
     async def run():
@@ -963,7 +960,7 @@ def contest_resolve_many_command(
         )
     settings = _settings(data_dir)
     _require_database(settings)
-    application = _application_with_ruleset(settings)
+    application = _application(settings)
     resolver = _scope_context().agent_id
 
     async def preview():
