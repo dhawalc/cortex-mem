@@ -51,6 +51,48 @@ no declared supersession — not the quality of its evidence. It cannot tell a
 well-supported undeclared revision from an unsupported one, and it does not
 try. That is deliberate: AOMS never judges whether your content is true.
 
+## Turning it down, or off: `AOMS_CONTEST_TRIGGERS`
+
+That 82.35% is why this is a setting and not a constant. If your callers do
+not declare, and you would still rather have the writes than the ledger, you
+can put fewer triggers in force — or none — without editing source.
+
+```sh
+# The default. Same as leaving the variable unset.
+export AOMS_CONTEST_TRIGGERS=slot-collision,retrograde-displacement
+
+# Keep only the backdating check: undeclared revisions are admitted.
+export AOMS_CONTEST_TRIGGERS=retrograde-displacement
+
+# Off. Every write goes to its slot; nothing is routed to the ledger.
+export AOMS_CONTEST_TRIGGERS=none
+```
+
+Valid values are the trigger names as they appear on receipts —
+`slot-collision`, `retrograde-displacement`, `derived-from-memory` — plus
+`none`. An empty value means the same as `none`. An unset variable means the
+default; the two are deliberately different, so turning the gate off is
+always something you did on purpose. A misspelling is refused at startup with
+the list of valid names rather than silently narrowing the ruleset.
+`policy-hold` is refused: it is a seam, and no rule ships behind it.
+
+`derived-from-memory` is off by default and can be switched back on here. Read
+"One trigger we removed, and why" first — it is off because it penalises
+callers honest enough to cite what they read.
+
+**Turning gating off does not turn off recording.** Writes are still receipted,
+each receipt still names the incumbents the write landed on top of, and each
+still carries the digest of the ruleset that admitted it. The digest changes
+with the trigger set, so a receipt written with the gate off cannot be
+mistaken for one written under the default — you can tell from the audit trail
+alone which configuration was in force. What you lose is only the power to
+hold a write out of the slot.
+
+There is one behavioural detail worth knowing. With `slot-collision` disabled,
+an admitted write reports `declared_supersession: false` when the caller
+declared nothing, rather than asserting the reason it would have needed under
+the default ruleset.
+
 ## So: pair `claim_key` with `supersedes`
 
 ```python

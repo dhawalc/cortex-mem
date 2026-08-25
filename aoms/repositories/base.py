@@ -41,6 +41,10 @@ class RecallCandidateBatch:
 
     candidates: tuple[RecallCandidate, ...]
     scope_filtered_count: int = 0
+    # True when the count stopped at its bound, so it is a floor rather than a
+    # total. Carrying it keeps a truncated number from reading as a complete
+    # one on the receipt.
+    scope_filtered_count_capped: bool = False
 
 
 @dataclass(frozen=True, slots=True)

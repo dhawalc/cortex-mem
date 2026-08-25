@@ -719,6 +719,7 @@ class RecallEngine:
             token_budget=request.token_budget,
             candidate_count=len(ranked),
             scope_filtered_count=candidate_batch.scope_filtered_count,
+            scope_filtered_count_capped=candidate_batch.scope_filtered_count_capped,
             top_candidates=candidate_scores[: self.receipt_top_n],
             rejected_sample=[item for item in candidate_scores if not item.selected][
                 : self.rejected_sample_size
@@ -781,6 +782,9 @@ class RecallEngine:
                 "engine_version": ENGINE_VERSION,
                 "candidate_count": len(ranked),
                 "scope_filtered_count": candidate_batch.scope_filtered_count,
+                "scope_filtered_count_capped": (
+                    candidate_batch.scope_filtered_count_capped
+                ),
                 "selected_count": len(packed),
                 "supersession_resolution": self.resolve_supersession,
                 "superseded_suppressed": sorted(resolution.suppressed_ids),

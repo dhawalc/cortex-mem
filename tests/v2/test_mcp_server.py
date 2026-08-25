@@ -21,6 +21,7 @@ import aoms.adapters.mcp_server as mcp_adapter
 import aoms.application as application_module
 from aoms.adapters.mcp_server import create_server
 from aoms.application import AOMSApplication
+from aoms.identity import DEFAULT_AGENT_ID
 from aoms.auth import TokenStore
 from aoms.contracts import (
     MemoryKind,
@@ -774,7 +775,9 @@ def test_non_loopback_startup_requires_active_token_and_tls(tmp_path: Path) -> N
 
 
 def test_process_scope_defaults_are_single_user_and_non_null() -> None:
+    # The fallback is shared with the CLI so one machine cannot end up with two
+    # unbound identities; see tests/v2/test_identity.py.
     assert mcp_adapter._scope_context_from_environ({}) == ScopeContext(
-        agent_id="mcp",
+        agent_id=DEFAULT_AGENT_ID,
         workspace_id=str(Path.cwd().resolve()),
     )
