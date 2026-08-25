@@ -480,6 +480,13 @@ class BudgetPacker:
         rejected_for_budget: set[str] = set()
         predecessors = predecessors_by_head or {}
         notices = contest_notices or {}
+        # The exact token count of everything packed so far. Every value this
+        # loop needs has already been encoded once: the count after accepting a
+        # block is the count of the candidate context that was just tested, and
+        # the count before it is what the last accepted block left behind.
+        # Re-encoding the whole context to recover them made the packer
+        # quadratic in the budget for no additional information.
+        packed_count = 0
 
         for item in ranked:
             record = item.candidate.record
@@ -494,15 +501,17 @@ class BudgetPacker:
                 contested_by=notice,
             )
             proposed = PACK_SEPARATOR.join([*blocks, full_block])
-            if self.tokenizer.count(proposed) <= token_budget:
-                previous_count = self.tokenizer.count(PACK_SEPARATOR.join(blocks))
+            proposed_count = self.tokenizer.count(proposed)
+            if proposed_count <= token_budget:
+                previous_count = packed_count
                 blocks.append(full_block)
-                current_count = self.tokenizer.count(PACK_SEPARATOR.join(blocks))
+                # ``blocks`` now joins to exactly the string just counted.
+                packed_count = proposed_count
                 packed.append(
                     PackedMemory(
                         ranked=item,
                         block=full_block,
-                        token_cost=current_count - previous_count,
+                        token_cost=packed_count - previous_count,
                         content_excerpt=content[:240],
                         truncated=False,
                     )
@@ -522,11 +531,14 @@ class BudgetPacker:
                 )
                 if truncated_block is not None:
                     blocks.append(truncated_block)
+                    # This branch only runs while nothing is packed, so the
+                    # block's own count is the whole context's count.
+                    packed_count = self.tokenizer.count(truncated_block)
                     packed.append(
                         PackedMemory(
                             ranked=item,
                             block=truncated_block,
-                            token_cost=self.tokenizer.count(truncated_block),
+                            token_cost=packed_count,
                             content_excerpt=excerpt[:240],
                             truncated=True,
                         )

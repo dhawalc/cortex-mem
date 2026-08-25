@@ -420,6 +420,11 @@ class ReceiptPruneReport(ContractModel):
     retained_limit: int = Field(ge=0)
     deleted_count: int = Field(ge=0)
     remaining_count: int = Field(ge=0)
+    # A receipt carries the exact packed context, so its size follows the
+    # caller's token budget and the count alone no longer says how much space
+    # the log occupies. Both bounds are reported.
+    remaining_bytes: int = Field(default=0, ge=0)
+    byte_budget: int = Field(default=0, ge=0)
 
 
 class IntegrityReport(ContractModel):

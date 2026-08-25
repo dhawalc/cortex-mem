@@ -71,6 +71,13 @@ class AOMSSettings(BaseModel):
     data_dir: Path
     db_path: Path
     receipt_retention: int = Field(default=1_000, ge=1)
+    # A receipt now carries the exact packed context, so its size tracks the
+    # caller's ``token_budget`` — measured at ~3.6 bytes per packed token, on
+    # top of ~16KB of ranking evidence. Counting receipts therefore stopped
+    # bounding the space they take: 1,000 of them is 31MB at the default
+    # 4,000-token budget and 377MB at the contract's 100,000-token ceiling.
+    # This is the second bound, and it drops whole receipts, never parts of one.
+    receipt_byte_budget: int = Field(default=64 * 1024 * 1024, ge=1)
     embedding_provider: str = "fastembed"
     embedding_model: str | None = None
     embedding_dimensions: int | None = Field(default=None, ge=1)
@@ -115,6 +122,11 @@ class AOMSSettings(BaseModel):
             receipt_retention = int(retention_text)
         except ValueError as exc:
             raise ValueError("AOMS_RECEIPT_RETENTION must be an integer") from exc
+        budget_text = env.get("AOMS_RECEIPT_BYTE_BUDGET", str(64 * 1024 * 1024))
+        try:
+            receipt_byte_budget = int(budget_text)
+        except ValueError as exc:
+            raise ValueError("AOMS_RECEIPT_BYTE_BUDGET must be an integer") from exc
         try:
             contest_sla_days = int(env.get("AOMS_CONTEST_SLA_DAYS", "14"))
             contest_expiry_days = int(env.get("AOMS_CONTEST_EXPIRY_DAYS", "30"))
@@ -128,6 +140,7 @@ class AOMSSettings(BaseModel):
             data_dir=data_dir,
             db_path=data_dir / "aoms.sqlite3",
             receipt_retention=receipt_retention,
+            receipt_byte_budget=receipt_byte_budget,
             embedding_provider=env.get("AOMS_EMBEDDING_PROVIDER", "fastembed")
             .strip()
             .casefold(),
