@@ -374,7 +374,7 @@ def test_inspection_commands_work_on_a_store_predating_the_ledger(store):
     runner, db_path = store
     run(runner, "remember", "--content", "a legacy write")
     with sqlite3.connect(db_path) as connection:
-        connection.execute("DELETE FROM schema_version WHERE version IN (7, 8)")
+        connection.execute("DELETE FROM schema_version WHERE version IN (7, 8, 9)")
         for index in (
             "idx_memories_claim_slot",
             "idx_memories_contested",
@@ -383,10 +383,13 @@ def test_inspection_commands_work_on_a_store_predating_the_ledger(store):
             "idx_memories_agent_contested",
             # Migration 8's covering index also names the contest columns.
             "idx_memories_scope_cover",
+            # Migration 9 records each receipt's size for retention.
+            "idx_recall_receipts_retention",
         ):
             connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
         connection.execute("ALTER TABLE memories DROP COLUMN contested")
+        connection.execute("ALTER TABLE recall_receipts DROP COLUMN receipt_bytes")
         connection.execute("DROP TABLE contest_entries")
         connection.execute("DROP TABLE write_receipts")
         connection.commit()

@@ -97,7 +97,9 @@ def _settings(data_dir: Path | None) -> AOMSSettings:
 
 def _repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
     return SQLiteMemoryRepository(
-        settings.db_path, receipt_retention=settings.receipt_retention
+        settings.db_path,
+        receipt_retention=settings.receipt_retention,
+        receipt_byte_budget=settings.receipt_byte_budget,
     )
 
 
@@ -1462,9 +1464,12 @@ def _doctor_database(
                 "performed.",
             )
 
-        receipt_count = int(
-            connection.execute("SELECT COUNT(*) FROM recall_receipts").fetchone()[0]
-        )
+        receipt_count, receipt_bytes = connection.execute(
+            "SELECT COUNT(*), COALESCE(SUM(receipt_bytes), 0) FROM recall_receipts"
+        ).fetchone()
+        receipt_count = int(receipt_count)
+        receipt_mb = int(receipt_bytes) / (1024 * 1024)
+        budget_mb = settings.receipt_byte_budget / (1024 * 1024)
         if receipt_count > settings.receipt_retention:
             report.warn(
                 "Receipt store",
@@ -1472,11 +1477,21 @@ def _doctor_database(
                 f"{settings.receipt_retention}",
                 "Run: cortex-mem sweep",
             )
+        elif int(receipt_bytes) > settings.receipt_byte_budget:
+            # Receipts hold the packed context, so the count can sit inside its
+            # limit while the space they take does not.
+            report.warn(
+                "Receipt store",
+                f"{receipt_mb:.1f}MB of receipts exceeds the "
+                f"{budget_mb:.0f}MB budget",
+                "Run: cortex-mem sweep",
+            )
         else:
             report.pass_(
                 "Receipt store",
-                f"available ({receipt_count} receipts; retention "
-                f"{settings.receipt_retention})",
+                f"available ({receipt_count} receipts, {receipt_mb:.1f}MB; "
+                f"retention {settings.receipt_retention}, budget "
+                f"{budget_mb:.0f}MB)",
             )
 
         if profile is None:
@@ -2021,7 +2036,9 @@ def sweep_command(
         raise click.ClickException(f"sweep failed: {exc}") from exc
     click.echo(
         f"Sweep finished: embedded={result.embedded}, failed={result.failed}, "
-        f"pending={result.pending}, receipts_pruned={prune_report.deleted_count}."
+        f"pending={result.pending}, receipts_pruned={prune_report.deleted_count} "
+        f"({prune_report.remaining_count} kept, "
+        f"{prune_report.remaining_bytes / (1024 * 1024):.1f}MB)."
     )
     if result.failed:
         raise click.exceptions.Exit(1)

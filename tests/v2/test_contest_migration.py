@@ -77,9 +77,9 @@ def test_latest_schema_version_is_current_and_six_is_still_the_fts_placeholder()
     # branch. Numbering the new migration 6 would have overwritten that branch
     # and never applied to any existing store, while the version claimed it
     # had. This test is the regression guard for exactly that error.
-    assert LATEST_SCHEMA_VERSION == 8
+    assert LATEST_SCHEMA_VERSION == 9
     assert MIGRATIONS[6] == ""
-    assert set(MIGRATIONS) == {1, 2, 3, 4, 5, 6, 7, 8}
+    assert set(MIGRATIONS) == {1, 2, 3, 4, 5, 6, 7, 8, 9}
 
 
 @pytest.mark.asyncio

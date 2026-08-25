@@ -75,7 +75,7 @@ def _parse_timestamp(value: str) -> datetime:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
-LATEST_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = 9
 
 # How many scope-filtered FTS matches one recall will count before reporting a
 # floor instead of a total. The count is a diagnostic, not an answer, and it is
@@ -83,6 +83,14 @@ LATEST_SCHEMA_VERSION = 8
 # are invisible to the caller pays for a full scan on every recall to produce a
 # number nobody reads past the first thousand.
 DEFAULT_SCOPE_FILTERED_COUNT_CAP = 1_000
+
+# Receipts retain the exact packed context, so their size follows the caller's
+# ``token_budget`` rather than being roughly fixed. Measured on the live store:
+# ~3.6 bytes per packed token on top of ~16KB of ranking evidence, which puts
+# 1,000 receipts at 31MB for the default 4,000-token budget but 377MB at the
+# contract's 100,000-token ceiling. The count limit alone stopped being a bound
+# on space, so retention enforces a byte budget as well.
+DEFAULT_RECEIPT_BYTE_BUDGET = 64 * 1024 * 1024
 
 
 class ScopeFilteredCount(NamedTuple):
@@ -169,6 +177,23 @@ MIGRATION_7_OBJECTS = """
         ON write_receipts(created_at DESC, receipt_id DESC);
     CREATE INDEX IF NOT EXISTS idx_write_receipts_claim
         ON write_receipts(claim_key, created_at DESC);
+"""
+
+# Retention has to bound the receipt log by size as well as by count, and it
+# runs inline on every save. Summing `LENGTH(receipt_json)` there would read
+# every stored context on every recall — measured at 28.7ms per save against a
+# 37MB log, where the count-only prune was 11.6ms. Recording each receipt's
+# size once, in a column the retention index covers, keeps the check off the
+# payloads entirely.
+MIGRATION_9_COLUMN = (
+    "ALTER TABLE recall_receipts ADD COLUMN receipt_bytes INTEGER NOT NULL DEFAULT 0"
+)
+MIGRATION_9_OBJECTS = """
+    UPDATE recall_receipts
+       SET receipt_bytes = LENGTH(CAST(receipt_json AS BLOB))
+     WHERE receipt_bytes = 0;
+    CREATE INDEX IF NOT EXISTS idx_recall_receipts_retention
+        ON recall_receipts(created_at DESC, receipt_id DESC, receipt_bytes);
 """
 
 MIGRATIONS: dict[int, str] = {
@@ -275,6 +300,7 @@ MIGRATIONS: dict[int, str] = {
             id, contested, scope, scope_workspace_id, scope_agent_id, kind
         );
     """,
+    9: MIGRATION_9_COLUMN + ";\n" + MIGRATION_9_OBJECTS,
 }
 
 
@@ -287,15 +313,19 @@ class SQLiteMemoryRepository:
         *,
         read_only: bool = False,
         receipt_retention: int = 1_000,
+        receipt_byte_budget: int = DEFAULT_RECEIPT_BYTE_BUDGET,
         scope_filtered_count_cap: int = DEFAULT_SCOPE_FILTERED_COUNT_CAP,
     ):
         if receipt_retention < 1:
             raise ValueError("receipt_retention must be at least 1")
+        if receipt_byte_budget < 1:
+            raise ValueError("receipt_byte_budget must be at least 1")
         if scope_filtered_count_cap < 1:
             raise ValueError("scope_filtered_count_cap must be at least 1")
         self.db_path = Path(db_path)
         self.read_only = read_only
         self.receipt_retention = receipt_retention
+        self.receipt_byte_budget = receipt_byte_budget
         self.scope_filtered_count_cap = scope_filtered_count_cap
         self._initialized = False
         self._initialize_lock = asyncio.Lock()
@@ -397,6 +427,8 @@ class SQLiteMemoryRepository:
                     self._migrate_fts_rowids(connection)
                 elif version == 7:
                     self._migrate_contest_ledger(connection)
+                elif version == 9:
+                    self._migrate_receipt_bytes(connection)
                 else:
                     connection.executescript(MIGRATIONS[version])
                     connection.execute(
@@ -428,6 +460,29 @@ class SQLiteMemoryRepository:
         connection.execute(
             "INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES (?, ?)",
             (7, datetime.now(timezone.utc).isoformat()),
+        )
+
+    @staticmethod
+    def _migrate_receipt_bytes(connection: sqlite3.Connection) -> None:
+        """Record each receipt's stored size, retrying safely after a crash.
+
+        ``ALTER TABLE ADD COLUMN`` is not idempotent and ``executescript``
+        commits before the version row lands, so the column is added only when
+        it is absent — the same shape migration 7 uses.
+        """
+
+        existing = {
+            str(row["name"])
+            for row in connection.execute(
+                "PRAGMA table_info(recall_receipts)"
+            ).fetchall()
+        }
+        if "receipt_bytes" not in existing:
+            connection.execute(MIGRATION_9_COLUMN)
+        connection.executescript(MIGRATION_9_OBJECTS)
+        connection.execute(
+            "INSERT OR IGNORE INTO schema_version(version, applied_at) VALUES (?, ?)",
+            (9, datetime.now(timezone.utc).isoformat()),
         )
 
     @staticmethod
@@ -2255,39 +2310,74 @@ class SQLiteMemoryRepository:
         await asyncio.to_thread(self._save_recall_receipt_sync, receipt)
 
     def _save_recall_receipt_sync(self, receipt: RecallReceipt) -> None:
+        serialized = receipt.model_dump_json()
         with self._connect() as connection:
             connection.execute(
                 """
                 INSERT INTO recall_receipts(
-                    receipt_id, created_at, agent_id, workspace_id, receipt_json
+                    receipt_id, created_at, agent_id, workspace_id, receipt_json,
+                    receipt_bytes
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?)
                 ON CONFLICT(receipt_id) DO UPDATE SET
                     created_at = excluded.created_at,
                     agent_id = excluded.agent_id,
                     workspace_id = excluded.workspace_id,
-                    receipt_json = excluded.receipt_json
+                    receipt_json = excluded.receipt_json,
+                    receipt_bytes = excluded.receipt_bytes
                 """,
                 (
                     receipt.receipt_id,
                     receipt.created_at.isoformat(),
                     receipt.agent_id,
                     receipt.workspace_id,
-                    receipt.model_dump_json(),
+                    serialized,
+                    len(serialized.encode("utf-8")),
                 ),
             )
-            connection.execute(
-                """
-                DELETE FROM recall_receipts
-                WHERE receipt_id NOT IN (
-                    SELECT receipt_id FROM recall_receipts
-                    ORDER BY created_at DESC, receipt_id DESC
-                    LIMIT ?
-                )
-                """,
-                (self.receipt_retention,),
-            )
+            self._enforce_receipt_retention(connection)
             connection.commit()
+
+    def _enforce_receipt_retention(
+        self, connection: sqlite3.Connection, retain: int | None = None
+    ) -> int:
+        """Trim the receipt log to the newest that fit both bounds.
+
+        A receipt is worth keeping because it accounts for exactly what was
+        packed and why, so retention drops whole receipts and never edits one.
+        Truncating a stored context, or dropping the evidence beside it, would
+        leave a record that reads like an account of a recall while no longer
+        being one.
+
+        Two bounds apply, and the tighter one wins. The count keeps the log
+        legible; the byte budget keeps it bounded now that a receipt's size
+        follows the caller's ``token_budget``. The newest receipt always
+        survives, even alone over budget: a single outsized recall should not
+        be able to leave the store with no audit trail at all.
+        """
+
+        limit = self.receipt_retention if retain is None else retain
+        cursor = connection.execute(
+            """
+            DELETE FROM recall_receipts WHERE receipt_id NOT IN (
+                SELECT receipt_id FROM (
+                    SELECT
+                        receipt_id,
+                        ROW_NUMBER() OVER ordered AS position,
+                        SUM(receipt_bytes) OVER ordered AS running_bytes
+                    FROM recall_receipts
+                    WINDOW ordered AS (
+                        ORDER BY created_at DESC, receipt_id DESC
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    )
+                )
+                WHERE position <= ?
+                  AND (running_bytes <= ? OR position = 1)
+            )
+            """,
+            (limit, self.receipt_byte_budget),
+        )
+        return cursor.rowcount
 
     async def recent_recall_receipts(
         self, *, limit: int = 20, scope_context: ScopeContext | None = None
@@ -2335,22 +2425,19 @@ class SQLiteMemoryRepository:
 
     def _prune_recall_receipts_sync(self, retain: int) -> ReceiptPruneReport:
         with self._connect() as connection:
-            cursor = connection.execute(
-                "DELETE FROM recall_receipts WHERE receipt_id NOT IN ("
-                "SELECT receipt_id FROM recall_receipts "
-                "ORDER BY created_at DESC, receipt_id DESC LIMIT ?)",
-                (retain,),
-            )
+            deleted = self._enforce_receipt_retention(connection, retain)
             connection.commit()
-            remaining = int(
-                connection.execute(
-                    "SELECT COUNT(*) AS count FROM recall_receipts"
-                ).fetchone()["count"]
-            )
+            row = connection.execute(
+                "SELECT COUNT(*) AS count, "
+                "COALESCE(SUM(receipt_bytes), 0) AS bytes "
+                "FROM recall_receipts"
+            ).fetchone()
             return ReceiptPruneReport(
                 retained_limit=retain,
-                deleted_count=cursor.rowcount,
-                remaining_count=remaining,
+                deleted_count=deleted,
+                remaining_count=int(row["count"]),
+                remaining_bytes=int(row["bytes"]),
+                byte_budget=self.receipt_byte_budget,
             )
 
     async def integrity_report(self) -> IntegrityReport:
