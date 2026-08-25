@@ -149,9 +149,11 @@ This is a write-**authority** gate, not an evidence gate: it governs who may dis
 |---|---|
 | `agent-private` | Only the bound agent that owns the memory. |
 | `workspace` | Agents bound to the same workspace. This is the default. |
-| `user-global` | Every agent using that AOMS store. |
+| `user-global` | Every agent using that AOMS store, including every remote bearer token regardless of the workspace it is bound to. |
 
 For local processes, identity is bound in the registered MCP environment. For authenticated HTTP, the bearer token binds it server-side. The model cannot supply or switch identity through `recall`, `remember`, or `search` arguments.
+
+A bound identity constrains writes, `agent-private` reads, and `workspace` reads. It does **not** constrain `user-global` reads, which are fleet-wide by definition. The practical read reach of any token is therefore *all `user-global` records plus one workspace plus one agent* — and the first term is set by your data, not by the token. Before exposing a remote listener, measure how much of your store is `user-global`, and serve a separate database via `AOMS_DATA_DIR` if a remote client should see less. See [remote authentication](docs/REMOTE_AUTH.md).
 
 Receipts retain the bound agent/workspace, requested filters, content-free scope-filter count, selected and rejected candidates, supersession decisions, vector coverage, exact token total, and engine version. Scope isolation is therefore testable at the actual context boundary, not merely asserted in configuration.
 

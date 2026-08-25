@@ -1774,6 +1774,9 @@ def token_group() -> None:
 
     These commands require local access to the AOMS data directory. The admin
     scope is reserved for future remote maintenance endpoints.
+
+    A token's bound workspace does not bound its reads: every token can read
+    every user-global record in the store. See docs/REMOTE_AUTH.md.
     """
 
 
@@ -1807,7 +1810,13 @@ def _parse_expiry(value: str | None) -> datetime | None:
     help="Grant a scope; repeat for multiple scopes.",
 )
 @click.option("--agent-id", help="Agent identity bound to the token.")
-@click.option("--workspace-id", help="Workspace identity bound to the token.")
+@click.option(
+    "--workspace-id",
+    help=(
+        "Workspace identity bound to the token. Bounds writes and workspace "
+        "reads; does not bound user-global reads."
+    ),
+)
 @click.option("--expires-at", help="Optional ISO-8601 expiry timestamp.")
 @_data_dir_option
 def token_create_command(
@@ -1841,6 +1850,13 @@ def token_create_command(
     click.echo(
         f"Identity: agent_id={record.agent_id} workspace_id={record.workspace_id}"
     )
+    if TokenScope.READ.value in record.scopes:
+        click.echo(
+            "Reads: this identity bounds writes, agent-private reads, and "
+            "workspace reads. It does NOT bound user-global reads: this token "
+            "can read every user-global record in the store. See "
+            "docs/REMOTE_AUTH.md."
+        )
     click.echo("Bearer token (shown once):")
     click.echo(created.secret)
 
