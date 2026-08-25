@@ -1,5 +1,48 @@
 # Re-run plan — MCB-1.0 against the Letta Agent SDK
 
+> # ⚠ SUPERSEDED — 2026-08-25
+>
+> **This plan is superseded, not pending.** It is preserved unedited below as the
+> record of what we intended to do; it must not be read as scheduled work, and
+> its premise is void.
+>
+> The plan's purpose was to make the AOMS-vs-Letta comparison citable by fixing
+> two defects in one run: the deprecated target and the model confound. On
+> 2026-08-25 a bare-model control was run — the frozen corpus fed straight to
+> `ollama/qwen3:8b` with the Letta adapter's own persona and two local function
+> stubs, no memory framework of any kind in the stack — and it reproduced the
+> published Letta V1 per-case result on 46 of 48 cases. The framework's measured
+> contribution on this corpus is indistinguishable from zero.
+>
+> That does not correct the comparison. It removes the thing the comparison was
+> measuring. **The cross-system comparison has been retired**, so there is no
+> longer a comparison for this plan to repair. See [`CORRECTIONS.md`](CORRECTIONS.md)
+> entry #2 and [`adapters/null-ollama/`](adapters/null-ollama/).
+>
+> Three specific claims in the text below are now known to be false, and are
+> listed here rather than edited out:
+>
+> - **"Status: PLAN ONLY. NOT EXECUTED."** — false in this repository from the
+>   moment `adapters/letta-code/` was written. Six 48-case letta-code runs exist
+>   here as untracked artifacts with no write-up. They are not cited anywhere and
+>   must not be until they are published under [`GOVERNANCE.md`](GOVERNANCE.md)
+>   §11, each with the §10 bare-model control the rule now requires.
+> - **"A frontier model is needed"** and the $30–100 costing in §7. The decisive
+>   experiment needed no frontier model, no hosted API and no budget. It needed
+>   the framework removed instead of the model upgraded. Money was never the
+>   binding constraint; asking the wrong question was.
+> - **Any statement that executing this plan would make a Letta figure citable.**
+>   Under §10 a model-driven adapter's result is publishable only alongside its
+>   own bare-model control, and only as *(framework score − control score)*. A
+>   re-run of this design without that control would reproduce the original error
+>   against a newer target.
+>
+> **What is still worth keeping** is §1–§6: the reading of what current Letta
+> actually is, the durable-state question, and the six open questions for Sarah
+> Wooders. Those survive because they are about identifying the target, which is
+> a problem this correction does not touch. Any future Letta measurement starts
+> there and adds a control.
+
 **Status: PLAN ONLY. NOT EXECUTED. No adapter has been written and no case has
 been run.** Everything below is desk research against public documentation and
 published package source. Nothing here has been tested against a running system.

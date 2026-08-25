@@ -1,6 +1,29 @@
 # Draft: upstream issue for letta-ai/letta
 
-> # ⚠ SUPERSEDED — DO NOT POST
+> # ⚠ SUPERSEDED TWICE — DO NOT POST
+>
+> **Second supersession, 2026-08-25.** Beyond the deprecated target described
+> below, this draft's numbers are withdrawn. Its "Disclosure" paragraph tells
+> Letta that "on the headline metric Letta scored materially better than my own
+> system (75.0% vs 50.0% decision accuracy, and 12/12 vs 0/12 on autonomous
+> supersession)." **That comparison has been retired** (`CORRECTIONS.md` entry
+> #2): a bare-model control reproduced the Letta column with no memory framework
+> in the stack, so those figures are substantially a measurement of
+> `ollama/qwen3:8b` rather than of Letta. Sending them to Letta as a statement
+> about Letta would now be telling a vendor something we know to be false, and
+> flattering them with it, which is worse than not writing.
+>
+> The one sentence in that paragraph that survives is the last one: both systems
+> scored 0/12 on insufficiently-supported observations, neither has a write-side
+> evidence gate, and that is a statement about the state of the art rather than
+> about either implementation. The control has since made it broader — a bare
+> model with no framework scores 0/12 too.
+>
+> Any replacement draft must lead with both corrections rather than the score,
+> and must carry the control's numbers next to any framework number it quotes
+> (`GOVERNANCE.md` §10).
+>
+> **First supersession, 2026-08-24, below.**
 >
 > **This draft is obsolete and must not be posted in its current form.** It asks
 > `letta-ai/letta` to validate an adapter for a product they have retired.

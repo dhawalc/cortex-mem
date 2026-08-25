@@ -1,5 +1,30 @@
 # MCB-1.0 results — AOMS with the contest ledger
 
+> **⚠ Annotation added 2026-08-25. The numbers below are unchanged and nothing
+> in this document has been edited.**
+>
+> **The cross-system comparison is retired** (`CORRECTIONS.md` entry #2). A
+> bare-model control reproduced the published Letta column with no memory
+> framework in the stack, so that column was substantially a measurement of
+> `ollama/qwen3:8b`. AOMS no longer appears in any comparison table
+> (`GOVERNANCE.md` §13); this run is published as a **reference adapter**
+> result, not a competitor's.
+>
+> **This does not vindicate AOMS.** AOMS was not measured against a framework; it
+> was measured against a model, and it scored lower. Retiring the comparison
+> withdraws the claim that the gap said something about architecture. It does not
+> turn 62.5% into a better number, and it leaves the defect stated below exactly
+> where it was.
+>
+> **The "Cross-system context" section near the end is still correct.** The
+> bare-model control scored 1/12 on the insufficiently-supported class rather
+> than 0/12, and that single pass is not an evidence gate: on `MCB-U-10` the
+> model emitted no tool call at all after 766 seconds of generation, so the
+> durable state was left unchanged by non-response rather than by refusal. The
+> absence of a write-side evidence gate stands for AOMS, for Letta V1, and
+> substantially for a bare model too. That finding never depended on the
+> comparison and is undamaged by its retirement.
+
 Second AOMS run against the frozen MCB-1.0 corpus, after the write-side
 contest ledger shipped. The published 2026-08-24 baseline in `results.json`
 and `RESULTS-AOMS.md` is untouched, at its original path and commit, and this

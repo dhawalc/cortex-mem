@@ -1,0 +1,91 @@
+MCB-1.0 null-ollama control environment record
+==============================================
+
+NON-CONFORMING CONTROL. There is no system under test. This file records the
+model and host that produced the control artifact, in the same form as the
+conforming adapters' environment records, so the run can be reproduced.
+
+What is under measurement
+-------------------------
+System under test ....... NONE. No memory framework is installed, imported,
+                          started, or contacted. The durable "block" is a
+                          Python string local to adapter.py.
+What is measured ........ ollama/qwen3:8b deciding, unaided, what a durable
+                          memory block should contain after each observation.
+
+Model (fully local, no hosted API called)
+-----------------------------------------
+Inference backend ....... Ollama 0.20.0 at http://127.0.0.1:11434
+Endpoint ................ POST /api/chat (native tool-calling route)
+Model ................... qwen3:8b
+Model digest ............ 500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41
+Model details ........... 8.2B parameters, Q4_K_M quantisation, GGUF
+Sampling ................ temperature 0
+Context window .......... num_ctx 8192
+Agent steps ............. max 8 per case, matching the Letta adapter's max_steps
+Request timeout ......... 900 s
+Embeddings .............. NONE. No embedding model is loaded or called.
+
+This is the same model handle, the same digest, the same quantisation and the
+same step budget as the published Letta V1 run recorded in
+`../letta/environment.txt`. That is the point of the control: the model is held
+fixed and the framework is removed.
+
+No OpenAI, Anthropic, or other hosted model API was contacted during this run.
+
+Prompt provenance
+-----------------
+Persona ................. read verbatim at runtime from
+                          `../letta/config.json` -> "persona"
+Separator ............... read verbatim from the same file -> "separator"
+                          (" :: ")
+Statement preamble ...... read verbatim from the same file ->
+                          "statement_preamble"
+Authored here ........... nothing. The control writes no prompt of its own.
+                          `config.json` names the source file; it does not
+                          contain a copy of the text.
+
+Tools exposed to the model
+--------------------------
+memory_insert(label, new_string) ........ appends one line to the string
+memory_replace(label, old_string,
+               new_string) .............. verbatim line rewrite; empty
+                                          new_string deletes the line
+send_message(message) ................... ends the turn
+
+These are local Python stubs, roughly 30 lines in total, inside adapter.py.
+They are not Letta's tools; they are the minimum needed to let a model express
+the same edit vocabulary against a plain string. `memory_replace` returns
+"error: old_string not found verbatim" when the line does not match, which is
+the same failure mode the real tool has.
+
+Host
+----
+Host .................... Linux blacklightning 6.8.0-136-generic x86_64
+OS ...................... Ubuntu 24.04.4 LTS
+Interpreter ............. CPython 3.12.3
+                          (/home/dhawal/cortex-mem/cortex-mem/.venv/bin/python)
+Dependencies ............ none beyond the standard library. adapter.py imports
+                          only argparse, importlib.util, json, sys, time,
+                          urllib.request and pathlib.
+
+Corpus and scoring
+------------------
+Corpus .................. ../../cases.json, unmodified
+                          sha256 d5d9db63ad0911110e7cc602a22a6f6e655b9b5fb72261c649a10debdd7ac54f
+Scorer .................. ../../score.py, unmodified
+                          sha256 7565863b5c02d35d9d3e8dea9dcfa453fd903d618ac9f61280b5b3cc1a9dd98b
+Freeze verification ..... score.validate_freeze() is called before the first
+                          case runs; a hash mismatch aborts the run. The
+                          manifest it verified is embedded in the result
+                          artifact under "freeze".
+Scoring path ............ score.score_document(), the same function the
+                          conforming runner calls. Nothing about scoring is
+                          special-cased for the control.
+
+Isolation
+---------
+No AOMS data directory, ~/.local/share/aoms, ~/.letta, PostgreSQL cluster, or
+live service was read or written. The control has no persistence: each case
+starts from the case's own initial_state and the resulting block is discarded
+after it is recorded.

@@ -1,5 +1,23 @@
 # MCB-1.0 results — AOMS
 
+> **⚠ Annotation added 2026-08-25. No number below has been changed.**
+>
+> AOMS is written by MCB's author and is now published as a **reference
+> adapter**, not a competitor (`GOVERNANCE.md` §13). The cross-system comparison
+> this run was published beside has been retired (`CORRECTIONS.md` entry #2): a
+> bare-model control reproduced the Letta column with no memory framework in the
+> stack.
+>
+> **AOMS's 50.0% is not improved by that.** It was measured against a model
+> rather than against a framework, and it lost to one. What the corpus says about
+> AOMS is exactly what it said on 2026-08-24, including the 0/12 on the
+> insufficiently-supported class — a result the control has since shown is
+> substantially shared by a bare model with no framework at all, which scored
+> 1/12 on that class.
+>
+> AOMS needs no bare-model control under §10: it makes every write decision in
+> deterministic Python, embeddings disabled, zero model calls.
+
 This is the first frozen MCB-1.0 baseline against the AOMS application layer.
 The frozen cases and scorer were committed before the reference adapter ran.
 The runner output is committed verbatim as `results.json`; the scorer was run

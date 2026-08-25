@@ -1,0 +1,11 @@
+{
+  "conforming": false,
+  "kind": "NON-CONFORMING CONTROL",
+  "max_steps": 8,
+  "model": "qwen3:8b",
+  "num_ctx": 8192,
+  "ollama_url": "http://127.0.0.1:11434/api/chat",
+  "persona_source": "adapters/letta/config.json",
+  "persona_source_note": "Persona, separator and statement_preamble are read verbatim from the published Letta V1 adapter's config so that the only difference between the two stacks is the framework itself. Nothing in this control authors its own prompt.",
+  "warning": "This is not a memory system and not an MCB-1.0 adapter. It must never appear as a competitor row."
+}

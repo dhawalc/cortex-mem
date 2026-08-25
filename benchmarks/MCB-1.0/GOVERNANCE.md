@@ -73,3 +73,28 @@ A published result is never edited, re-scored, or deleted — not to fix it, not
 to improve it, and least of all to remove an embarrassment. Corrections are new
 files that link back to what they correct, so the size of any error stays
 checkable by anyone who reads the repository later.
+
+## §13 — The benchmark's author does not appear in its comparison tables
+
+AOMS is written by MCB's author. It is published as a **reference adapter** — a
+worked example of the adapter contract, and a scored artifact — and not as a
+competitor. It does not appear in a comparison table, a ranking, or a
+bolded-winner column.
+
+The conflict-of-interest disclosure requirement mitigates the situation; this
+rule removes it, which is stronger. Adopted 2026-08-25 alongside the retirement
+of the cross-system comparison (`CORRECTIONS.md` entry #2). Before that date AOMS
+did appear in comparison tables; those tables are preserved in git history rather
+than pretended away.
+
+## §10 in practice — the first application, against ourselves
+
+§10 was written on 2026-08-24, in the aftermath of discovering the benchmark had
+measured a deprecated product. It was first *applied* on 2026-08-25, to MCB's own
+headline result, and it retired that result: a bare-model control reproduced the
+published Letta column with no framework in the stack, so the framework's
+measured contribution was indistinguishable from zero.
+
+Recorded here because a rule that has never cost its author anything is not yet
+evidence of anything. This one cost the repository its comparison table on the
+first occasion it was applied.

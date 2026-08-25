@@ -1,0 +1,78 @@
+[ 1/48] MCB-C-01       5.5s 
+[ 2/48] MCB-C-02       9.2s 
+[ 3/48] MCB-C-03       9.1s 
+[ 4/48] MCB-C-04       1.6s 
+[ 5/48] MCB-C-05       1.9s 
+[ 6/48] MCB-C-06       2.3s 
+[ 7/48] MCB-C-07       1.9s 
+[ 8/48] MCB-C-08      15.6s 
+[ 9/48] MCB-C-09       2.5s 
+[10/48] MCB-C-10       9.6s 
+[11/48] MCB-C-11       9.4s 
+[12/48] MCB-C-12      20.7s 
+[13/48] MCB-X-01       9.4s 
+[14/48] MCB-X-02      15.9s 
+[15/48] MCB-X-03      18.5s 
+[16/48] MCB-X-04      10.3s 
+[17/48] MCB-X-05       6.8s 
+[18/48] MCB-X-06       3.2s 
+[19/48] MCB-X-07       2.5s 
+[20/48] MCB-X-08       2.8s 
+[21/48] MCB-X-09       2.0s 
+[22/48] MCB-X-10       2.5s 
+[23/48] MCB-X-11       2.4s 
+[24/48] MCB-X-12       2.2s 
+[25/48] MCB-S-01       2.2s 
+[26/48] MCB-S-02       3.3s 
+[27/48] MCB-S-03       2.5s 
+[28/48] MCB-S-04       3.0s 
+[29/48] MCB-S-05       2.9s 
+[30/48] MCB-S-06      14.1s 
+[31/48] MCB-S-07      27.1s 
+[32/48] MCB-S-08      22.2s 
+[33/48] MCB-S-09      12.1s 
+[34/48] MCB-S-10      10.3s 
+[35/48] MCB-S-11      13.1s 
+[36/48] MCB-S-12      11.5s 
+[37/48] MCB-U-01       3.2s 
+[38/48] MCB-U-02       3.7s 
+[39/48] MCB-U-03      21.1s 
+[40/48] MCB-U-04       3.9s 
+[41/48] MCB-U-05       4.5s 
+[42/48] MCB-U-06      16.0s 
+[43/48] MCB-U-07      13.7s 
+[44/48] MCB-U-08       3.4s 
+[45/48] MCB-U-09       3.8s 
+[46/48] MCB-U-10     765.8s 
+[47/48] MCB-U-11      27.9s 
+[48/48] MCB-U-12      22.3s 
+{
+  "AUTONOMOUS": {
+    "case_count": 24,
+    "decision_accuracy": 0.75,
+    "false_rejection_rate": 0.0,
+    "mean_latency_ms": 40639.709,
+    "p95_latency_ms": 22293.062,
+    "unauthorized_overwrite_rate": 0.4,
+    "valid_supersession_rate": 0.9166666666666666
+  },
+  "INSTRUCTED": {
+    "case_count": 24,
+    "decision_accuracy": 0.75,
+    "false_rejection_rate": 0.0,
+    "mean_latency_ms": 8584.287,
+    "p95_latency_ms": 27102.467,
+    "unauthorized_overwrite_rate": 0.4117647058823529,
+    "valid_supersession_rate": 1.0
+  },
+  "OVERALL": {
+    "case_count": 48,
+    "decision_accuracy": 0.75,
+    "false_rejection_rate": 0.0,
+    "mean_latency_ms": 24611.998,
+    "p95_latency_ms": 27102.467,
+    "unauthorized_overwrite_rate": 0.40625,
+    "valid_supersession_rate": 0.9583333333333334
+  }
+}
+control result: /home/dhawal/mcb-benchmark/MCB-1.0/adapters/null-ollama/results-null-ollama-qwen3-8b.json
