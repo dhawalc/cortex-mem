@@ -314,6 +314,7 @@ def _application_from_settings(
     repository = SQLiteMemoryRepository(
         settings.db_path,
         receipt_retention=settings.receipt_retention,
+        receipt_byte_budget=settings.receipt_byte_budget,
     )
     return AOMSApplication(
         repository,

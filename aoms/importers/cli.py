@@ -131,7 +131,9 @@ def import_from_command(
                 f"Run: cortex-mem init --data-dir {settings.data_dir}"
             )
         repository = SQLiteMemoryRepository(
-            settings.db_path, receipt_retention=settings.receipt_retention
+            settings.db_path,
+            receipt_retention=settings.receipt_retention,
+            receipt_byte_budget=settings.receipt_byte_budget,
         )
     try:
         result = asyncio.run(

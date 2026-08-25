@@ -152,11 +152,13 @@ class ObservatoryRepository:
                     raise InvalidCursor("invalid search offset")
             clauses.insert(0, "memories_fts MATCH ?")
             parameters.insert(0, expression)
-            sql = (
-                "SELECT m.record_json, bm25(memories_fts) AS rank "
-                "FROM memories_fts JOIN memories AS m ON m.id = memories_fts.id "
-                f"WHERE {' AND '.join(clauses)} "
-                "ORDER BY rank ASC, m.created_at DESC, m.id ASC LIMIT ? OFFSET ?"
+            # Browse and timeline resume from a keyset; a BM25 page cannot,
+            # because the rank is computed per match rather than indexed. What
+            # it can avoid is dragging every skipped record's JSON through the
+            # sorter, which is what made deep search pages degrade.
+            sql = SQLiteMemoryRepository._ranked_page_sql(
+                " AND ".join(clauses),
+                ("rank ASC", "created_at DESC", "id ASC"),
             )
             with self._connect() as connection:
                 rows = connection.execute(

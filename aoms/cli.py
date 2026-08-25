@@ -97,7 +97,9 @@ def _settings(data_dir: Path | None) -> AOMSSettings:
 
 def _repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
     return SQLiteMemoryRepository(
-        settings.db_path, receipt_retention=settings.receipt_retention
+        settings.db_path,
+        receipt_retention=settings.receipt_retention,
+        receipt_byte_budget=settings.receipt_byte_budget,
     )
 
 
@@ -1462,9 +1464,12 @@ def _doctor_database(
                 "performed.",
             )
 
-        receipt_count = int(
-            connection.execute("SELECT COUNT(*) FROM recall_receipts").fetchone()[0]
-        )
+        receipt_count, receipt_bytes = connection.execute(
+            "SELECT COUNT(*), COALESCE(SUM(receipt_bytes), 0) FROM recall_receipts"
+        ).fetchone()
+        receipt_count = int(receipt_count)
+        receipt_mb = int(receipt_bytes) / (1024 * 1024)
+        budget_mb = settings.receipt_byte_budget / (1024 * 1024)
         if receipt_count > settings.receipt_retention:
             report.warn(
                 "Receipt store",
@@ -1472,11 +1477,21 @@ def _doctor_database(
                 f"{settings.receipt_retention}",
                 "Run: cortex-mem sweep",
             )
+        elif int(receipt_bytes) > settings.receipt_byte_budget:
+            # Receipts hold the packed context, so the count can sit inside its
+            # limit while the space they take does not.
+            report.warn(
+                "Receipt store",
+                f"{receipt_mb:.1f}MB of receipts exceeds the "
+                f"{budget_mb:.0f}MB budget",
+                "Run: cortex-mem sweep",
+            )
         else:
             report.pass_(
                 "Receipt store",
-                f"available ({receipt_count} receipts; retention "
-                f"{settings.receipt_retention})",
+                f"available ({receipt_count} receipts, {receipt_mb:.1f}MB; "
+                f"retention {settings.receipt_retention}, budget "
+                f"{budget_mb:.0f}MB)",
             )
 
         if profile is None:
@@ -1774,6 +1789,9 @@ def token_group() -> None:
 
     These commands require local access to the AOMS data directory. The admin
     scope is reserved for future remote maintenance endpoints.
+
+    A token's bound workspace does not bound its reads: every token can read
+    every user-global record in the store. See docs/REMOTE_AUTH.md.
     """
 
 
@@ -1807,7 +1825,13 @@ def _parse_expiry(value: str | None) -> datetime | None:
     help="Grant a scope; repeat for multiple scopes.",
 )
 @click.option("--agent-id", help="Agent identity bound to the token.")
-@click.option("--workspace-id", help="Workspace identity bound to the token.")
+@click.option(
+    "--workspace-id",
+    help=(
+        "Workspace identity bound to the token. Bounds writes and workspace "
+        "reads; does not bound user-global reads."
+    ),
+)
 @click.option("--expires-at", help="Optional ISO-8601 expiry timestamp.")
 @_data_dir_option
 def token_create_command(
@@ -1841,6 +1865,13 @@ def token_create_command(
     click.echo(
         f"Identity: agent_id={record.agent_id} workspace_id={record.workspace_id}"
     )
+    if TokenScope.READ.value in record.scopes:
+        click.echo(
+            "Reads: this identity bounds writes, agent-private reads, and "
+            "workspace reads. It does NOT bound user-global reads: this token "
+            "can read every user-global record in the store. See "
+            "docs/REMOTE_AUTH.md."
+        )
     click.echo("Bearer token (shown once):")
     click.echo(created.secret)
 
@@ -2005,7 +2036,9 @@ def sweep_command(
         raise click.ClickException(f"sweep failed: {exc}") from exc
     click.echo(
         f"Sweep finished: embedded={result.embedded}, failed={result.failed}, "
-        f"pending={result.pending}, receipts_pruned={prune_report.deleted_count}."
+        f"pending={result.pending}, receipts_pruned={prune_report.deleted_count} "
+        f"({prune_report.remaining_count} kept, "
+        f"{prune_report.remaining_bytes / (1024 * 1024):.1f}MB)."
     )
     if result.failed:
         raise click.exceptions.Exit(1)

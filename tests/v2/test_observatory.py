@@ -25,7 +25,7 @@ from aoms.contracts import (
 from aoms.embeddings import NullProvider
 from aoms.observatory import cli as observatory_cli
 from aoms.observatory.cli import observe_command
-from aoms.observatory.repository import ObservatoryRepository
+from aoms.observatory.repository import ObservatoryRepository, _encode_cursor
 from aoms.observatory.server import (
     LOOPBACK_HOST,
     TOKEN_QUERY_PARAMETER,
@@ -409,3 +409,77 @@ def test_scale_150k_list_search_timeline_endpoints_under_500ms(
         "OBSERVATORY_150K_PERF "
         + " ".join(f"{name}={value:.2f}ms" for name, value in measurements.items())
     )
+
+
+def test_deep_search_pages_do_not_degrade_with_offset(tmp_path: Path) -> None:
+    """A BM25 page 20,000 deep must cost about what the first page costs.
+
+    Browse and timeline resume from a keyset. A ranked page cannot: ``bm25()``
+    is computed per match, so there is no ordered index to seek into and every
+    page has to rank the whole match set. The part that *was* avoidable is
+    dragging each skipped record's ``record_json`` through the sorter, which
+    is what made deep pages degrade.
+
+    Measured on the real 165,347-record store with the query ``memory``
+    (59,541 matches), selecting the payload before the sort cost 0.37s at
+    offset 0 and 2.37s at offset 50,000. Ranking narrow rows first holds it at
+    0.14s and 0.22s.
+
+    This fixture's records are a third the size of real ones, so it reproduces
+    the effect at a smaller ratio: on this corpus the old phrasing took ~911ms
+    at offset 20,000 against ~370ms for this one. The bound below sits between
+    them. The shape that produces the win is asserted directly, and without a
+    stopwatch, in ``test_ranked_pages_rank_before_they_materialize_records``.
+    """
+
+    db_path = tmp_path / "deep-pages.sqlite3"
+    _seed_scale_database(db_path)
+    repository = ObservatoryRepository(db_path)
+
+    # Every seeded record contains "observatory", so this ranks the whole corpus.
+    first_started = time.perf_counter()
+    first = repository.memories(query="observatory", limit=50)
+    first_ms = (time.perf_counter() - first_started) * 1_000
+
+    deep_cursor = _encode_cursor({"mode": "search", "offset": 20_000})
+    deep_started = time.perf_counter()
+    deep = repository.memories(query="observatory", cursor=deep_cursor, limit=50)
+    deep_ms = (time.perf_counter() - deep_started) * 1_000
+
+    assert len(first.items) == 50
+    assert len(deep.items) == 50
+    # A deep page is a different slice of one ranking, not a repeat of page one.
+    assert {item.record.id for item in first.items}.isdisjoint(
+        item.record.id for item in deep.items
+    )
+    assert all(item.rank is not None for item in deep.items)
+
+    print(f"OBSERVATORY_DEEP_PAGE first={first_ms:.1f}ms deep20000={deep_ms:.1f}ms")
+    assert deep_ms < 700, (
+        f"page at offset 20,000 took {deep_ms:.1f}ms; the payload is being "
+        "sorted with the ranking again"
+    )
+
+
+def test_ranked_pages_rank_before_they_materialize_records(tmp_path: Path) -> None:
+    """Lock in the shape that keeps deep ranked pages cheap.
+
+    The sorter holds ``limit + offset`` rows. If ``record_json`` is selected
+    before the ordering, every skipped record's payload is held with it; at
+    offset 20,000 that is tens of megabytes of JSON moved to return 50 rows.
+    """
+
+    sql = SQLiteMemoryRepository._ranked_page_sql(
+        "memories_fts MATCH ?", ("rank ASC", "created_at DESC")
+    )
+    # The outer select materializes the page; the subquery between the opening
+    # paren and the LIMIT is what the sorter actually holds.
+    materializing, _, rest = sql.partition("FROM (")
+    ranking, _, _ = rest.partition("LIMIT ? OFFSET ?")
+
+    assert "record_json" not in ranking, (
+        "the ranking subquery must not carry record payloads through the sorter"
+    )
+    assert "record_json" in materializing
+    # The projection's rowid is the canonical rowid; the text id is UNINDEXED.
+    assert "m.rowid = memories_fts.rowid" in ranking

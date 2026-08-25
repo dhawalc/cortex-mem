@@ -77,9 +77,9 @@ def test_latest_schema_version_is_current_and_six_is_still_the_fts_placeholder()
     # branch. Numbering the new migration 6 would have overwritten that branch
     # and never applied to any existing store, while the version claimed it
     # had. This test is the regression guard for exactly that error.
-    assert LATEST_SCHEMA_VERSION == 8
+    assert LATEST_SCHEMA_VERSION == 10
     assert MIGRATIONS[6] == ""
-    assert set(MIGRATIONS) == {1, 2, 3, 4, 5, 6, 7, 8}
+    assert set(MIGRATIONS) == {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 
 
 @pytest.mark.asyncio
@@ -91,7 +91,9 @@ async def test_a_store_already_at_version_six_advances_to_the_latest(tmp_path):
 
     # Rewind to a store that has recorded version 6 and knows nothing of 7.
     with sqlite3.connect(path) as connection:
-        connection.execute("DELETE FROM schema_version WHERE version IN (7, 8)")
+        connection.execute(
+            "DELETE FROM schema_version WHERE version IN (7, 8, 9, 10)"
+        )
         connection.execute("DROP INDEX idx_memories_claim_slot")
         for index in (
             "idx_memories_contested",
@@ -100,6 +102,8 @@ async def test_a_store_already_at_version_six_advances_to_the_latest(tmp_path):
             "idx_memories_agent_contested",
             # Migration 8's covering index also names the contest columns.
             "idx_memories_scope_cover",
+            # Migration 10 indexes the per-kind recency sample.
+            "idx_memories_kind_recent",
         ):
             connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
@@ -371,7 +375,9 @@ async def test_a_read_only_store_still_at_schema_six_opens_and_reads(tmp_path):
     await repository.initialize()
     await repository.store_new(record("a"))
     with sqlite3.connect(path) as connection:
-        connection.execute("DELETE FROM schema_version WHERE version IN (7, 8)")
+        connection.execute(
+            "DELETE FROM schema_version WHERE version IN (7, 8, 9, 10)"
+        )
         connection.execute("DROP INDEX idx_memories_claim_slot")
         for index in (
             "idx_memories_contested",
@@ -380,6 +386,8 @@ async def test_a_read_only_store_still_at_schema_six_opens_and_reads(tmp_path):
             "idx_memories_agent_contested",
             # Migration 8's covering index also names the contest columns.
             "idx_memories_scope_cover",
+            # Migration 10 indexes the per-kind recency sample.
+            "idx_memories_kind_recent",
         ):
             connection.execute(f"DROP INDEX {index}")
         connection.execute("ALTER TABLE memories DROP COLUMN claim_key")
