@@ -75,7 +75,7 @@ def _parse_timestamp(value: str) -> datetime:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
 
-LATEST_SCHEMA_VERSION = 9
+LATEST_SCHEMA_VERSION = 10
 
 # How many scope-filtered FTS matches one recall will count before reporting a
 # floor instead of a total. The count is a diagnostic, not an answer, and it is
@@ -301,6 +301,20 @@ MIGRATIONS: dict[int, str] = {
         );
     """,
     9: MIGRATION_9_COLUMN + ";\n" + MIGRATION_9_OBJECTS,
+    # Recall samples the two most recent records of each requested kind. With
+    # only `idx_memories_kind` to work from, SQLite found every record of a
+    # kind and sorted it to return two: on the real store that is a temp
+    # b-tree over 75,322 facts and 53,579 episodes, carrying `record_json`
+    # through the sorter. Leading with `kind` and continuing in `updated_at`
+    # order lets it stop after two, and carrying the scope columns lets the
+    # visibility filter be answered from the index. Measured across all seven
+    # kinds present: 150.2ms to 0.1ms per recall, for 15.7MB of index.
+    10: """
+        CREATE INDEX IF NOT EXISTS idx_memories_kind_recent ON memories(
+            kind, updated_at DESC, id ASC,
+            contested, scope, scope_workspace_id, scope_agent_id
+        );
+    """,
 }
 
 
