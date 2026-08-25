@@ -87,6 +87,16 @@ async def test_read_only_fixture_recall_uses_separate_receipt_store(
             updated_at=now,
         )
     )
+    # Fold the write's WAL into the main file first. The repository opens a
+    # connection per call and `with sqlite3.connect(...)` manages the
+    # transaction rather than closing it, so without this the writable
+    # connection checkpoints whenever it happens to be collected — and the
+    # size this test compares would be recording GC timing, not whether the
+    # read-only recall wrote anything.
+    with sqlite3.connect(source_path) as checkpoint:
+        checkpoint.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    checkpoint.close()
+
     before = (source_path.stat().st_size, source_path.stat().st_mtime_ns)
     source = SQLiteMemoryRepository(source_path, read_only=True)
     receipts = SQLiteMemoryRepository(tmp_path / "receipts.sqlite3")

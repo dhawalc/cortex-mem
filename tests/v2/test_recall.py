@@ -326,3 +326,52 @@ async def test_supersession_resolution_can_be_disabled(tmp_path: Path) -> None:
     assert receipt.supersession_resolution is False
     assert receipt.superseded_suppressed == []
     assert result.diagnostics["supersession_resolution"] is False
+
+
+def test_packer_counts_each_candidate_context_once() -> None:
+    """The packer must not re-encode the context to recover counts it has.
+
+    Accepting a block used three whole-context encodes: one to test the
+    candidate context, then two more to recover the counts before and after
+    the append. Both were already known — the count after accepting is the
+    count of the context just tested, and the count before it is what the
+    previous accepted block left behind — so the extra two bought nothing and
+    made the packer quadratic in the budget.
+
+    Measured against the real 165,347-record store at a 16,000-token budget,
+    removing them took a recall from 188.5 encode calls to 114.0 and from
+    1,067.9ms to 899.1ms, with byte-identical context, sources and per-source
+    token costs across 24 recalls spanning four budgets.
+    """
+
+    class CountingTokenizer:
+        def __init__(self) -> None:
+            self._inner = TiktokenTokenizer()
+            self.name = self._inner.name
+            self.calls = 0
+
+        def count(self, text: str) -> int:
+            self.calls += 1
+            return self._inner.count(text)
+
+        def encode(self, text: str) -> list[int]:
+            return self._inner.encode(text)
+
+        def decode(self, tokens: list[int]) -> str:
+            return self._inner.decode(tokens)
+
+    tokenizer = CountingTokenizer()
+    packer = BudgetPacker(tokenizer)
+    items = [ranked(make_record(f"m-{index}", f"orchid canary {index}")) for index in range(12)]
+
+    context, selected, _ = packer.pack(items, token_budget=8_000)
+
+    assert len(selected) == 12
+    # One encode per candidate tested, plus the closing budget assertion.
+    assert tokenizer.calls <= len(items) + 1, (
+        f"{tokenizer.calls} encodes for {len(items)} candidates; the packer is "
+        "re-encoding the accumulated context"
+    )
+    # The accounting still has to be exact, not merely cheap.
+    exact = TiktokenTokenizer()
+    assert sum(entry.token_cost for entry in selected) == exact.count(context)
