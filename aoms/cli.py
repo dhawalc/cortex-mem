@@ -34,6 +34,7 @@ from aoms.activation import (
 from aoms.backfill import BackfillProgress, backfill_embeddings
 from aoms.auth import TokenScope, TokenStore
 from aoms.contest import is_expired_held, is_overdue
+from aoms.identity import SUPPORTED_HOSTS, agent_id_for_host, resolved_agent_id
 from aoms.contracts import (
     ContestEntry,
     ContestResolution,
@@ -102,7 +103,7 @@ def _repository(settings: AOMSSettings) -> SQLiteMemoryRepository:
 
 def _scope_context() -> ScopeContext:
     return ScopeContext(
-        agent_id=os.environ.get("AOMS_AGENT_ID", "").strip() or "cli",
+        agent_id=resolved_agent_id(os.environ.get("AOMS_AGENT_ID")),
         workspace_id=(
             os.environ.get("AOMS_WORKSPACE", "").strip() or str(Path.cwd().resolve())
         ),
@@ -243,9 +244,7 @@ def init_command(data_dir: Path | None) -> None:
 
 
 @main.command("setup")
-@click.argument(
-    "host", type=click.Choice(("claude", "codex", "openclaw"), case_sensitive=False)
-)
+@click.argument("host", type=click.Choice(SUPPORTED_HOSTS, case_sensitive=False))
 @click.option(
     "--workspace",
     type=click.Path(path_type=Path, exists=True, file_okay=False),
@@ -257,7 +256,7 @@ def setup_command(host: str, workspace: Path | None, data_dir: Path | None) -> N
 
     normalized_host = host.casefold()
     bound_workspace = (workspace or Path.cwd()).expanduser().resolve()
-    agent_id = normalized_host
+    agent_id = agent_id_for_host(normalized_host)
     settings = _settings(data_dir)
     source = detect_invocation_source()
     try:

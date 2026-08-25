@@ -41,14 +41,13 @@ from aoms.contracts import (
     WriteDisposition,
 )
 from aoms.embeddings import provider_from_config
+from aoms.identity import resolved_agent_id
 from aoms.recall import memory_content_text, render_memory_block
 from aoms.repositories import SQLiteMemoryRepository
 from aoms.settings import AOMSSettings
 from aoms.version import __version__ as AOMS_VERSION
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_AGENT_ID = "mcp"
 
 RECALL_DESCRIPTION = (
     "Call recall before starting or resuming substantive work when prior decisions, "
@@ -161,11 +160,10 @@ class MCPRuntime:
 def _scope_context_from_environ(environ: Mapping[str, str]) -> ScopeContext:
     """Bind identity once, deriving explicit process values when unset."""
 
-    configured_agent = environ.get("AOMS_AGENT_ID", "").strip()
     configured_workspace = environ.get("AOMS_WORKSPACE", "").strip()
 
     return ScopeContext(
-        agent_id=configured_agent or DEFAULT_AGENT_ID,
+        agent_id=resolved_agent_id(environ.get("AOMS_AGENT_ID")),
         workspace_id=configured_workspace or str(Path.cwd().resolve()),
     )
 

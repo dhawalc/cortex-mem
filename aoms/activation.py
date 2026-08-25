@@ -15,6 +15,9 @@ from typing import Any, Mapping
 
 from aoms.contracts import RecallResult
 
+# Directory names only. A host's *identity* comes from
+# ``aoms.identity.agent_id_for_host``; conflating the two is why the packaged
+# Claude hook bound ``claude-code`` while ``setup`` bound ``claude``.
 HOST_RECIPE_DIRECTORIES = {
     "claude": "claude-code",
     "codex": "codex",
