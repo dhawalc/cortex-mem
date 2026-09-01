@@ -17,6 +17,18 @@ from pathlib import Path
 
 from mcp.server.auth.provider import AccessToken
 
+# Guard against an under-pinned mcp (issue #13): before 1.29 AccessToken has no
+# `claims` field, and pydantic silently DROPS the unknown kwarg below -- token
+# claims (agent_id/workspace_id) would vanish instead of failing. Refuse to
+# import rather than run scopeless.
+if "claims" not in getattr(AccessToken, "model_fields", {}):
+    raise ImportError(
+        "mcp.server.auth.provider.AccessToken has no `claims` field; "
+        "installed mcp is below the pyproject pin (>=1.29,<2). "
+        "Upgrade mcp -- running without claims silently discards token "
+        "agent/workspace identity."
+    )
+
 from aoms.repositories.sqlite import SQLiteMemoryRepository
 
 TOKEN_PREFIX = "aoms"
