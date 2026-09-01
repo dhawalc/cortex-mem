@@ -146,11 +146,20 @@ def test_identical_content_on_an_occupied_slot_is_corroboration_not_contest():
     assert decision.detail == {"corroboration": True}
 
 
+# RETROGRADE is deferred from the default set (issue #4); T2 tests opt in.
+RETRO_RULESET = Ruleset(
+    enabled_triggers=frozenset(
+        {ContestTrigger.SLOT_COLLISION, ContestTrigger.RETROGRADE}
+    )
+)
+
+
 def test_t2_contests_a_retrograde_assertion():
     decision = decide(
         intent(asserted_at=NOW - timedelta(days=9)),
         occupied(asserted_at=NOW - timedelta(days=2)),
         now=NOW,
+        ruleset=RETRO_RULESET,
     )
     assert decision.trigger is ContestTrigger.RETROGRADE
 
@@ -161,6 +170,7 @@ def test_t2_does_not_fire_on_equal_timestamps():
         intent(asserted_at=same, supersedes="incumbent-1"),
         occupied(asserted_at=same),
         now=NOW,
+        ruleset=RETRO_RULESET,
     )
     assert decision.disposition is WriteDisposition.ADMITTED
 

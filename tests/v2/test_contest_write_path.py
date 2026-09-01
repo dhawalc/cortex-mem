@@ -295,7 +295,15 @@ async def test_a_contested_successor_cannot_block_a_legitimate_correction(tmp_pa
     declaring supersedes at the occupant is otherwise admitted.
     """
 
-    application = build(tmp_path)
+    # RETROGRADE is deferred from the default set (issue #4); opt in here.
+    application = build(
+        tmp_path,
+        ruleset=Ruleset(
+            enabled_triggers=frozenset(
+                {ContestTrigger.SLOT_COLLISION, ContestTrigger.RETROGRADE}
+            )
+        ),
+    )
     now = datetime.now(timezone.utc)
     await remember(
         application,
@@ -337,7 +345,15 @@ async def test_identical_content_on_an_occupied_slot_is_a_corroboration_no_op(
 
 @pytest.mark.asyncio
 async def test_a_retrograde_assertion_is_contested(tmp_path):
-    application = build(tmp_path)
+    # RETROGRADE is deferred from the default set (issue #4); opt in here.
+    application = build(
+        tmp_path,
+        ruleset=Ruleset(
+            enabled_triggers=frozenset(
+                {ContestTrigger.SLOT_COLLISION, ContestTrigger.RETROGRADE}
+            )
+        ),
+    )
     now = datetime.now(timezone.utc)
     await remember(
         application,

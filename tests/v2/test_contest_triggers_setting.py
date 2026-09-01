@@ -165,7 +165,11 @@ def test_the_digest_differs_between_configurations() -> None:
 
     default = _settings().ruleset
     disabled = _settings(AOMS_CONTEST_TRIGGERS="none").ruleset
-    subset = _settings(AOMS_CONTEST_TRIGGERS="slot-collision").ruleset
+    # An explicit bare "slot-collision" is the default set as of version 3,
+    # so use a genuinely different subset for the distinctness check.
+    subset = _settings(
+        AOMS_CONTEST_TRIGGERS="slot-collision,retrograde-displacement"
+    ).ruleset
     everything = _settings(
         AOMS_CONTEST_TRIGGERS="slot-collision,retrograde-displacement,"
         "derived-from-memory"
@@ -179,11 +183,12 @@ def test_the_digest_differs_between_configurations() -> None:
     }
     assert len(set(digests.values())) == len(digests), digests
 
-    # Same set written a different way is the same configuration.
+    # Same set written a different way is the same configuration. (As of
+    # version 3 this set is the opt-in subset, no longer the default.)
     assert (
         _settings(AOMS_CONTEST_TRIGGERS="retrograde-displacement, slot-collision")
         .ruleset.digest
-        == default.digest
+        == subset.digest
     )
 
 

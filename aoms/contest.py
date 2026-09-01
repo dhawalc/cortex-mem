@@ -32,15 +32,15 @@ from aoms.contracts import (
 
 # Bumped when the meaning of a trigger changes, so a stored digest can never
 # silently describe different behaviour than the one that produced it. Version 2
-# drops DERIVED from the default set; see DEFERRED_TRIGGERS below.
-RULESET_VERSION = 2
+# drops DERIVED from the default set; version 3 defers RETROGRADE the same way.
+# See DEFERRED_TRIGGERS below.
+RULESET_VERSION = 3
 
 # T4 is a seam, not a rule. No classifier ships in v1, and nothing but a named
 # human resolution ever changes a durable disposition.
 V1_TRIGGERS: frozenset[ContestTrigger] = frozenset(
     {
         ContestTrigger.SLOT_COLLISION,
-        ContestTrigger.RETROGRADE,
     }
 )
 
@@ -77,7 +77,14 @@ V1_TRIGGERS: frozenset[ContestTrigger] = frozenset(
 # self-reported field. That is session-linked provenance — a new trust root and
 # a new attack surface — and it is out of scope for this release. Written down
 # so it is not rediscovered from scratch.
-DEFERRED_TRIGGERS: frozenset[ContestTrigger] = frozenset({ContestTrigger.DERIVED})
+# RETROGRADE joined DERIVED here (issue #4). `asserted_at` is supplied on 0 of
+# 106 writes across the only harness we have, under both conforming adapters,
+# so the trigger ships unfalsified -- exactly the position DERIVED was removed
+# from. It stays implemented and opts back in via AOMS_CONTEST_TRIGGERS
+# ("retrograde-displacement") the moment a test exists that can turn red.
+DEFERRED_TRIGGERS: frozenset[ContestTrigger] = frozenset(
+    {ContestTrigger.DERIVED, ContestTrigger.RETROGRADE}
+)
 
 
 def content_digest(content: object) -> str:
